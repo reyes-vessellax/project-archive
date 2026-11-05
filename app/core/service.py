@@ -38,6 +38,14 @@ class ActionBlocked(RuntimeError):
     """A user action isn't allowed right now. The message is shown to the user."""
 
 
+MAX_DOWNLOAD_RETRIES = 3
+RETRY_WAIT_S = (10, 30, 60)
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 class ArchiveService:
     def __init__(self, db_path: Path | None = None,
                  adapter_factory: Callable[["ArchiveService"], SourceAdapter | None] | None = None,
@@ -237,11 +245,54 @@ class ArchiveService:
                     self.db.update_job(job["id"], state=J.ERROR, message=f"Couldn't move the download into quarantine: {e}")
                 self.adapter.forget(t)                       # the engine has nothing more to do with it
             elif t.failed:
-                self.db.update_job(job["id"], state=J.ERROR, message=f"Download failed: {t.state}")
                 self.adapter.forget(t)
+                tries = int(job.get("retries") or 0)
+                if "TimedOut" in (t.state or "") and tries < MAX_DOWNLOAD_RETRIES:
+                    # the peer never got the transfer going; usually transient, so try again after a pause
+                    wait = RETRY_WAIT_S[min(tries, len(RETRY_WAIT_S) - 1)]
+                    retry_at = (datetime.now(timezone.utc) + timedelta(seconds=wait)).isoformat(timespec="seconds")
+                    self.db.update_job(job["id"], transfer_id=None, retries=tries + 1, retry_at=retry_at, progress=0.0,
+                                       message=f"No answer from the source. Retrying in {wait} s ({tries + 1} of {MAX_DOWNLOAD_RETRIES})…")
+                    self.db.event(job["id"], "retry_scheduled", t.state or "")
+                else:
+                    self.db.update_job(job["id"], state=J.ERROR, message=f"Download failed: {t.state}")
             else:
                 self.db.update_job(job["id"], progress=t.percent, message=t.state)
+        # jobs waiting to be re-requested
+        for job in self.db.jobs(states=(J.QUEUED,)):
+            if job.get("transfer_id") or not job.get("retry_at"):
+                continue
+            if job["retry_at"] <= now_iso():
+                self._rerequest(job)
         return ready
+
+    def _rerequest(self, job: dict) -> None:
+        cand = Candidate(source_kind=job["source_kind"], user=job["remote_user"], remote_path=job["remote_path"],
+                         size=job["remote_size"] or 0, display_name=job["original_name"])
+        try:
+            t = self.adapter.request_download(cand)
+            self.db.update_job(job["id"], transfer_id=t.transfer_id, retry_at=None, message=t.state or "Requested again")
+            self.db.event(job["id"], "requested_again", str(job.get("retries") or 0))
+        except ConnectorError as e:
+            self.db.update_job(job["id"], state=J.ERROR, message=f"Download request failed: {e}")
+
+    def retry_download(self, job_id: str) -> dict:
+        """Ask the same source again, right now (the review page's Retry download)."""
+        job = self.db.job(job_id)
+        if not job or not job.get("remote_user"):
+            raise ActionBlocked("This track didn't come from the network, so there is nothing to retry.")
+        if self.adapter is None:
+            raise ActionBlocked("Not connected yet.")
+        if job.get("transfer_id"):
+            try:
+                self.adapter.forget(Transfer(transfer_id=job["transfer_id"], user=job["remote_user"],
+                                             remote_path=job["remote_path"], size=job["remote_size"] or 0, state=""))
+            except ConnectorError:
+                pass
+        self.db.update_job(job_id, state=J.QUEUED, transfer_id=None, retry_at=None, progress=0.0, hidden=0,
+                           retries=int(job.get("retries") or 0), message="Asking the source again…")
+        self._rerequest(self.db.job(job_id))
+        return self.db.job(job_id)
 
     def cancel(self, job_id: str) -> None:
         with self._lock:

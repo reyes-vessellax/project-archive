@@ -20,6 +20,25 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.4.12 — unreleased (downloads that time out)
+
+- **"Completed, TimedOut" downloads.** The engine gave a source 30 s to get the transfer going before
+  giving up; peers behind firewalls often need longer. Engine timeouts raised (connect 15 s, inactivity
+  60 s, transfer 120 s), and a timed-out download is now **retried automatically** up to 3 times
+  (10 s, 30 s, 60 s apart) with the row saying "No answer from the source. Retrying in 30 s (2 of 3)…"
+  before it's marked failed.
+- Review page for a track still downloading shows a progress bar with percentage and a plain-English
+  line (in line at the source / receiving the file…).
+- A failed download's review page offers **Retry download** (asks the same source again, right now)
+  instead of Re-check, which only re-runs the checks on a file that has arrived.
+- Re-check now shows at once: the verdict flips to CHECK with moving dots and the button reads
+  "Re-checking…" until the result lands.
+- A queue row blips green for a moment when its track moves to the next stage (downloaded → checking,
+  checking → verdict).
+- Start-up screen lights are real marks now (● busy, ✓ done, ✕ failed, – skipped).
+- "Open Archive" → "Open Pied Piper" (follows the app name).
+- The player's pause glyph is drawn, not a font character, so the bars sit together.
+
 ## 0.4.11 — unreleased (the flashing windows, found)
 
 ### Fixed: blank windows flashing while tracks are added or change state

@@ -133,7 +133,8 @@ class MainWindow(QMainWindow):
         self.searchp.pick.connect(self._pick_candidate)
         self.review.select.connect(self._open_job)
         self.review.promote.connect(self._promote); self.review.reject.connect(self._reject)
-        self.review.cancel.connect(self._cancel); self.review.rerun.connect(self._start_analysis)
+        self.review.cancel.connect(self._cancel); self.review.rerun.connect(self._recheck)
+        self.review.retry.connect(self._retry_download)
         self.review.open_folder.connect(self._open_folder)
         self.settings.saved.connect(self._settings_saved); self.settings.sign_out.connect(self._sign_out)
         self.settings.account_changed.connect(self._refresh_account)
@@ -571,6 +572,30 @@ class MainWindow(QMainWindow):
 
     def _start_analysis(self, job_id: str):
         self.pool.start(Task(lambda: self._analyze(job_id), self.signals))
+
+    def _recheck(self, job_id: str):
+        """Re-check from the review page: show it at once (CHECK tag, moving dots, button greyed)."""
+        job = self.svc.db.job(job_id)
+        if not job or not job.get("staged_path"):
+            self.statusBar().showMessage("Nothing to re-check: the file never arrived. Use Retry download.", 6000); return
+        self.steps[job_id] = "Re-checking…"
+        self.svc.db.update_job(job_id, state=J.ANALYZING, message="Re-checking…")
+        self._acache.pop(job_id, None)
+        self.refresh()
+        self._start_analysis(job_id)
+
+    def _retry_download(self, job_id: str):
+        self.review.set_busy(True)
+
+        def work():
+            try:
+                self.svc.retry_download(job_id)
+                self.signals.notice.emit("Asked the source again.")
+            except ActionBlocked as e:
+                self.signals.notice.emit(str(e))
+            finally:
+                self.signals.done.emit(job_id)
+        self.io.start(Task(work, self.signals))
 
     def _analyze(self, job_id: str):
         try:

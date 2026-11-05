@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QUrl, QObject, QPoint, QRunnable, Qt, Signal
-from PySide6.QtGui import QPen, QColor, QFont, QPainter, QPixmap
+from PySide6.QtCore import QRectF, QTimer, QUrl, QObject, QPoint, QRunnable, Qt, Signal
+from PySide6.QtGui import QPainterPath, QPen, QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QVBoxLayout, QWidget)
 
@@ -266,8 +266,45 @@ class QueueRow(QWidget):
         self.setProperty("selected", "true" if on else "false")
         T.repolish(self)
 
+    def flash(self) -> None:
+        """A short green blip when this track just moved to the next stage."""
+        self.setProperty("flash", "true"); T.repolish(self)
+
+        def off():
+            try:
+                self.setProperty("flash", "false"); T.repolish(self)
+            except RuntimeError:
+                pass                                          # the row was rebuilt meanwhile
+        QTimer.singleShot(900, off)
+
 
 # ------------------------------------------------------------------ spectrogram
+class PlayButton(QPushButton):
+    """Round play/pause control drawn by hand, so the pause bars sit close together on every font."""
+
+    def __init__(self, parent=None):
+        super().__init__("", parent)
+        self._playing = False
+
+    def set_playing(self, on: bool):
+        self._playing = on; self.update()
+
+    def paintEvent(self, e):
+        super().paintEvent(e)                                  # background + hover from the stylesheet
+        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen); p.setBrush(self.palette().buttonText().color())
+        w, h = self.width(), self.height(); cx, cy = w / 2, h / 2
+        if self._playing:
+            bw, bh, gap = w * 0.13, h * 0.38, w * 0.1
+            p.drawRoundedRect(QRectF(cx - gap / 2 - bw, cy - bh / 2, bw, bh), 1.2, 1.2)
+            p.drawRoundedRect(QRectF(cx + gap / 2, cy - bh / 2, bw, bh), 1.2, 1.2)
+        else:
+            s = h * 0.38
+            path = QPainterPath(); path.moveTo(cx - s * 0.42, cy - s * 0.5); path.lineTo(cx + s * 0.58, cy)
+            path.lineTo(cx - s * 0.42, cy + s * 0.5); path.closeSubpath(); p.drawPath(path)
+        p.end()
+
+
 class SpectrumView(QLabel):
     """The PNG from the analysis with a kHz axis and the cutoff line, drawn in the theme's accent.
     When given the audio file, a small play button appears: press it and a playhead crawls across the
@@ -287,7 +324,7 @@ class SpectrumView(QLabel):
         self._duration_ms = 0
         self._player = None
         self._out = None
-        self.play_btn = QPushButton("▶", self); self.play_btn.setObjectName("play"); self.play_btn.setCursor(Qt.PointingHandCursor)
+        self.play_btn = PlayButton(self); self.play_btn.setObjectName("play"); self.play_btn.setCursor(Qt.PointingHandCursor)
         self.play_btn.setFixedSize(26, 26); self.play_btn.clicked.connect(self.toggle); self.play_btn.hide()
         self.play_btn.setToolTip("Play (space)")
         self.clear_view("")
@@ -346,7 +383,7 @@ class SpectrumView(QLabel):
 
     def _state_changed(self, *_):
         playing = self.is_playing()
-        self.play_btn.setText("❚❚" if playing else "▶")
+        self.play_btn.set_playing(playing)
         self.play_btn.setToolTip("Pause (space)" if playing else "Play (space)")
         self.update()
 

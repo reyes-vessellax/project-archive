@@ -10,7 +10,7 @@ from pathlib import Path
 # chosen; every visible use of the name reads this constant (window title, dialogs, engine, data folder).
 APP_NAME = "Pied Piper"
 APP_SLUG = "PiedPiper"                    # for file and artifact names that shouldn't carry a space
-APP_VERSION = "0.4.11"                     # keep in step with pyproject.toml; the build names the artifact with it
+APP_VERSION = "0.4.12"                     # keep in step with pyproject.toml; the build names the artifact with it
 PREVIOUS_NAMES = ("DEADWAX", "Project Archive")   # earlier placeholders; existing installs are migrated from them
 
 

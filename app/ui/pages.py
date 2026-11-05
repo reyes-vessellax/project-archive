@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QFrame, QGridLayout, QHeaderView, QLineEdit, QSizePolicy, QTreeWidget, QTreeWidgetItem,
+from PySide6.QtWidgets import (QProgressBar, QFrame, QGridLayout, QHeaderView, QLineEdit, QSizePolicy, QTreeWidget, QTreeWidgetItem,
                                QWidget)
 
 from ..adapters.base import Candidate, SearchResult
@@ -146,6 +146,9 @@ class HomePage(QWidget):
         if key == getattr(self, "_last_key", None):
             return
         self._last_key = key
+        prev_tags = getattr(self, "_prev_tags", {})
+        changed = {jid for jid, d in rows if jid in prev_tags and prev_tags[jid] != d["tag"]}
+        self._prev_tags = {jid: d["tag"] for jid, d in rows}
         # queue list
         while self.list.count() > 1:
             item = self.list.takeAt(0)
@@ -157,6 +160,8 @@ class HomePage(QWidget):
             row = QueueRow(jid, d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"])
             row.clicked.connect(self.open_job.emit); row.removed.connect(self.remove_job.emit)
             self.list.insertWidget(self.list.count() - 1, row)
+            if jid in changed:
+                row.flash()                                   # the blip: this track just moved on
         self.list_host.setUpdatesEnabled(True)
         down = sum(1 for j in jobs if j["state"] == J.QUEUED)
         chk = sum(1 for j in jobs if j["state"] in (J.STAGING, J.ANALYZING))
@@ -468,6 +473,7 @@ class ReviewPage(QWidget):
     open_folder = Signal(str)
     reveal = Signal(str)
     remove_job = Signal(str)
+    retry = Signal(str)
     select = Signal(str)
 
     def __init__(self, svc: ArchiveService):
@@ -514,6 +520,14 @@ class ReviewPage(QWidget):
         det.addLayout(facts)
         det.addWidget(rule())
 
+        # download progress (only while the track is still coming in)
+        self.dl_host = QWidget(); dl = vbox(self.dl_host, spacing=6)
+        dh = hbox(); self.dl_title = label("Downloading", "h2"); dh.addWidget(self.dl_title); dh.addStretch(1)
+        self.dl_pct = label("", "monotext"); dh.addWidget(self.dl_pct); dl.addLayout(dh)
+        self.dl_bar = QProgressBar(self.dl_host); self.dl_bar.setTextVisible(False); self.dl_bar.setRange(0, 100); self.dl_bar.setFixedHeight(6)
+        self.dl_bar.setProperty("tag", "Down"); dl.addWidget(self.dl_bar)
+        self.dl_note = label("", "muted"); dl.addWidget(self.dl_note)
+        det.addWidget(self.dl_host); self.dl_host.hide()
         sh = hbox(); sh.addWidget(label("Spectrogram", "h2")); sh.addStretch(1)
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
         det.addLayout(sh)
@@ -530,11 +544,14 @@ class ReviewPage(QWidget):
         self.btn_delete = button("Delete", "danger", lambda: self.reject.emit(self.job_id))
         self.btn_cancel = button("Cancel download", "ghost", lambda: self.cancel.emit(self.job_id))
         self.btn_rerun = button("Re-check", "ghost", lambda: self.rerun.emit(self.job_id))
+        self.btn_retry = button("Retry download", "primary", lambda: self.retry.emit(self.job_id))
+        self.btn_retry.setToolTip("Ask the same source for the file again")
         self.btn_open = button("Open folder", "ghost", lambda: self.open_folder.emit(self.job_id))
         self.btn_reveal = button("Show in folder", "ghost", lambda: self.reveal.emit(self.job_id))
         self.btn_remove = button("Remove from list", "ghost", lambda: self.remove_job.emit(self.job_id))
         self.btn_remove.setToolTip("Takes it off the queue. Downloaded files stay in your library.")
-        for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel, self.btn_remove):
+        self._dots = QTimer(self, interval=450, timeout=self._tick_dots); self._dot_n = 0
+        for b in (self.btn_save, self.btn_anyway, self.btn_retry, self.btn_delete, self.btn_cancel, self.btn_remove):
             actions.addWidget(b)
         actions.addStretch(1)
         actions.addWidget(self.btn_rerun); actions.addWidget(self.btn_reveal); actions.addWidget(self.btn_open)
@@ -542,6 +559,11 @@ class ReviewPage(QWidget):
         dw = QWidget(); dw.setLayout(det)
         body.addWidget(dw, 3)
         self.show_job(None, None)
+
+    def _tick_dots(self):
+        self._dot_n = (self._dot_n + 1) % 4
+        base = self.verdict_sub.text().rstrip(".")
+        self.verdict_sub.setText(base + "." * (self._dot_n or 3))
 
     def set_busy(self, on: bool):
         """While a Download/Delete is being carried out off-thread, the decision buttons can't be pressed twice."""
@@ -578,8 +600,10 @@ class ReviewPage(QWidget):
 
     def show_job(self, job: dict | None, a: dict | None, steps: dict[str, str] | None = None):
         self.job_id = job["id"] if job else None
-        for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel, self.btn_rerun, self.btn_open, self.btn_reveal, self.btn_remove):
+        for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel, self.btn_rerun, self.btn_open, self.btn_reveal, self.btn_remove, self.btn_retry):
             b.setVisible(bool(job))
+        self.dl_host.setVisible(bool(job) and job["state"] == J.QUEUED)
+        self._dots.stop()
         while self.checks.count():
             item = self.checks.takeAt(0)
             if item.widget():
@@ -595,6 +619,17 @@ class ReviewPage(QWidget):
         self.source.setText(f"{(a or {}).get('facts', {}).get('tags', {}).get('album') or ''}  ·  {src}".strip(" ·").upper())
         self.h1.setText(d["title"]); self.artist.setText(d["artist"])
         busy = job["state"] in (J.STAGING, J.ANALYZING, J.QUEUED)
+        if job["state"] == J.QUEUED:
+            pct = float(job.get("progress") or 0)
+            self.dl_bar.setValue(int(pct)); self.dl_pct.setText(f"{pct:.0f}%")
+            msg = job.get("message") or ""
+            self.dl_title.setText("Downloading" if pct > 0 else "Waiting for the source")
+            self.dl_note.setText({"Queued, Remotely": "In line at the source — it starts when they have a free slot.",
+                                  "Queued, Locally": "Queued here; starts in a moment.",
+                                  "Requested": "Asking the source…", "InProgress": "Receiving the file…",
+                                  "Initializing": "Starting up the transfer…"}.get(msg, msg))
+        if job["state"] in (J.STAGING, J.ANALYZING):
+            self._dots.start()                                 # the verdict sub-line keeps moving while we check
         status = a["overall_status"] if a and not busy else None
         if status:
             set_tag(self.verdict, T.GRADE_WORD[status]); self.verdict.setText(T.GRADE_LONG[status])
@@ -648,6 +683,11 @@ class ReviewPage(QWidget):
         finished = job["state"] in J.FINAL
         self.btn_delete.setVisible(job["state"] != J.QUEUED and not finished); self.btn_delete.setEnabled(job["state"] in (J.READY, J.ERROR))
         self.btn_remove.setVisible(finished)
+        dl_failed = job["state"] == J.ERROR and bool(job.get("remote_user")) and not job.get("staged_path")
+        self.btn_retry.setVisible(dl_failed)
+        self.btn_rerun.setVisible(not dl_failed and job["state"] != J.QUEUED)
+        self.btn_rerun.setText("Re-checking…" if job["state"] in (J.STAGING, J.ANALYZING) else "Re-check")
+        self.btn_rerun.setEnabled(job["state"] not in (J.STAGING, J.ANALYZING))
         self.btn_rerun.setEnabled(job["state"] in (J.READY, J.ERROR) and bool(job["staged_path"]))
         done = job["state"] == J.PROMOTED and bool(job.get("final_path")) and Path(job["final_path"]).exists()
         self.btn_reveal.setVisible(done)

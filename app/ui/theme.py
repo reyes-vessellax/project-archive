@@ -75,6 +75,11 @@ QLabel#muted {{ color: {c['muted']}; }}
 QLabel#faint {{ color: {c['faint']}; }}
 QLabel#mono {{ font-family: {mono}; font-size: 12px; color: {c['muted']}; }}
 QLabel#monotext {{ font-family: {mono}; font-size: 13px; }}
+QLabel#steplight {{ font-size: 18px; font-weight: 800; color: {c['faint']}; }}
+QLabel#steplight[tag="Good"] {{ color: {c['pass_']}; }}
+QLabel#steplight[tag="Down"] {{ color: {c['accent']}; }}
+QLabel#steplight[tag="Broken"] {{ color: {c['fail']}; }}
+QLabel#steplight[tag="Wait"] {{ color: {c['faint']}; }}
 QLabel#tag {{ font-family: {mono}; font-size: 10px; font-weight: 500; letter-spacing: 1px; color: {c['faint']}; }}
 {tags}
 QLabel#tag[tag="Good"], QLabel#tag[tag="Look"], QLabel#tag[tag="Broken"], QLabel#tag[tag="Error"], QLabel#tag[tag="Down"] {{ font-weight: 700; }}
@@ -128,7 +133,8 @@ QPushButton#navitem[active="true"] {{ background: {c['soft']}; color: {c['text']
 
 /* rows and lists */
 QWidget#row {{ background: transparent; border-bottom: 1px solid {c['line']}; }}
-QWidget#row:hover, QWidget#row[selected="true"] {{ background: {c['soft']}; border-radius: 8px; }}
+QWidget#row:hover, QWidget#row[flash="true"] {{ background: {c['pass_']}22; border-color: {c['pass_']}; }}
+QWidget#row[selected="true"] {{ background: {c['soft']}; border-radius: 8px; }}
 QProgressBar {{ background: {c['bar']}; border: none; border-radius: 2px; max-height: 3px; min-height: 3px; }}
 QProgressBar::chunk {{ background: {c['text']}; border-radius: 2px; }}
 QProgressBar[tag="Down"]::chunk {{ background: {c['accent']}; }}

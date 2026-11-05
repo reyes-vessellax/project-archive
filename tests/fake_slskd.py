@@ -28,6 +28,7 @@ class FakeSlskd:
         self.auto_complete = True                   # finish downloads on the first status poll
         self.logged_in = True
         self.fail_next_download = False
+        self.timeout_next_downloads = 0        # how many upcoming requests end "Completed, TimedOut"
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -164,6 +165,10 @@ class FakeSlskd:
         if self.fail_next_download:
             self.fail_next_download = False
             t["state"] = "Completed, Errored"
+            return
+        if self.timeout_next_downloads > 0:
+            self.timeout_next_downloads -= 1
+            t["state"] = "Completed, TimedOut"
             return
         if not self.auto_complete:
             t["state"], t["percentComplete"] = "InProgress", 42.0

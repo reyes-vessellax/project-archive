@@ -122,7 +122,10 @@ class SlskdManager:
             self.settings.listen_port = random.randint(49152, 65000)
         cfg = {
             "soulseek": {"listen_port": int(self.settings.listen_port),
-                         "distributed_network": {"disabled": False, "child_limit": 10}},
+                         "distributed_network": {"disabled": False, "child_limit": 10},
+                         # a transfer that hasn't started within 30 s used to be marked TimedOut; peers on
+                         # the other side of a firewall often take longer to get a connection going
+                         "connection": {"timeout": {"connect": 15000, "inactivity": 60000, "transfer": 120000}}},
             "headless": True,
             "remote_file_management": False,
             "directories": {"downloads": str(self.downloads_dir), "incomplete": str(self.instance_dir / "incomplete")},
