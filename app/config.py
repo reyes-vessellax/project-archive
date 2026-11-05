@@ -39,9 +39,18 @@ class Settings:
     max_duration_minutes: int = 240
     extensions: list[str] = field(default_factory=lambda: ["mp3", "wav", "flac", "aiff", "aif"])
     ffmpeg_path: str = ""                     # empty = bundled copy, then PATH
+    max_concurrent_analyses: int = 5          # analysis slots; further tracks wait in the queue
+    # Soulseek via a locally installed slskd client (the client owns the login; we only use its API)
+    slskd_url: str = "http://127.0.0.1:5030"
+    slskd_api_key: str = ""                   # empty = Soulseek search off (local mode)
+    slskd_downloads_dir: str = ""             # the folder slskd saves finished downloads into
 
     def staging_root(self) -> Path:
         return Path(self.staging_dir) if self.staging_dir else data_dir() / "staging"
+
+    @property
+    def soulseek_enabled(self) -> bool:
+        return bool(self.slskd_api_key.strip())
 
     def to_dict(self) -> dict:
         return asdict(self)

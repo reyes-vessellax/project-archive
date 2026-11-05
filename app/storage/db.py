@@ -22,7 +22,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     expires_at TEXT,
     final_path TEXT,
     disposition TEXT,
-    message TEXT
+    message TEXT,
+    remote_user TEXT,
+    remote_path TEXT,
+    remote_size INTEGER,
+    transfer_id TEXT,
+    progress REAL
 );
 CREATE TABLE IF NOT EXISTS analyses (
     job_id TEXT PRIMARY KEY REFERENCES jobs(id),
@@ -38,6 +43,12 @@ CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_source ON jobs(source_path, source_size, source_mtime);
 """
 
+# Columns added after the first release. Existing databases get them with ALTER TABLE.
+MIGRATIONS = {
+    "jobs": {"remote_user": "TEXT", "remote_path": "TEXT", "remote_size": "INTEGER",
+             "transfer_id": "TEXT", "progress": "REAL"},
+}
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -51,6 +62,15 @@ class Database:
         self._con.row_factory = sqlite3.Row
         self._con.execute("PRAGMA journal_mode=WAL")
         self._con.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        for table, cols in MIGRATIONS.items():
+            have = {r[1] for r in self._con.execute(f"PRAGMA table_info({table})")}
+            with self._con:
+                for name, typ in cols.items():
+                    if name not in have:
+                        self._con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
 
     def close(self):
         with self._lock:
@@ -88,6 +108,13 @@ class Database:
         with self._lock:
             row = self._con.execute("SELECT * FROM jobs WHERE source_path = ? AND source_size = ? AND source_mtime = ?",
                                     (path, size, mtime)).fetchone()
+        return dict(row) if row else None
+
+    def find_remote(self, user: str, remote_path: str, states: tuple[str, ...]) -> dict | None:
+        q = (f"SELECT * FROM jobs WHERE remote_user = ? AND remote_path = ? AND state IN "
+             f"({', '.join('?' * len(states))}) LIMIT 1")
+        with self._lock:
+            row = self._con.execute(q, (user, remote_path, *states)).fetchone()
         return dict(row) if row else None
 
     # analyses ---------------------------------------------------------------------

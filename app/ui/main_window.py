@@ -1,10 +1,16 @@
-"""Main window: candidate queue on the left, review panel on the right.
+"""Main window: candidate queue on the left, search results or the review panel on the right.
 
-Widgets never touch files directly; everything goes through ArchiveService, and slow work runs on a
-worker thread so the window stays responsive.
+Flow: search Soulseek -> pick a result -> it downloads straight into quarantine -> checked -> the user
+chooses Download to Library (PASS), Download anyway (WARN) or Delete. FAIL can only be deleted.
+
+Widgets never touch files directly; everything goes through ArchiveService. Slow work runs on worker
+threads: one pool for analyses (N parallel slots from Settings, the rest wait in the queue) and one
+single-threaded pool for talking to slskd and scanning folders, so a busy analysis never blocks progress
+updates.
 """
 from __future__ import annotations
 
+import time
 import traceback
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -12,9 +18,11 @@ from urllib.parse import quote_plus
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
-                               QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
-                               QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter, QVBoxLayout, QWidget)
+                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter,
+                               QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
+from ..adapters.base import Candidate, ConnectorError, SearchResult
 from ..config import APP_NAME
 from ..core import jobs as J
 from ..core.rules import fmt_time
@@ -23,6 +31,9 @@ from ..core.service import ActionBlocked, ArchiveService
 from ..media.tools import ToolMissing, find_tool
 
 COLORS = {"PASS": "#2e7d4f", "WARN": "#c98a12", "FAIL": "#b23b3b"}
+SEARCH_WAIT_S = 20            # keep collecting Soulseek results for this long
+
+# Online store search. Not wired to a button right now; kept for a later "find it to buy" feature.
 STORES = [
     ("Beatport", "https://www.beatport.com/search?q={}"),
     ("Bandcamp", "https://bandcamp.com/search?q={}"),
@@ -30,6 +41,14 @@ STORES = [
     ("Traxsource", "https://www.traxsource.com/search?term={}"),
     ("Discogs", "https://www.discogs.com/search/?q={}&type=all"),
 ]
+
+
+def open_store_search(query: str) -> None:
+    """Open the query on each store's search page in the default browser."""
+    for _name, url in STORES:
+        QDesktopServices.openUrl(QUrl(url.format(quote_plus(query))))
+
+
 STYLE = """
 QMainWindow, QWidget { font-size: 13px; }
 QPushButton { padding: 6px 12px; }
@@ -40,14 +59,18 @@ QListWidget { border: none; }
 QListWidget::item { padding: 6px 4px; border-bottom: 1px solid palette(mid); }
 QListWidget::item:selected { background: #1f5f8b; color: white; }
 QFrame#facts { border: 1px solid palette(mid); border-radius: 4px; }
+QTreeWidget { border: 1px solid palette(mid); }
 """
 
 
 # --------------------------------------------------------------------------- worker plumbing
 class Signals(QObject):
     progress = Signal(str, str)          # job_id, step
-    done = Signal(str)                   # job_id
+    done = Signal(str)                   # job_id (or "" = just refresh)
     failed = Signal(str, str)            # job_id or "", message
+    results = Signal(object)             # SearchResult
+    status = Signal(object)              # ConnectorStatus
+    staged = Signal(str)                 # job_id that finished downloading and needs analysis
 
 
 class Task(QRunnable):
@@ -58,7 +81,7 @@ class Task(QRunnable):
     def run(self):
         try:
             self.fn()
-        except (Rejected, ActionBlocked, ToolMissing) as e:
+        except (Rejected, ActionBlocked, ToolMissing, ConnectorError) as e:
             self.signals.failed.emit("", str(e))
         except Exception as e:                                      # keep the app alive, report it
             traceback.print_exc()
@@ -122,10 +145,18 @@ class SettingsDialog(QDialog):
         self.svc = svc
         s = svc.settings
         form = QFormLayout(self)
-        self.library = self._folder_row(form, "Library folder", s.library_dir)
+        form.addRow(QLabel("<b>Folders</b>"))
+        self.library = self._folder_row(form, "Download to (your library folder)", s.library_dir)
         self.incoming = self._folder_row(form, "Watched Incoming folder", s.incoming_dir, "Off (leave empty)")
+        form.addRow(QLabel("<b>Soulseek (through slskd)</b>"))
+        self.slskd_url = QLineEdit(s.slskd_url); form.addRow("slskd URL", self.slskd_url)
+        self.slskd_key = QLineEdit(s.slskd_api_key); self.slskd_key.setEchoMode(QLineEdit.Password)
+        self.slskd_key.setPlaceholderText("Empty = Soulseek search off"); form.addRow("slskd API key", self.slskd_key)
+        self.slskd_dl = self._folder_row(form, "slskd downloads folder", s.slskd_downloads_dir)
+        form.addRow(QLabel("<b>Checks</b>"))
         self.mp3 = self._spin(form, "Warn if MP3 below (kbps)", s.mp3_min_kbps, 64, 320)
         self.vbr = self._spin(form, "Warn if VBR average below (kbps)", s.vbr_min_avg_kbps, 64, 320)
+        self.slots = self._spin(form, "Check this many tracks at once", s.max_concurrent_analyses, 1, 16)
         self.hours = self._spin(form, "Delete undecided files after (hours)", s.retention_hours, 1, 24 * 30)
         self.maxmb = self._spin(form, "Max file size (MB)", s.max_file_mb, 10, 8192)
         self.exts = QLineEdit(", ".join(s.extensions)); form.addRow("Accepted formats", self.exts)
@@ -151,7 +182,11 @@ class SettingsDialog(QDialog):
         s = self.svc.settings
         s.library_dir = self.library.text().strip() or s.library_dir
         s.incoming_dir = self.incoming.text().strip()
+        s.slskd_url = self.slskd_url.text().strip() or "http://127.0.0.1:5030"
+        s.slskd_api_key = self.slskd_key.text().strip()
+        s.slskd_downloads_dir = self.slskd_dl.text().strip()
         s.mp3_min_kbps, s.vbr_min_avg_kbps = self.mp3.value(), self.vbr.value()
+        s.max_concurrent_analyses = self.slots.value()
         s.retention_hours, s.max_file_mb = self.hours.value(), self.maxmb.value()
         s.extensions = [e.strip().lower().lstrip(".") for e in self.exts.text().split(",") if e.strip()]
         s.ffmpeg_path = self.ffmpeg.text().strip()
@@ -159,18 +194,81 @@ class SettingsDialog(QDialog):
         self.accept()
 
 
+# --------------------------------------------------------------------------- search results page
+class ResultsPage(QWidget):
+    COLS = ["File", "Folder", "User", "Size", "Bitrate", "Length", "Queue", "Speed"]
+
+    def __init__(self, on_pick, on_back):
+        super().__init__()
+        self.on_pick = on_pick
+        self.title = QLabel("Search Soulseek for a track"); self.title.setStyleSheet("font-size:16px; font-weight:600;")
+        self.hint = QLabel("Results are what other users' clients report. Pick one and it is checked before anything "
+                           "reaches your library."); self.hint.setStyleSheet("color: gray;"); self.hint.setWordWrap(True)
+        self.tree = QTreeWidget(); self.tree.setColumnCount(len(self.COLS)); self.tree.setHeaderLabels(self.COLS)
+        self.tree.setRootIsDecorated(False); self.tree.setAlternatingRowColors(True); self.tree.setSortingEnabled(True)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tree.itemDoubleClicked.connect(lambda *_: self._pick())
+        self.tree.itemSelectionChanged.connect(lambda: self.btn_pick.setEnabled(bool(self.tree.selectedItems())))
+        self.btn_pick = QPushButton("Check this file", objectName="primary"); self.btn_pick.setEnabled(False)
+        self.btn_pick.clicked.connect(self._pick)
+        self.btn_back = QPushButton("Back to review"); self.btn_back.clicked.connect(on_back)
+        row = QHBoxLayout(); row.addWidget(self.btn_pick); row.addStretch(); row.addWidget(self.btn_back)
+        lay = QVBoxLayout(self); lay.addWidget(self.title); lay.addWidget(self.hint); lay.addWidget(self.tree, 1); lay.addLayout(row)
+
+    def show_results(self, res: SearchResult, searching: bool):
+        n = len(res.candidates)
+        state = "searching…" if searching else "done"
+        self.title.setText(f"“{res.query}” · {n} file{'s' if n != 1 else ''} · {state}")
+        self.tree.setSortingEnabled(False)
+        self.tree.clear()
+        for c in sorted(res.candidates, key=_rank):
+            it = QTreeWidgetItem([
+                c.display_name, c.folder, c.user, f"{c.size / 1e6:.1f} MB",
+                (f"{c.bitrate_kbps} kbps" + (" VBR" if c.vbr else "")) if c.bitrate_kbps else "?",
+                fmt_time(c.length_s) if c.length_s else "?",
+                "free slot" if c.free_slot else (str(c.queue_length) if c.queue_length is not None else "?"),
+                f"{c.upload_speed / 1e3:.0f} kB/s" if c.upload_speed else "?",
+            ])
+            it.setData(0, Qt.UserRole, c)
+            if c.locked:
+                it.setForeground(0, QColor("gray")); it.setText(0, c.display_name + "  (locked)")
+            self.tree.addTopLevelItem(it)
+        self.tree.setSortingEnabled(True)
+        for i in range(1, len(self.COLS)):
+            self.tree.resizeColumnToContents(i)
+
+    def _pick(self):
+        items = self.tree.selectedItems()
+        if items:
+            self.on_pick(items[0].data(0, Qt.UserRole))
+
+
+def _rank(c: Candidate):
+    """Likely-fastest first: free slots, short queues, then the bitrate the peer claims."""
+    return (0 if c.free_slot else 1, c.queue_length if c.queue_length is not None else 1_000_000,
+            -(c.bitrate_kbps or 0), -(c.upload_speed or 0))
+
+
 # --------------------------------------------------------------------------- main window
 class MainWindow(QMainWindow):
     def __init__(self, svc: ArchiveService):
         super().__init__()
         self.svc = svc
-        self.pool = QThreadPool(); self.pool.setMaxThreadCount(1)        # one analysis at a time
+        self.pool = QThreadPool(); self.pool.setMaxThreadCount(max(1, svc.settings.max_concurrent_analyses))
+        self.io = QThreadPool(); self.io.setMaxThreadCount(3)                # slskd calls + folder scans
+        self._polling = False
+        self._scanning = False
         self.signals = Signals()
         self.signals.progress.connect(self._on_progress)
         self.signals.done.connect(lambda _id: self.refresh())
         self.signals.failed.connect(self._on_failed)
+        self.signals.results.connect(self._on_results)
+        self.signals.status.connect(self._on_status)
+        self.signals.staged.connect(self._start_analysis)
         self.steps: dict[str, str] = {}
         self.selected: str | None = None
+        self.search_id: str | None = None
+        self.search_running = False
 
         self.setWindowTitle(APP_NAME)
         self.resize(1180, 760)
@@ -183,29 +281,33 @@ class MainWindow(QMainWindow):
         self.refresh()
         self._check_ffmpeg()
         self.scan_timer = QTimer(self, interval=3000, timeout=self._scan_incoming); self.scan_timer.start()
+        self.poll_timer = QTimer(self, interval=2000, timeout=self._poll_downloads); self.poll_timer.start()
+        self.status_timer = QTimer(self, interval=15000, timeout=self._poll_status); self.status_timer.start()
         self.clean_timer = QTimer(self, interval=3600 * 1000, timeout=lambda: (svc.cleanup_expired(), self.refresh()))
         self.clean_timer.start()
+        self._poll_status()
 
     # layout -----------------------------------------------------------------------
     def _build(self):
         top = QHBoxLayout()
         title = QLabel(f"<b style='font-size:16px'>{APP_NAME}</b>")
         self.status = QLabel()
-        add = QPushButton("Add files…"); add.clicked.connect(self._pick_files)
-        self.search = QLineEdit(); self.search.setPlaceholderText("Artist - track"); self.search.setMaximumWidth(260)
-        self.search.returnPressed.connect(self._find)
-        find = QPushButton("Find in stores"); find.clicked.connect(self._find)
+        self.search = QLineEdit(); self.search.setPlaceholderText("Search Soulseek: artist, track, label…")
+        self.search.setMinimumWidth(320); self.search.returnPressed.connect(self._search)
+        find = QPushButton("Search Soulseek", objectName="primary"); find.clicked.connect(self._search)
+        add = QPushButton("Add local files…"); add.clicked.connect(self._pick_files)
         settings = QPushButton("Settings"); settings.clicked.connect(self._settings)
         for w in (title, self.status): top.addWidget(w)
         top.addStretch()
         for w in (self.search, find, add, settings): top.addWidget(w)
 
         self.queue = QListWidget(); self.queue.currentItemChanged.connect(self._select)
-        drop_hint = QLabel("Drag tracks anywhere onto this window"); drop_hint.setAlignment(Qt.AlignCenter)
-        drop_hint.setStyleSheet("color: gray; padding: 8px;")
+        drop_hint = QLabel("Search above, or drag local tracks anywhere onto this window"); drop_hint.setAlignment(Qt.AlignCenter)
+        drop_hint.setStyleSheet("color: gray; padding: 8px;"); drop_hint.setWordWrap(True)
         left = QVBoxLayout(); left.addWidget(self.queue); left.addWidget(drop_hint)
         lw = QWidget(); lw.setLayout(left); lw.setMinimumWidth(300)
 
+        # review page
         self.name = QLabel("Select a track"); self.name.setStyleSheet("font-size:16px; font-weight:600;")
         self.grade = QLabel()
         head = QHBoxLayout(); head.addWidget(self.name, 1); head.addWidget(self.grade)
@@ -223,22 +325,28 @@ class MainWindow(QMainWindow):
         self.checks.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         cs = QScrollArea(); cs.setWidget(self.checks); cs.setWidgetResizable(True); cs.setMinimumHeight(150)
 
-        self.btn_save = QPushButton("Save to Library", objectName="primary"); self.btn_save.clicked.connect(lambda: self._promote(False))
-        self.btn_anyway = QPushButton("Save to Library anyway", objectName="warn"); self.btn_anyway.clicked.connect(lambda: self._promote(True))
-        self.btn_reject = QPushButton("Reject"); self.btn_reject.clicked.connect(self._reject)
+        self.btn_save = QPushButton("Download to Library", objectName="primary"); self.btn_save.clicked.connect(lambda: self._promote(False))
+        self.btn_anyway = QPushButton("Download anyway", objectName="warn"); self.btn_anyway.clicked.connect(lambda: self._promote(True))
+        self.btn_reject = QPushButton("Delete"); self.btn_reject.clicked.connect(self._reject)
+        self.btn_cancel = QPushButton("Cancel download"); self.btn_cancel.clicked.connect(self._cancel)
         self.btn_rerun = QPushButton("Re-check"); self.btn_rerun.clicked.connect(self._rerun)
         self.btn_open = QPushButton("Open staging folder"); self.btn_open.clicked.connect(self._open_folder)
+        self.btn_results = QPushButton("Search results"); self.btn_results.clicked.connect(lambda: self.pages.setCurrentIndex(0))
         actions = QHBoxLayout()
-        for b in (self.btn_save, self.btn_anyway, self.btn_reject): actions.addWidget(b)
+        for b in (self.btn_save, self.btn_anyway, self.btn_reject, self.btn_cancel): actions.addWidget(b)
         actions.addStretch()
-        for b in (self.btn_rerun, self.btn_open): actions.addWidget(b)
+        for b in (self.btn_rerun, self.btn_open, self.btn_results): actions.addWidget(b)
 
-        right = QVBoxLayout()
-        right.addLayout(head); right.addWidget(self.facts); right.addWidget(self.spectrum, 3)
-        right.addWidget(QLabel("<b>Checks</b>")); right.addWidget(cs, 2); right.addLayout(actions)
-        rw = QWidget(); rw.setLayout(right)
+        review = QVBoxLayout()
+        review.addLayout(head); review.addWidget(self.facts); review.addWidget(self.spectrum, 3)
+        review.addWidget(QLabel("<b>Checks</b>")); review.addWidget(cs, 2); review.addLayout(actions)
+        self.review_page = QWidget(); self.review_page.setLayout(review)
 
-        split = QSplitter(); split.addWidget(lw); split.addWidget(rw); split.setStretchFactor(1, 1)
+        self.results_page = ResultsPage(self._pick_candidate, lambda: self.pages.setCurrentIndex(1))
+        self.pages = QStackedWidget(); self.pages.addWidget(self.results_page); self.pages.addWidget(self.review_page)
+        self.pages.setCurrentIndex(1)
+
+        split = QSplitter(); split.addWidget(lw); split.addWidget(self.pages); split.setStretchFactor(1, 1)
         root = QVBoxLayout(); root.addLayout(top); root.addWidget(split, 1)
         cw = QWidget(); cw.setLayout(root); self.setCentralWidget(cw)
         self._show_job(None)
@@ -249,7 +357,7 @@ class MainWindow(QMainWindow):
         self.queue.blockSignals(True)
         self.queue.clear()
         for job in self.svc.jobs():
-            a = self.svc.db.analysis(job["id"]) if job["state"] not in (J.STAGING, J.ANALYZING) else None
+            a = self.svc.db.analysis(job["id"]) if job["state"] not in (J.STAGING, J.ANALYZING, J.QUEUED) else None
             badge = self._badge(job, a)
             item = QListWidgetItem(f"{job['original_name']}\n{badge}")
             item.setData(Qt.UserRole, job["id"])
@@ -262,35 +370,38 @@ class MainWindow(QMainWindow):
                 self.queue.setCurrentItem(item)
         self.queue.blockSignals(False)
         self._show_job(keep)
-        watching = self.svc.settings.incoming_dir
-        self.status.setText(f"   Local mode · {'watching ' + Path(watching).name if watching else 'folder watching off'}"
-                            f" · library: {Path(self.svc.settings.library_dir).name}")
 
     def _badge(self, job, a) -> str:
         st = job["state"]
+        if st == J.QUEUED:
+            pct = job.get("progress") or 0
+            return f"Downloading {pct:.0f}% · {job.get('message') or ''}".rstrip(" ·")
         if st in (J.STAGING, J.ANALYZING):
-            return self.steps.get(job["id"], "Copying…" if st == J.STAGING else "Checking…")
+            return self.steps.get(job["id"], "Copying…" if st == J.STAGING else "Waiting for a free slot…")
         if st == J.READY and a:
             return f"{a['overall_status']} · ready for review"
-        return {J.PROMOTED: "Saved to library", J.REJECTED: "Rejected", J.EXPIRED: "Expired (cleaned up)",
-                J.ERROR: "Error: " + (job.get("message") or "")}.get(st, st)
+        return {J.PROMOTED: "Downloaded to library", J.REJECTED: "Deleted", J.EXPIRED: "Expired (cleaned up)",
+                J.CANCELLED: "Cancelled", J.ERROR: "Error: " + (job.get("message") or "")}.get(st, st)
 
     def _select(self, cur, _prev):
         self.selected = cur.data(Qt.UserRole) if cur else None
+        if self.selected:
+            self.pages.setCurrentIndex(1)
         self._show_job(self.selected)
 
     def _show_job(self, job_id):
         job = self.svc.db.job(job_id) if job_id else None
         a = self.svc.db.analysis(job_id) if job else None
-        for b in (self.btn_save, self.btn_anyway, self.btn_reject, self.btn_rerun, self.btn_open):
+        for b in (self.btn_save, self.btn_anyway, self.btn_reject, self.btn_cancel, self.btn_rerun, self.btn_open):
             b.setVisible(bool(job)); b.setEnabled(False)
+        self.btn_results.setVisible(self.search_id is not None)
         if not job:
-            self.name.setText("Drop a track in to check it"); self.grade.setText("")
+            self.name.setText("Search Soulseek above, or drop a track in to check it"); self.grade.setText("")
             for v in self.fact_labels.values(): v.setText("–")
             self.checks.setText(""); self.spectrum.clear_view("Spectrogram appears here after the check.")
             return
         self.name.setText(job["original_name"])
-        busy = job["state"] in (J.STAGING, J.ANALYZING)
+        busy = job["state"] in (J.STAGING, J.ANALYZING, J.QUEUED)
         ready = job["state"] == J.READY and a
         status = a["overall_status"] if a else None
         self.grade.setText(f"<b style='color:{COLORS[status]}; font-size:18px'>{status}</b>" if a and not busy else "")
@@ -318,18 +429,87 @@ class MainWindow(QMainWindow):
                                          "Staged copy removed; spectrogram no longer stored.")
         else:
             for v in self.fact_labels.values(): v.setText("–")
-            self.checks.setText(f"<p>{self.steps.get(job_id, 'Working…') if busy else (job.get('message') or '')}</p>")
+            if job["state"] == J.QUEUED:
+                src = f"from {job['remote_user']}" if job.get("remote_user") else ""
+                self.checks.setText(f"<p>Downloading {src} into quarantine… {job.get('progress') or 0:.0f}%<br>"
+                                    f"{job.get('message') or ''}</p><p style='color:gray'>It is checked as soon as it "
+                                    f"arrives. Nothing reaches your library until you decide.</p>")
+            else:
+                self.checks.setText(f"<p>{self.steps.get(job_id, 'Working…') if busy else (job.get('message') or '')}</p>")
             self.spectrum.clear_view("Checking…" if busy else "No spectrogram.")
 
         self.btn_save.setVisible(bool(ready) and status == "PASS"); self.btn_save.setEnabled(bool(ready))
         self.btn_anyway.setVisible(bool(ready) and status == "WARN"); self.btn_anyway.setEnabled(bool(ready))
-        self.btn_reject.setEnabled(job["state"] in (J.READY, J.ERROR))
+        self.btn_cancel.setVisible(job["state"] == J.QUEUED); self.btn_cancel.setEnabled(job["state"] == J.QUEUED)
+        self.btn_reject.setVisible(job["state"] != J.QUEUED); self.btn_reject.setEnabled(job["state"] in (J.READY, J.ERROR))
         self.btn_rerun.setEnabled(job["state"] in (J.READY, J.ERROR) and bool(job["staged_path"]))
         self.btn_open.setEnabled(bool(job["staged_path"]) and Path(job["staged_path"]).parent.exists())
         if job["state"] == J.PROMOTED and job.get("final_path"):
             self.btn_open.setText("Show in library"); self.btn_open.setEnabled(Path(job["final_path"]).exists())
         else:
             self.btn_open.setText("Open staging folder")
+
+    # Soulseek search ------------------------------------------------------------------
+    def _search(self):
+        q = self.search.text().strip()
+        if not q:
+            self.search.setFocus()
+            return
+        self.pages.setCurrentIndex(0)
+        self.results_page.show_results(SearchResult(query=q, search_id="", finished=False), searching=True)
+        self.search_running = True
+
+        def work():
+            res = self.svc.search(q)
+            self.search_id = res.search_id
+            started = time.monotonic()
+            while True:
+                time.sleep(1.0)
+                if self.search_id != res.search_id:               # a newer search replaced this one
+                    return
+                latest = self.svc.search_results(res.search_id)
+                latest.query = q
+                self.signals.results.emit(latest)
+                if latest.finished or time.monotonic() - started > SEARCH_WAIT_S:
+                    self.search_running = False
+                    self.signals.results.emit(latest)
+                    return
+        self.io.start(Task(work, self.signals))
+
+    def _on_results(self, res: SearchResult):
+        if res.search_id == self.search_id:
+            self.results_page.show_results(res, searching=self.search_running)
+            self.btn_results.setVisible(True)
+
+    def _pick_candidate(self, cand: Candidate):
+        def work():
+            job = self.svc.request_download(cand)
+            self.signals.done.emit(job["id"])
+        self.io.start(Task(work, self.signals))
+        self.statusBar().showMessage(f"Requested “{cand.display_name}” from {cand.user}. It goes to quarantine first.", 6000)
+
+    def _poll_downloads(self):
+        if self.svc.adapter is None or self._polling:
+            return
+        self._polling = True
+
+        def work():
+            try:
+                jobs = self.svc.poll_downloads()
+            finally:
+                self._polling = False
+            self.signals.done.emit("")
+            for job in jobs:
+                self.signals.staged.emit(job["id"])
+        self.io.start(Task(work, self.signals))
+
+    def _poll_status(self):
+        self.io.start(Task(lambda: self.signals.status.emit(self.svc.connector_status()), self.signals))
+
+    def _on_status(self, st):
+        colour = "#2e7d4f" if st.logged_in else ("#c98a12" if st.available else "gray")
+        self.status.setText(f"   <span style='color:{colour}'>●</span> {st.message}")
+        self.status.setToolTip(st.message)
 
     # actions ---------------------------------------------------------------------
     def _enqueue_paths(self, paths: list[Path]):
@@ -344,6 +524,9 @@ class MainWindow(QMainWindow):
         self.signals.done.emit(job["id"])
         self._analyze(job["id"])
 
+    def _start_analysis(self, job_id: str):
+        self.pool.start(Task(lambda: self._analyze(job_id), self.signals))
+
     def _analyze(self, job_id: str):
         try:
             self.svc.analyze(job_id, lambda step: self.signals.progress.emit(job_id, step))
@@ -352,12 +535,19 @@ class MainWindow(QMainWindow):
             self.signals.done.emit(job_id)
 
     def _scan_incoming(self):
+        if not self.svc.settings.incoming_dir or self._scanning:
+            return
+        self._scanning = True
+
         def work():
-            for job in self.svc.scan_incoming():
+            try:
+                jobs = self.svc.scan_incoming()
+            finally:
+                self._scanning = False
+            for job in jobs:
                 self.signals.done.emit(job["id"])
-                self._analyze(job["id"])
-        if self.svc.settings.incoming_dir and self.pool.activeThreadCount() == 0:
-            self.pool.start(Task(work, self.signals))
+                self.signals.staged.emit(job["id"])
+        self.io.start(Task(work, self.signals))
 
     def _on_progress(self, job_id, step):
         self.steps[job_id] = step + "…"
@@ -377,7 +567,7 @@ class MainWindow(QMainWindow):
             return
         try:
             target = self.svc.promote(self.selected, override_warning=override)
-            self.statusBar().showMessage(f"Saved to {target}", 8000)
+            self.statusBar().showMessage(f"Downloaded to {target}", 8000)
         except ActionBlocked as e:
             QMessageBox.warning(self, APP_NAME, str(e))
         self.refresh()
@@ -387,15 +577,24 @@ class MainWindow(QMainWindow):
             return
         try:
             self.svc.reject(self.selected)
-            self.statusBar().showMessage("Rejected. Staged copy deleted; your original file wasn't touched.", 8000)
+            self.statusBar().showMessage("Deleted from quarantine. Nothing was saved to your computer.", 8000)
         except ActionBlocked as e:
             QMessageBox.warning(self, APP_NAME, str(e))
         self.refresh()
 
+    def _cancel(self):
+        if not self.selected:
+            return
+        jid = self.selected
+
+        def work():
+            self.svc.cancel(jid)
+            self.signals.done.emit(jid)
+        self.io.start(Task(work, self.signals))
+
     def _rerun(self):
         if self.selected:
-            jid = self.selected
-            self.pool.start(Task(lambda: self._analyze(jid), self.signals))
+            self._start_analysis(self.selected)
 
     def _open_folder(self):
         job = self.svc.db.job(self.selected) if self.selected else None
@@ -405,18 +604,12 @@ class MainWindow(QMainWindow):
             else Path(job["staged_path"]).parent
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
-    def _find(self):
-        q = self.search.text().strip()
-        if not q:
-            self.search.setFocus()
-            return
-        for _name, url in STORES:
-            QDesktopServices.openUrl(QUrl(url.format(quote_plus(q))))
-
     def _settings(self):
         if SettingsDialog(self.svc, self).exec():
+            self.pool.setMaxThreadCount(max(1, self.svc.settings.max_concurrent_analyses))
             self.refresh()
             self._check_ffmpeg()
+            self._poll_status()
 
     def _check_ffmpeg(self):
         try:
