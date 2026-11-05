@@ -30,9 +30,9 @@ from .widgets import AvatarMenu, Signals, Task, TopBar, vbox
 SEARCH_WAIT_S = 15            # hard cap on collecting results (matches the engine's own search timeout)
 SEARCH_QUIET_S = 3.5          # once results have started, stop when nothing new arrives for this long
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
-FIREWALL_NOTE = (f"To download from other users, {APP_NAME} accepts incoming connections.\n\n"
-                 "If Windows or macOS asks whether to allow this, choose Allow. Nothing is shared from your "
-                 "computer unless you turn that on yourself in Settings.")
+FIREWALL_ASK = (f"To download from other users, {APP_NAME} needs to accept incoming connections.\n\n"
+                f"Allow it now? Windows will ask you to confirm once. Nothing is shared from your computer "
+                f"unless you turn that on yourself in Settings.")
 
 # Online store search. Not on a button right now; kept for a later "find it to buy" feature.
 STORES = [
@@ -244,9 +244,7 @@ class MainWindow(QMainWindow):
     def _start_backend(self):
         if not self.svc.managed_mode:
             self._poll_status(); return
-        if not self.svc.settings.firewall_notice_shown:
-            QMessageBox.information(self, APP_NAME, FIREWALL_NOTE)
-            s = self.svc.settings; s.firewall_notice_shown = True; self.svc.save_settings(s)
+        self._ensure_firewall()
         self._trouble_shown = False
         self.svc.backend_state = "starting"
         self._poll_status()
@@ -255,6 +253,32 @@ class MainWindow(QMainWindow):
             self.svc.start_backend()
             self.signals.status.emit(self.svc.connector_status())
         self.io.start(Task(work, self.signals))
+
+    def _ensure_firewall(self):
+        """Ask Windows whether the engine is already allowed; only if it isn't, offer to allow it (once per path)."""
+        from ..core import firewall
+        from ..core.slskd_manager import engine_exe
+        if not firewall.is_windows() or not self.svc.manager.binary_dir:
+            return
+        exe = engine_exe(self.svc.manager.binary_dir)
+        if exe is None:
+            return
+        s = self.svc.settings
+        if s.firewall_done_for == str(exe):
+            return                                          # already handled for this exact build
+        exists = firewall.rule_exists(exe)
+        if exists:                                          # the user allowed it before (our rule or Windows' own)
+            s.firewall_done_for = str(exe); self.svc.save_settings(s); return
+        if exists is None:                                  # couldn't ask; don't nag, let Windows do its thing once
+            s.firewall_done_for = str(exe); self.svc.save_settings(s); return
+        box = QMessageBox(self); box.setWindowTitle(APP_NAME); box.setIcon(QMessageBox.Question)
+        box.setText(FIREWALL_ASK)
+        allow = box.addButton("Allow", QMessageBox.AcceptRole); box.addButton("Not now", QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() is allow:
+            if not firewall.add_rule(exe):
+                self.statusBar().showMessage("Couldn't add the firewall rule. If Windows asks later, choose Allow.", 8000)
+        s.firewall_done_for = str(exe); self.svc.save_settings(s)   # either way, don't ask again for this build
 
     def _connection_trouble(self):
         if self._trouble_shown:

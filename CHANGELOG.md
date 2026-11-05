@@ -16,6 +16,14 @@ one line changes and this file gets a note.
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 - Library tab as a browsable history (today it opens the library folder).
 
+## 0.3.4 — 2026-11-05 (firewall)
+
+- Before the engine starts, the app asks Windows whether this engine is already allowed through the
+  firewall. If it is (from a previous click or a previous build at the same path), nothing is shown.
+  If it isn't, one question — "Allow it now?" — adds a firewall rule named after the app with a
+  single Windows confirmation, so Windows' own prompt never appears. Remembered per build path; the
+  old "firewall note" is gone.
+
 ## 0.3.3 — 2026-11-05 (resources, Error category)
 
 ### Fixed: the app bogged down after 5–6 tracks

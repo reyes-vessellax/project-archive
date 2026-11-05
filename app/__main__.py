@@ -30,6 +30,11 @@ def self_test() -> int:
         if bundled_slskd_dir() is None:
             say("engine: not bundled (Soulseek search off)")
         else:
+            # Firewall lookup must work on Windows and must never raise.
+            from app.core import firewall
+            from app.core.slskd_manager import engine_exe
+            exe = engine_exe(bundled_slskd_dir())
+            say(f"firewall rule for engine: {firewall.rule_exists(exe)!r} (None = couldn't ask)")
             with tempfile.TemporaryDirectory() as tmp:
                 m = SlskdManager(Settings(), creds=CredentialStore(Path(tmp) / "s.json", use_keyring=False),
                                  instance_dir=Path(tmp) / "client")

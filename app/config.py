@@ -55,7 +55,8 @@ class Settings:
     max_concurrent_analyses: int = 5          # analysis slots; further tracks wait in the queue
     setup_done: bool = False                  # first-run setup (library folder + sharing) completed
     theme: str = "light"                      # light | dark
-    firewall_notice_shown: bool = False       # one-time explanation before the first engine start
+    firewall_notice_shown: bool = False       # legacy flag (0.2/0.3.0-0.3.3); kept so old settings still load
+    firewall_done_for: str = ""               # engine path we last confirmed a firewall rule for (or the user declined)
     share_folder: str = ""                    # opt-in: a folder to share back on Soulseek (empty = off)
     # Advanced only. By default the app runs its own bundled copy of slskd (the Soulseek engine) with a
     # generated API key and a generated Soulseek login; the user never sees any of it.
