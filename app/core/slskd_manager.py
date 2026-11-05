@@ -74,6 +74,7 @@ class SlskdManager:
         self.instance_dir = instance_dir or data_dir() / "client"
         self.binary_dir: Path | None = bundled_slskd_dir() if binary_dir is _AUTO else binary_dir
         self.proc: subprocess.Popen | None = None
+        self._log = None
         self.port: int | None = None
         self.last_error = ""
 
@@ -153,7 +154,7 @@ class SlskdManager:
         user, password = self.soulseek_login()
         env = {**os.environ, "SLSKD_SLSK_USERNAME": user, "SLSKD_SLSK_PASSWORD": password,
                "NO_COLOR": "1", "DOTNET_CLI_TELEMETRY_OPTOUT": "1"}
-        log = open(self.instance_dir / "engine.log", "ab")
+        self._log = log = open(self.instance_dir / "engine.log", "ab")
         self.proc = subprocess.Popen(
             [str(exe), "--app-dir", str(self.instance_dir), "--config", str(cfg), "--headless", "--no-logo",
              "--no-config-watch"],
@@ -191,6 +192,9 @@ class SlskdManager:
                 self.proc.kill()
                 self.proc.wait(timeout=5)
         self.proc = None
+        if self._log:
+            self._log.close()
+            self._log = None
 
     def restart(self) -> None:
         self.stop()

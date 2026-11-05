@@ -19,6 +19,7 @@ review before Project Archive ships to anyone outside the team. Keep this curren
 | D10 | Up to 5 tracks are checked at once (Settings); the rest wait in the queue. | 9.1 "max concurrent analyses (default 1)" |
 | D11 | Decision buttons are **Download to Library / Download anyway / Delete**. The search-result button is **Check this file**, so it is never confused with the library download. | 3.1 wording box |
 | D12 | Store search (Beatport, Bandcamp, Juno, Traxsource, Discogs) stays in the code, unwired, for a later "find it to buy" feature. | — |
+| D15 | The firewall prompt: the engine ships as `Project Archive Engine.exe` (path shows our name), but its embedded description still says slskd because a .NET single-file bundle can't have its resources edited. The real fix is the installer adding a Windows Firewall rule named "Project Archive" at install time, so no prompt ever appears. Scheduled with the installer + code-signing work. | 9.1 |
 | D14 | First-run setup (library folder + sharing) is the in-app half of sign-up; the account/sign-up pages come in 0.3. | — |
 | D13 | Paid service: the app will have its own account system and license check on the website. Audio analysis stays fully local; the only thing the app will phone home for is the license. Not built yet. | 1.3 "no account system" (MVP only) |
 
