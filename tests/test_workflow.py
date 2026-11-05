@@ -14,7 +14,7 @@ from .conftest import needs_ffmpeg
 
 
 def library_files(svc):
-    lib = Path(svc.settings.library_dir)
+    lib = svc.settings.downloads_dir()
     return sorted(p.name for p in lib.iterdir()) if lib.exists() else []
 
 
@@ -166,3 +166,19 @@ def test_unique_path(tmp_path):
     (tmp_path / "a.mp3").write_bytes(b"1")
     (tmp_path / "a (2).mp3").write_bytes(b"1")
     assert unique_path(tmp_path, "a.mp3").name == "a (3).mp3"
+
+
+@needs_ffmpeg
+def test_downloads_land_in_app_subfolder(service, fixtures):
+    from app.config import APP_NAME
+    job = service.stage(fixtures["mp3_320"]); service.analyze(job["id"])
+    assert not service.settings.downloads_dir().exists()            # not created until the first download
+    target = service.promote(job["id"])
+    assert target.parent == Path(service.settings.library_dir) / APP_NAME
+    assert sorted(p.name for p in Path(service.settings.library_dir).iterdir()) == [APP_NAME]   # library itself untouched
+
+
+def test_library_named_after_app_is_not_nested(service, tmp_path):
+    from app.config import APP_NAME
+    s = service.settings; s.library_dir = str(tmp_path / APP_NAME); service.save_settings(s)
+    assert service.settings.downloads_dir() == tmp_path / APP_NAME

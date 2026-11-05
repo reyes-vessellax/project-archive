@@ -49,7 +49,7 @@ def search_all(svc, query: str):
 
 
 def library_files(svc):
-    lib = Path(svc.settings.library_dir)
+    lib = svc.settings.downloads_dir()
     return sorted(p.name for p in lib.iterdir()) if lib.exists() else []
 
 

@@ -28,8 +28,8 @@ Local files can also be dragged in or picked up from a watched folder; they join
    Selecting a queue item switches back to this page; a **Search results** button goes back to the table.
 4. **Settings** dialog.
 5. **First-run setup** (one modal on first launch): "Where is your DJ music library?" folder picker (default
-   `~/Music`) + a checked box "Share this folder with other Soulseek users…". That folder is both where
-   approved downloads go and what is shared. Sharing is needed: peers serve sharers first.
+   `~/Music`) + a checked box "Share this folder with other Soulseek users…". That folder is what is shared; approved
+   downloads go into an `<APP_NAME>` subfolder inside it, created on the first download. Sharing is needed: peers serve sharers first.
 
 ## Connection status (top bar)
 

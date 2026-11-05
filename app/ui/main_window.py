@@ -163,8 +163,9 @@ class MainWindow(QMainWindow):
                 self.selected = next((j["id"] for j in self.svc.jobs() if j["state"] == J.READY), None)
             self._show_review()
         elif key == "library":
-            lib = Path(self.svc.settings.library_dir)
-            lib.mkdir(parents=True, exist_ok=True)
+            lib = self.svc.settings.downloads_dir()
+            if not lib.exists():                                  # nothing downloaded yet: show the library itself
+                lib = Path(self.svc.settings.library_dir)
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(lib)))
             self.topbar.set_active("queue" if self.pages.currentWidget() is self.home else "ready")
 

@@ -135,7 +135,8 @@ class LibraryPage(QWidget):
         lay.addWidget(label(APP_NAME, "h2"))
         lay.addWidget(_steps(1))
         lay.addWidget(label("Where does your music live?", "big"))
-        lay.addWidget(label("Approved downloads go here. Pick the folder your DJ software already uses.", "muted", wrap=True))
+        lay.addWidget(label(f"Pick the folder your DJ software already uses. Approved downloads go into a {APP_NAME} "
+                            f"folder inside it, so they stay in one place.", "muted", wrap=True))
         t = label("Library folder"); t.setStyleSheet("font-weight: 700;"); lay.addWidget(t)
         row = hbox(spacing=12)
         self.folder = QLineEdit(s.library_dir if s.setup_done else str(Path.home() / "Music")); self.folder.setObjectName("monoinput")

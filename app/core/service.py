@@ -280,7 +280,7 @@ class ArchiveService:
                 self.db.update_job(job_id, state=J.ERROR, message="Staged file changed or disappeared.")
                 raise ActionBlocked("The staged file changed after it was checked. Re-run the analysis.")
 
-            library = Path(self.settings.library_dir)
+            library = self.settings.downloads_dir()              # <library>/DEADWAX, made on first download
             library.mkdir(parents=True, exist_ok=True)
             target = unique_path(library, safe_filename(job["original_name"]))
             self._transition(job, J.PROMOTING)

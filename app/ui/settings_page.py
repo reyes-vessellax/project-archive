@@ -132,8 +132,11 @@ class SettingsPage(QWidget):
         w, lay = self._section("Library & sharing")
         self.library = QLineEdit(); self.library.setObjectName("monoinput")
         row = hbox(spacing=12); row.addWidget(self.library, 1); row.addWidget(button("Choose…", "ghost", lambda: self._choose(self.library)))
-        box = vbox(spacing=6); t = label("Download to (your library folder)"); t.setStyleSheet("font-weight: 700;")
-        box.addWidget(t); box.addLayout(row); lay.addLayout(box)
+        box = vbox(spacing=6); t = label("Your library folder"); t.setStyleSheet("font-weight: 700;")
+        box.addWidget(t); box.addLayout(row)
+        from ..config import APP_NAME
+        box.addWidget(label(f"Approved downloads go into a {APP_NAME} folder inside it.", "faint"))
+        lay.addLayout(box)
         self.share = QCheckBox("Share my library folder with other users")
         lay.addWidget(self.share)
         lay.addWidget(label("People who share get served first; accounts that share nothing wait at the back of every queue.", "faint", wrap=True))

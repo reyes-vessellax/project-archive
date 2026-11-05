@@ -16,6 +16,14 @@ one line changes and this file gets a note.
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 - Library tab as a browsable history (today it opens the library folder).
 
+## 0.3.5 — 2026-11-05 (downloads folder)
+
+- Approved downloads go into a `DEADWAX` folder inside the library folder the user chose, created on
+  the first download. People can point the app at their whole library (which is also what gets
+  shared), and everything the app brings in stays in one place. If the chosen library is already a
+  folder named after the app, nothing is nested. The Library tab opens that folder once it exists.
+- Default library folder is now plain `Music` (was `Music\Project Archive Library`).
+
 ## 0.3.4 — 2026-11-05 (firewall)
 
 - Before the engine starts, the app asks Windows whether this engine is already allowed through the

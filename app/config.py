@@ -37,7 +37,10 @@ def data_dir() -> Path:
 
 
 def default_library_dir() -> Path:
-    return Path.home() / "Music" / f"{APP_NAME} Library"
+    return Path.home() / "Music"
+
+
+DOWNLOADS_SUBFOLDER = APP_NAME        # approved downloads go to <library>/<APP_NAME>/, created on first download
 
 
 @dataclass
@@ -68,6 +71,12 @@ class Settings:
 
     def staging_root(self) -> Path:
         return Path(self.staging_dir) if self.staging_dir else data_dir() / "staging"
+
+    def downloads_dir(self) -> Path:
+        """Where approved tracks land: one tidy folder inside the user's library, named after the app.
+        If the user pointed the library at that folder itself, don't nest another one."""
+        lib = Path(self.library_dir)
+        return lib if lib.name.lower() == DOWNLOADS_SUBFOLDER.lower() else lib / DOWNLOADS_SUBFOLDER
 
     @property
     def own_slskd_configured(self) -> bool:
