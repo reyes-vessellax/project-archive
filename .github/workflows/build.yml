@@ -83,7 +83,7 @@ jobs:
           $p = Start-Process -FilePath "dist/$name/$name.exe" -ArgumentList "--self-test" -Wait -PassThru
           if (Test-Path "dist/$name/self-test.log") { Get-Content "dist/$name/self-test.log"; Remove-Item "dist/$name/self-test.log" }
           if ($p.ExitCode -ne 0) { throw "self-test failed with exit code $($p.ExitCode)" }
-          Rename-Item "dist/$name" "dist/App"
+          Rename-Item -Path "dist/$name" -NewName "App"
       - uses: actions/upload-artifact@v4
         with:
           name: DEADWAX-Windows
