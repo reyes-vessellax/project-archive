@@ -110,9 +110,12 @@ def set_active(widget, active: bool) -> None:
 
 
 class SmoothWheel(QObject):
-    """Animated wheel scrolling for any QAbstractScrollArea: per-pixel, eased, and wheel ticks that arrive
-    mid-animation extend the glide instead of jumping. Trackpads already send fine-grained deltas and are
-    left alone."""
+    """Browser-feel wheel scrolling for any QAbstractScrollArea: per-pixel, a fixed distance per notch
+    (like Chrome's ~100 px), an ease-out glide, and momentum — notches that arrive mid-glide add to the
+    distance and lengthen the glide instead of restarting it. Trackpads send pixel deltas and are left
+    to Qt, which already handles them natively."""
+    PX_PER_NOTCH = 110
+    MIN_MS, MAX_MS = 260, 700
 
     def __init__(self, area):
         super().__init__(area)
@@ -120,7 +123,6 @@ class SmoothWheel(QObject):
         self.bar = area.verticalScrollBar()
         self.anim = QPropertyAnimation(self.bar, b"value", self)
         self.anim.setEasingCurve(QEasingCurve.OutCubic)
-        self.anim.setDuration(220)
         self.target = None
         try:
             area.setVerticalScrollMode(area.ScrollPerPixel)      # item views default to jumping a row at a time
@@ -133,10 +135,17 @@ class SmoothWheel(QObject):
         if ev.type() == QEvent.Wheel and ev.angleDelta().y() != 0 and not ev.pixelDelta().y():
             if ev.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier):
                 return False
-            step = (ev.angleDelta().y() / 120.0) * max(self.bar.singleStep(), 1) * 4   # ~4 lines per notch
-            base = self.target if (self.anim.state() == QPropertyAnimation.Running and self.target is not None) else self.bar.value()
-            self.target = int(max(self.bar.minimum(), min(self.bar.maximum(), base - step)))
-            self.anim.stop(); self.anim.setStartValue(self.bar.value()); self.anim.setEndValue(self.target); self.anim.start()
+            notches = ev.angleDelta().y() / 120.0
+            running = self.anim.state() == QPropertyAnimation.Running and self.target is not None
+            base = self.target if running else self.bar.value()
+            self.target = int(max(self.bar.minimum(), min(self.bar.maximum(), base - notches * self.PX_PER_NOTCH)))
+            distance = abs(self.target - self.bar.value())
+            if distance == 0:
+                ev.accept(); return True
+            ms = int(max(self.MIN_MS, min(self.MAX_MS, self.MIN_MS + distance * 0.9)))
+            self.anim.stop()
+            self.anim.setDuration(ms)
+            self.anim.setStartValue(self.bar.value()); self.anim.setEndValue(self.target); self.anim.start()
             ev.accept()
             return True
         return False

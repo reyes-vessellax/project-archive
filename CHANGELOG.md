@@ -16,6 +16,13 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.5.2 — unreleased (scrolling with momentum)
+
+- Wheel scrolling now feels like a browser's: a fixed ~110 px per notch, an ease-out glide, and
+  **momentum** — notches that arrive mid-glide add distance and lengthen the glide rather than
+  restarting it. Stress-tested: 25 notches in a quarter second on a 20,000-row list glides forward
+  monotonically and carries the distance. Trackpads keep their native behaviour.
+
 ## 0.5.1 — unreleased
 
 - Search buttons always return to "Search" when a search ends (the error path left them stuck).
