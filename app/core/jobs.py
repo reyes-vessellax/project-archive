@@ -1,0 +1,28 @@
+"""Job state machine (spec section 3.2). Only PROMOTED files may exist in the library."""
+from __future__ import annotations
+
+DISCOVERED, QUEUED, STAGING, ANALYZING = "DISCOVERED", "QUEUED", "STAGING", "ANALYZING"
+READY, PROMOTING, PROMOTED = "READY_FOR_REVIEW", "PROMOTING", "PROMOTED"
+REJECTED, ERROR, CANCELLED, EXPIRED = "REJECTED", "ERROR", "CANCELLED", "EXPIRED"
+
+FINAL = {PROMOTED, REJECTED, CANCELLED, EXPIRED}
+NON_FINAL = {DISCOVERED, QUEUED, STAGING, ANALYZING, READY, PROMOTING, ERROR}
+
+ALLOWED = {
+    DISCOVERED: {QUEUED, CANCELLED, EXPIRED},
+    QUEUED: {STAGING, CANCELLED, EXPIRED, ERROR},
+    STAGING: {ANALYZING, ERROR, CANCELLED, EXPIRED},
+    ANALYZING: {READY, ERROR, CANCELLED, EXPIRED},
+    READY: {PROMOTING, REJECTED, ANALYZING, EXPIRED},
+    PROMOTING: {PROMOTED, READY, ERROR},
+    ERROR: {ANALYZING, REJECTED, EXPIRED},
+}
+
+
+class BadTransition(RuntimeError):
+    pass
+
+
+def check(current: str, new: str) -> None:
+    if new not in ALLOWED.get(current, set()):
+        raise BadTransition(f"Can't go from {current} to {new}")

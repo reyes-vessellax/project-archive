@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+build/
+dist/
+*.spec.bak
+vendor/
+data/
+*.db
+.DS_Store
+Thumbs.db
+# never commit audio
+*.mp3
+*.wav
+*.flac
+*.aiff
+*.aif
+*.spec

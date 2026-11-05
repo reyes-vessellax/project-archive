@@ -1,0 +1,73 @@
+name: Test and build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-dl
+          $bin = (Get-ChildItem ffmpeg-dl -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
+          echo $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -v
+
+  windows-app:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Fetch FFmpeg to bundle
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-dl
+          $bin = (Get-ChildItem ffmpeg-dl -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
+          New-Item -ItemType Directory -Force vendor/ffmpeg | Out-Null
+          Copy-Item "$bin/ffmpeg.exe","$bin/ffprobe.exe" vendor/ffmpeg/
+          $lic = Get-ChildItem ffmpeg-dl -Recurse -Filter LICENSE.txt | Select-Object -First 1
+          if ($lic) { Copy-Item $lic.FullName vendor/ffmpeg/FFMPEG-LICENSE.txt }
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          python packaging/build.py
+      - name: Smoke test the built app
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist/Project Archive/Project Archive.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "self-test failed with exit code $($p.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ProjectArchive-Windows
+          path: dist/Project Archive/
+          retention-days: 30
