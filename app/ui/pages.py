@@ -481,16 +481,18 @@ class ReviewPage(QWidget):
         for j in shown:
             d = row_data(j, analyses.get(j["id"]), steps)
             w = QWidget(); w.setObjectName("row"); w.setCursor(Qt.PointingHandCursor); w.setProperty("tag", d["tag"])
-            hl = hbox(w, (10, 9, 6, 9), 12)
+            hl = hbox(w, (4, 9, 10, 9), 10)
+            if d["removable"]:
+                x = button("×", "x", lambda _=False, jid=j["id"]: self.remove_job.emit(jid)); x.setToolTip("Remove from the list")
+            else:
+                x = QWidget(); x.setAttribute(Qt.WA_TransparentForMouseEvents)
+            x.setFixedWidth(22); hl.addWidget(x)
             t = label(d["tag"].upper(), "tag", d["tag"]); t.setFixedWidth(56)
             n = label(d["title"]); n.setStyleSheet("font-weight: 600;"); n.setToolTip(d["title"])
             n.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)      # long titles clip instead of pushing × off the rail
             hl.addWidget(t); hl.addWidget(n, 1)
-            if d["removable"]:
-                x = button("×", "x", lambda _=False, jid=j["id"]: self.remove_job.emit(jid)); x.setToolTip("Remove from the list")
-                hl.addWidget(x)
-            for x in (t, n):
-                x.setAttribute(Qt.WA_TransparentForMouseEvents)
+            for lbl in (t, n):
+                lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
             w.mouseReleaseEvent = lambda e, jid=j["id"]: self.select.emit(jid)
             w.setProperty("selected", "true" if j["id"] == self.job_id else "false")
             self.rail.insertWidget(self.rail.count() - 1, w)

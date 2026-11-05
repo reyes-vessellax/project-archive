@@ -216,8 +216,15 @@ class QueueRow(QWidget):
         self.setProperty("tag", tag)
         self.setCursor(Qt.PointingHandCursor)
         self.setMinimumHeight(60)
-        lay = hbox(self, (8, 10, 8, 10), 16)
-        self.tag = label(tag.upper(), "tag", tag); self.tag.setFixedWidth(64)
+        lay = hbox(self, (4, 10, 12, 10), 12)
+        # × first, on the left, where the hand already is; a blank spacer keeps rows aligned when it's hidden
+        self.x = button("×", "x", lambda: self.removed.emit(self.job_id))
+        self.x.setToolTip("Remove from the list" if tag in ("Done", "Gone", "Error") else "Delete this track from quarantine")
+        self.x.setFixedWidth(22)
+        self.x.setVisible(removable)
+        self.x_space = QWidget(); self.x_space.setFixedWidth(22); self.x_space.setVisible(not removable)
+        lay.addWidget(self.x); lay.addWidget(self.x_space)
+        self.tag = label(tag.upper(), "tag", tag); self.tag.setFixedWidth(60)
         lay.addWidget(self.tag)
         names = vbox(spacing=2)
         self.title = label(title); self.title.setStyleSheet("font-weight: 600; font-size: 15px;")
@@ -231,11 +238,7 @@ class QueueRow(QWidget):
         lay.addWidget(self.bar)
         self.meta = label(meta, "mono"); self.meta.setFixedWidth(120); self.meta.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lay.addWidget(self.meta)
-        self.x = button("×", "x", lambda: self.removed.emit(self.job_id))
-        self.x.setToolTip("Remove from the list" if tag in ("Done", "Gone", "Error") else "Delete this track from quarantine")
-        self.x.setVisible(removable)
-        lay.addWidget(self.x)
-        for w in (self.tag, self.title, self.artist, self.meta, self.bar):
+        for w in (self.tag, self.title, self.artist, self.meta, self.bar, self.x_space):
             w.setAttribute(Qt.WA_TransparentForMouseEvents)
 
     def mousePressEvent(self, e):

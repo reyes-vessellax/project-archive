@@ -15,6 +15,28 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.4.1 — unreleased (one engine, tidy folder, × on the left)
+
+### Fixed: searches coming back with 0 sources
+Every build signs into the same Soulseek account (the one the app created for the user). When an
+engine from an earlier run was still alive — the app was ended from Task Manager, crashed, or an
+older build's engine never exited — the two sign-ins kicked each other off the server in turns and
+searches returned nothing while the other side held the session. Now:
+- before the engine starts, the app ends any engine it started before (pid file) and any process
+  running under one of our engine names;
+- the engine is attached to a Windows Job Object, so it ends the moment the app process ends, however
+  it ends (Task Manager included);
+- only one copy of the app runs at a time ("DEADWAX is already running").
+
+### Changed
+- × for clearing a queue entry is on the LEFT of each row (queue and the Ready rail), where the hand
+  already is. Rows stay aligned when there's nothing to clear.
+- The app folder is tidier: `_internal/vendor/ffmpeg/` and `_internal/vendor/engine/` hold what we
+  bundle; unused Qt modules, translations, the engine's web UI and packaging leftovers are stripped
+  (about 60 MB smaller). A README.txt at the top explains the folders.
+- Settings → Advanced has **Open logs folder** (engine.log, app.log) for support.
+- Uncaught errors are written to `app.log` in the data folder.
+
 ## 0.4.0 — unreleased (tour, library, playback)
 
 - Build artifacts carry the version: `DEADWAX-0.4.0-Windows`.

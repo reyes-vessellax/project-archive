@@ -20,6 +20,7 @@ from pathlib import Path
 
 from ..config import APP_NAME, PREVIOUS_NAMES, Settings, data_dir
 from ..media.tools import creation_flags
+from . import procs
 from .credentials import CredentialStore, new_api_key, new_password, new_soulseek_username
 
 KEY_API = "slskd_api_key"
@@ -38,8 +39,8 @@ def bundled_slskd_dir() -> Path | None:
     """Where the packaged client lives: next to the frozen app, or vendor/slskd when run from source."""
     dirs = []
     if getattr(sys, "frozen", False):
-        dirs.append(Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "slskd")
-        dirs.append(Path(sys.executable).parent / "slskd")
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        dirs += [base / "vendor" / "engine", base / "slskd", Path(sys.executable).parent / "slskd"]
     dirs.append(Path(__file__).resolve().parents[2] / "vendor" / "slskd")
     override = os.environ.get("PROJECT_ARCHIVE_SLSKD_DIR")
     if override:
@@ -154,6 +155,7 @@ class SlskdManager:
         user, password = self.soulseek_login()
         env = {**os.environ, "SLSKD_SLSK_USERNAME": user, "SLSKD_SLSK_PASSWORD": password,
                "NO_COLOR": "1", "DOTNET_CLI_TELEMETRY_OPTOUT": "1"}
+        self._end_strays()
         self._log = log = open(self.instance_dir / "engine.log", "ab")
         self.proc = subprocess.Popen(
             [str(exe), "--app-dir", str(self.instance_dir), "--config", str(cfg), "--headless", "--no-logo",
@@ -161,8 +163,27 @@ class SlskdManager:
             cwd=str(self.binary_dir), env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
             shell=False, creationflags=creation_flags(),
         )
+        self._job = procs.JobObject()                        # Windows: engine dies with us, even on a hard kill
+        self._job.assign(self.proc.pid)
+        try:
+            (self.instance_dir / "engine.pid").write_text(str(self.proc.pid))
+        except OSError:
+            pass
         if wait:
             self.wait_ready()
+
+    def _end_strays(self) -> None:
+        """An engine from an earlier run would sign into the same account and we'd kick each other off."""
+        pidfile = self.instance_dir / "engine.pid"
+        try:
+            old = int(pidfile.read_text().strip())
+        except (OSError, ValueError):
+            old = None
+        if old and old != os.getpid():
+            procs.kill_pid(old)
+        self.strays_ended = procs.kill_by_name(ENGINE_NAMES)
+        if old or self.strays_ended:
+            time.sleep(1.0)                                  # let the server see the old session go
 
     def wait_ready(self, timeout: float = START_TIMEOUT_S) -> None:
         from ..adapters.slskd_adapter import SlskdAdapter
@@ -192,6 +213,10 @@ class SlskdManager:
                 self.proc.kill()
                 self.proc.wait(timeout=5)
         self.proc = None
+        try:
+            (self.instance_dir / "engine.pid").unlink(missing_ok=True)
+        except OSError:
+            pass
         if self._log:
             self._log.close()
             self._log = None

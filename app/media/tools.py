@@ -17,8 +17,8 @@ class ToolMissing(RuntimeError):
 def _bundled_dirs() -> list[Path]:
     dirs = []
     if getattr(sys, "frozen", False):                       # PyInstaller build
-        dirs.append(Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "ffmpeg")
-        dirs.append(Path(sys.executable).parent / "ffmpeg")
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        dirs += [base / "vendor" / "ffmpeg", base / "ffmpeg", Path(sys.executable).parent / "ffmpeg"]
     dirs.append(Path(__file__).resolve().parents[2] / "vendor" / "ffmpeg")
     return dirs
 

@@ -34,7 +34,8 @@ def default_steps() -> list[Step]:
              "fastest sources first."),
         Step("home.list_host", "Queue",
              "Everything you've asked for, newest first. The word on the left says where it is: DOWN (downloading), "
-             "CHECK (being checked), WAIT (its turn is next), then GOOD, LOOK or BROKEN once it's been checked."),
+             "CHECK (being checked), WAIT (its turn is next), then GOOD, LOOK or BROKEN once it's been checked. "
+             "The × at the left clears a finished row; Clear finished clears them all."),
         Step("home.scope", "Last checked",
              "The spectrogram of the most recent track we checked. A real 320 reaches up to about 20 kHz; a file "
              "made from a low-quality MP3 stops short, and the line shows where."),

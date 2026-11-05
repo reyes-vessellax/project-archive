@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QLineEdit, QMessageBox,
+from PySide6.QtWidgets import (QHBoxLayout, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QLineEdit, QMessageBox,
                                QPlainTextEdit, QSpinBox, QStackedWidget, QWidget)
 
 from ..core.account import BIO_MAX, AccountError
@@ -188,8 +188,18 @@ class SettingsPage(QWidget):
         self._field(lay, "slskd API key", self.slskd_key)
         self._field(lay, "slskd downloads folder", self.slskd_dl)
         self._field(lay, "FFmpeg folder", self.ffmpeg)
-        lay.addWidget(button("Save changes", "primary", self._save_settings), alignment=Qt.AlignLeft)
+        row = QHBoxLayout(); row.setSpacing(10)
+        row.addWidget(button("Save changes", "primary", self._save_settings))
+        row.addWidget(button("Open logs folder", "ghost", self._open_logs)); row.addStretch(1)
+        lay.addLayout(row)
+        lay.addWidget(label("If something goes wrong, the logs folder has what support needs.", "faint"))
         return w
+
+    def _open_logs(self):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from ..config import data_dir
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(data_dir())))
 
     # ---------------------------------------------------------------- data
     def reload(self):
