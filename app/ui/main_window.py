@@ -39,8 +39,7 @@ def _applog(line: str) -> None:
         pass
 
 
-SEARCH_FAST_S = 6             # the quick engine search: first rows land when it ends
-SEARCH_FULL_S = 40            # the long engine search: the far-away and slow sources
+SEARCH_LADDER_S = (4, 10, 22, 40)   # engine searches per query, short to long; each one's rows land when it ends
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
 FIREWALL_ASK = (f"To download from other users, {APP_NAME} needs to accept incoming connections.\n\n"
                 f"Allow it now? Windows will ask you to confirm once. Nothing is shared from your computer "
@@ -471,48 +470,50 @@ class MainWindow(QMainWindow):
         self.search_running = True
 
         def work():
-            """Two engine searches for one query: a quick one (first rows in ~SEARCH_FAST_S) and a long one
-            (the slow, far-away sources). The engine only hands out a search's responses once that search
-            has finished, so the quick one is what makes the page feel alive; the long one fills it in."""
+            """The engine releases a search's results when that search ends, so one query becomes a ladder of
+            engine searches (short to long). Each rung that finishes adds its rows to the list, so the page
+            fills top-down while the longer rungs keep collecting. If the engine does hand out live rows for
+            a running search, those are used too."""
             sid = None
             try:
-                fast = self.svc.search(q, timeout_s=SEARCH_FAST_S)
-                sid = self.search_id = fast.search_id
-                full = self.svc.search(q, timeout_s=SEARCH_FULL_S, check_login=False)
+                rungs = []
+                for i, secs in enumerate(SEARCH_LADDER_S):
+                    r = self.svc.search(q, timeout_s=secs, check_login=(i == 0))
+                    rungs.append({"res": r, "done": False})
+                sid = self.search_id = rungs[0]["res"].search_id
                 started = time.monotonic()
-                fast_done = full_done = False
-                fast_res = None
-                delay = 0.5
+                merged: dict[str, Candidate] = {}
+                shown = -1
+                delay = 0.4
                 while True:
                     time.sleep(delay)
-                    delay = min(1.5, delay * 1.4)
-                    if self.search_id != fast.search_id:
+                    delay = min(1.2, delay * 1.3)
+                    if self.search_id != sid:
                         return                                              # a newer search took over
                     now = time.monotonic()
-                    if not fast_done:
-                        done, n_resp, n_files, err = self.svc.search_status(fast.search_id)
+                    best_count = (0, 0)
+                    for rung in rungs:
+                        if rung["done"]:
+                            continue
+                        res = self.svc.search_results(rung["res"].search_id)
+                        for c in res.candidates:
+                            merged.setdefault(c.key, c)
+                        done, n_resp, n_files, err = self.svc.search_status(rung["res"].search_id)
+                        best_count = max(best_count, (n_resp, n_files))
                         if done:
-                            fast_done = True
-                            fast_res = self.svc.search_results(fast.search_id); fast_res.query = q
-                            _applog(f"fast {fast.search_id[:8]} done: {len(fast_res.candidates)} candidates")
-                            self.signals.results.emit(fast_res)             # first rows
-                        else:
-                            self.signals.progress_search.emit(n_resp, n_files, False)
-                    else:
-                        done, n_resp, n_files, err = self.svc.search_status(full.search_id)
-                        self.signals.progress_search.emit(n_resp, n_files, True)
-                        if done:
-                            full_done = True
-                    if full_done or now - started > SEARCH_FULL_S + 20:
-                        final = self.svc.search_results(full.search_id); final.query = q
-                        if fast_res is not None:                            # union, fast rows first
-                            seen = {c.key for c in final.candidates}
-                            final.candidates = final.candidates + [c for c in fast_res.candidates if c.key not in seen]
-                        final.search_id = fast.search_id; final.finished = True
-                        _applog(f"full {full.search_id[:8]} done: {len(final.candidates)} candidates after merge")
-                        self.search_running = False
-                        self.signals.results.emit(final)
-                        self.io.start(Task(lambda: self.svc.forget_search(full.search_id), self.signals))
+                            rung["done"] = True
+                            _applog(f"rung {rung['res'].search_id[:8]} ({len(res.candidates)} rows) done; merged={len(merged)}")
+                            if rung is not rungs[0]:
+                                self.io.start(Task(lambda s=rung["res"].search_id: self.svc.forget_search(s), self.signals))
+                    all_done = all(r["done"] for r in rungs) or now - started > SEARCH_LADDER_S[-1] + 20
+                    if len(merged) != shown or all_done:
+                        shown = len(merged)
+                        out = SearchResult(query=q, search_id=sid, finished=all_done, candidates=list(merged.values()))
+                        if all_done:
+                            self.search_running = False
+                        self.signals.results.emit(out)
+                    self.signals.progress_search.emit(best_count[0], best_count[1], len(merged) > 0)
+                    if all_done:
                         return
             except Exception as e:
                 import traceback

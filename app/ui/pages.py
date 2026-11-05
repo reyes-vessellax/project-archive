@@ -249,6 +249,7 @@ class SearchPage(QWidget):
         self._ranked: list[Candidate] = []
         self._shown = 0
         self._more_item: QTreeWidgetItem | None = None
+        self._foot_item: QTreeWidgetItem | None = None
         self._phrases = ("Asking around", "Knocking on doors", "Still looking", "One second", "Checking the far corners",
                          "Waiting on the slow ones", "Almost there")
         self._anim_i = 0; self._anim_dots = 0; self._anim_query = ""
@@ -281,8 +282,9 @@ class SearchPage(QWidget):
 
     def begin_search(self, query: str):
         """The moment Search is pressed: old rows go, the header names the new query, the text starts moving."""
-        self._ranked = []; self._shown = 0; self._fill(0)
+        self._ranked = []; self._shown = 0
         self._anim_query = query; self._anim_i = 0; self._anim_dots = 0; self._prog = (0, 0, False)
+        self._fill(0)
         self.title.setText(f"Searching for “{query}”")
         self.state.setText("")
         self.search_btn.setText("Searching…"); self.search_btn.setEnabled(False)
@@ -291,21 +293,35 @@ class SearchPage(QWidget):
     def set_progress(self, responses: int, files: int, more: bool):
         self._prog = (responses, files, more)
 
+    def _set_foot(self, dots: str = "…"):
+        """The last row of the list: what's still happening, or that nothing more is coming."""
+        if self._foot_item is None:
+            return
+        r, f, _ = getattr(self, "_prog", (0, 0, False))
+        n = len(self._ranked)
+        if self._anim.isActive():
+            found = f" · {r} user{'s' if r != 1 else ''} · {f} file{'s' if f != 1 else ''} so far" if r else ""
+            self._foot_item.setText(1, f"Finding more{dots}{found}")
+        else:
+            self._foot_item.setText(1, f"All results shown · {n} file{'s' if n != 1 else ''}" if n else "")
+
     def _animate(self):
         self._anim_dots = (self._anim_dots + 1) % 4
         if self._anim_dots == 0:
             self._anim_i = (self._anim_i + 1) % len(self._phrases)
         text = self._phrases[self._anim_i] + "." * (self._anim_dots or 3)
         r, f, more = getattr(self, "_prog", (0, 0, False))
-        found = f"{r} source{'s' if r != 1 else ''} · {f} file{'s' if f != 1 else ''} so far" if r else ""
-        if self.tree.topLevelItemCount() == 0:
+        found = f"{r} user{'s' if r != 1 else ''} · {f} file{'s' if f != 1 else ''} so far" if r else ""
+        if not self._ranked:
             self._show_empty(f"{text}\nLooking for “{self._anim_query}”" + (f"\n{found}" if found else ""))
         else:
-            self.state.setText("fastest first · " + (f"the long search has {found}, landing shortly" if (more and found) else text.lower()))
+            self.state.setText(f"fastest first · {text.lower()}")
+        self._set_foot("." * (self._anim_dots or 3))
 
     def end_search(self):
         self._anim.stop()
         self.search_btn.setText("Search"); self.search_btn.setEnabled(self.q.isEnabled())
+        self._set_foot()
 
     def show_results(self, res: SearchResult, searching: bool, idle: str = ""):
         if not searching:
@@ -313,7 +329,7 @@ class SearchPage(QWidget):
         n = len(res.candidates)
         if idle:
             self.title.setText("Search"); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
-        self.title.setText(f"{n} source{'s' if n != 1 else ''}")
+        self.title.setText(f"{n} result{'s' if n != 1 else ''}")
         skipped = sum(1 for c in res.candidates if c.note)
         locked = sum(1 for c in res.candidates if c.locked and not c.note)
         tail = (f" · {skipped} other format{'s' if skipped != 1 else ''} greyed" if skipped else "") + \
@@ -373,9 +389,19 @@ class SearchPage(QWidget):
             items.append(it)
         self.tree.addTopLevelItems(items)
         left = len(self._ranked) - self._shown
+        self._foot_item = None
+        if left <= 0 and (items or self._anim.isActive()):
+            foot = QTreeWidgetItem([""] * len(self.COLS))
+            foot.setFlags(foot.flags() & ~Qt.ItemIsSelectable)
+            foot.setForeground(1, self.palette().mid())
+            foot.setFirstColumnSpanned(True) if hasattr(foot, "setFirstColumnSpanned") else None
+            self.tree.addTopLevelItem(foot)
+            self._foot_item = foot
+            self._set_foot()
         if left > 0:
             more = QTreeWidgetItem([""] * len(self.COLS))
-            more.setText(1, f"Load {min(PAGE_ROWS, left)} more  ({left} further down the list)")
+            more.setText(1, f"Load {min(PAGE_ROWS, left)} more  ({left} further down the list"
+                            + (" · still finding more)" if self._anim.isActive() else " · search finished)"))
             more.setData(0, Qt.UserRole, "more")
             more.setFlags(more.flags() & ~Qt.ItemIsSelectable)
             more.setForeground(1, QColor(T.colours(self._theme())["accent"]))

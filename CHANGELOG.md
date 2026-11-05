@@ -15,6 +15,16 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.4.10 — unreleased (results fill top-down)
+
+- One query now runs a ladder of engine searches (4 s, 10 s, 22 s, 40 s). Each one's rows join the
+  list the moment it ends, so results populate top-down while the longer ones keep collecting; the
+  engine's live counts are also read from the running searches whenever it offers them.
+- The last row of the list says what's happening: "Finding more… · 29 users · 121 files so far" with
+  moving dots while the search runs, then "All results shown · 121 files" when it's over. The "Load
+  more" row says whether the search is still running.
+- Header counts are "N results" (files); user counts live in the footer.
+
 ## 0.4.9 — unreleased (THE search fix)
 
 ### Fixed: searches showed nothing although the engine had results

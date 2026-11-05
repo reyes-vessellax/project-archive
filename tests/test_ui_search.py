@@ -37,5 +37,6 @@ def test_pressing_search_shows_rows(window):
         if w.searchp.tree.topLevelItemCount() > 0 and not w.search_running:
             break
     assert w.searchp.tree.topLevelItemCount() > 0, (w.searchp.title.text(), w.searchp.empty.text(), w.statusBar().currentMessage())
-    assert "source" in w.searchp.title.text()
+    assert "result" in w.searchp.title.text()
+    assert w.searchp._foot_item is not None and "All results shown" in w.searchp._foot_item.text(1)
     assert not w.searchp.empty.isVisible()

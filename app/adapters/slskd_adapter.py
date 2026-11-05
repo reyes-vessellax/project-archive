@@ -171,7 +171,9 @@ class SlskdAdapter(SourceAdapter):
         self._call("DELETE", f"/searches/{search_id}")
 
     def search_results(self, search_id: str) -> SearchResult:
-        meta = self._call("GET", f"/searches/{search_id}") or {}
+        # includeResponses=true carries whatever the engine has in memory; the separate /responses
+        # endpoint only answers once the search has finished. Use the first, fall back to the second.
+        meta = self._call("GET", f"/searches/{search_id}", query={"includeResponses": "true"}) or {}
         state = str(meta.get("state", ""))
         finished = "Completed" in state
         error = ""
@@ -179,7 +181,9 @@ class SlskdAdapter(SourceAdapter):
             error = "The search couldn't run. You may have lost the connection; it reconnects on its own."
         elif "Cancelled" in state:
             error = "The search was cancelled."
-        rows = self._call("GET", f"/searches/{search_id}/responses") or []
+        rows = meta.get("responses") or []
+        if not rows and finished:
+            rows = self._call("GET", f"/searches/{search_id}/responses") or []
         cands = []
         for r in rows:
             user = str(r.get("username") or "")
