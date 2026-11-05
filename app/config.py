@@ -40,17 +40,22 @@ class Settings:
     extensions: list[str] = field(default_factory=lambda: ["mp3", "wav", "flac", "aiff", "aif"])
     ffmpeg_path: str = ""                     # empty = bundled copy, then PATH
     max_concurrent_analyses: int = 5          # analysis slots; further tracks wait in the queue
-    # Soulseek via a locally installed slskd client (the client owns the login; we only use its API)
+    firewall_notice_shown: bool = False       # one-time explanation before the first engine start
+    share_folder: str = ""                    # opt-in: a folder to share back on Soulseek (empty = off)
+    # Advanced only. By default the app runs its own bundled copy of slskd (the Soulseek engine) with a
+    # generated API key and a generated Soulseek login; the user never sees any of it.
+    use_own_slskd: bool = False               # point the app at an slskd the user already runs instead
     slskd_url: str = "http://127.0.0.1:5030"
-    slskd_api_key: str = ""                   # empty = Soulseek search off (local mode)
-    slskd_downloads_dir: str = ""             # the folder slskd saves finished downloads into
+    slskd_api_key: str = ""
+    slskd_downloads_dir: str = ""             # the folder that slskd saves finished downloads into
+    soulseek_own_username: str = ""           # use the user's own Soulseek account (password in the credential store)
 
     def staging_root(self) -> Path:
         return Path(self.staging_dir) if self.staging_dir else data_dir() / "staging"
 
     @property
-    def soulseek_enabled(self) -> bool:
-        return bool(self.slskd_api_key.strip())
+    def own_slskd_configured(self) -> bool:
+        return self.use_own_slskd and bool(self.slskd_api_key.strip())
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -5,9 +5,9 @@ where it is checked first: true format, bitrate, whether it plays all the way th
 that exposes fake 320s. Then you decide: **Download to Library** or **Delete**. Nothing reaches your
 library until you say so. Everything runs locally on your own computer: no uploads, no servers.
 
-Under the hood the Soulseek side is handled by [slskd](https://github.com/slskd/slskd), a separately
-installed client that owns your Soulseek login and does the searching and downloading. Project Archive
-drives it through its local API. We do not implement the Soulseek protocol ourselves.
+Under the hood the Soulseek side is handled by [slskd](https://github.com/slskd/slskd), bundled inside the app
+and run as a hidden background process. Project Archive drives it through its local API. We do not implement
+the Soulseek protocol ourselves.
 
 > The app reports evidence, not proof. A 320 kbps MP3 or a WAV can still come from a low-quality source.
 > It never labels a file "authentic" or "verified lossless". You make the final call.
@@ -24,7 +24,8 @@ drives it through its local API. We do not implement the Soulseek protocol ourse
 | Watched Incoming folder, auto-cleanup, crash recovery, settings | |
 | Soulseek search + download into quarantine through slskd | |
 | Parallel checking (5 at a time by default), the rest queue up | |
-| 52 automated tests on synthetic audio and a fake slskd | |
+| Bundled Soulseek engine with generated account + API key, Advanced settings | |
+| 58 automated tests on synthetic audio and a fake slskd | |
 
 Store search (Beatport, Bandcamp, Juno, Traxsource, Discogs) is kept in the code for a later feature
 but is not on a button right now.
@@ -53,27 +54,19 @@ python -m venv ~/.venvs/project-archive          # outside the repo if its path 
 Build a standalone app: `pip install pyinstaller`, copy FFmpeg into `vendor/ffmpeg/`, then
 `python packaging/build.py` -> `dist/`.
 
-## Connect Soulseek (one-time setup)
+## Soulseek: nothing to set up
 
-1. Install slskd from https://github.com/slskd/slskd/releases and run it once. It creates `slskd.yml`
-   in its application folder (`%localappdata%\slskd` on Windows, `~/.local/share/slskd` on Mac).
-2. In `slskd.yml`, enter your Soulseek username and password under `soulseek:`, and add an API key:
+The Windows build includes the Soulseek engine. On first launch the app creates its own Soulseek account
+and connection settings in the background; you never enter a Soulseek login. The first time, your
+firewall may ask to allow incoming connections: choose Allow.
 
-   ```yaml
-   web:
-     authentication:
-       api_keys:
-         project_archive:
-           key: choose-a-long-random-string
-           role: readwrite
-   ```
+Running from source: put an slskd build in `vendor/slskd/` (see `.github/workflows/build.yml` for the
+exact download) and the same happens. Without it the app runs in local mode: drag and drop and the
+watched folder still work, Soulseek search is off.
 
-   Restart slskd. Note the downloads folder it uses (`directories: downloads:` in the same file, or the
-   default `downloads` folder inside its application folder).
-3. In Project Archive, open **Settings** and fill in the slskd URL (default `http://127.0.0.1:5030`),
-   the API key, and slskd's downloads folder. The top bar turns green: "Connected to Soulseek as …".
-
-Leave the API key empty and the app runs in local mode: drag and drop and the watched folder still work.
+**Advanced** (Settings -> Advanced), for people who already run slskd or have a Soulseek account they
+want to keep: point the app at your own slskd (URL, API key, downloads folder), use your own Soulseek
+username and password, or share a folder back to Soulseek (off by default).
 
 ## How it works
 
@@ -102,7 +95,7 @@ app/adapters  source connector contract + the slskd adapter (Soulseek through a 
 app/media     ffprobe/ffmpeg wrappers, streaming decode + spectrum, PNG spectrogram
 app/storage   SQLite job history (metadata only, never audio)
 app/ui        PySide6 window
-docs/         UI_HANDOFF.md: data + actions for front-end design
+docs/         UI_HANDOFF.md (data + actions for front-end design), DECISIONS_AND_FLAGS.md (spec changes, attorney flags)
 tests/        synthetic fixtures generated at test time (no copyrighted audio)
 ```
 
@@ -121,5 +114,5 @@ keep each file.
 
 ## Licensing note
 
-The Windows build bundles an FFmpeg GPL build from BtbN/FFmpeg-Builds (license text included in the
-bundle). Fine for private use between us; revisit before distributing publicly.
+The Windows build bundles an FFmpeg GPL build from BtbN/FFmpeg-Builds and slskd (AGPL-3.0), license texts
+included in the bundle. Fine for private use between us; see docs/DECISIONS_AND_FLAGS.md before distributing.

@@ -17,10 +17,10 @@ from urllib.parse import quote_plus
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter, QPixmap
-from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
-                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter,
-                               QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
+                               QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox,
+                               QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..adapters.base import Candidate, ConnectorError, SearchResult
 from ..config import APP_NAME
@@ -32,6 +32,10 @@ from ..media.tools import ToolMissing, find_tool
 
 COLORS = {"PASS": "#2e7d4f", "WARN": "#c98a12", "FAIL": "#b23b3b"}
 SEARCH_WAIT_S = 20            # keep collecting Soulseek results for this long
+SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
+FIREWALL_NOTE = ("To download from other users, Project Archive accepts incoming connections.\n\n"
+                 "If Windows or macOS asks whether to allow this, choose Allow. Nothing is shared from your "
+                 "computer unless you turn that on yourself in Settings.")
 
 # Online store search. Not wired to a button right now; kept for a later "find it to buy" feature.
 STORES = [
@@ -144,15 +148,11 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Settings")
         self.svc = svc
         s = svc.settings
-        form = QFormLayout(self)
+        outer = QVBoxLayout(self)
+        form = QFormLayout(); outer.addLayout(form)
         form.addRow(QLabel("<b>Folders</b>"))
         self.library = self._folder_row(form, "Download to (your library folder)", s.library_dir)
         self.incoming = self._folder_row(form, "Watched Incoming folder", s.incoming_dir, "Off (leave empty)")
-        form.addRow(QLabel("<b>Soulseek (through slskd)</b>"))
-        self.slskd_url = QLineEdit(s.slskd_url); form.addRow("slskd URL", self.slskd_url)
-        self.slskd_key = QLineEdit(s.slskd_api_key); self.slskd_key.setEchoMode(QLineEdit.Password)
-        self.slskd_key.setPlaceholderText("Empty = Soulseek search off"); form.addRow("slskd API key", self.slskd_key)
-        self.slskd_dl = self._folder_row(form, "slskd downloads folder", s.slskd_downloads_dir)
         form.addRow(QLabel("<b>Checks</b>"))
         self.mp3 = self._spin(form, "Warn if MP3 below (kbps)", s.mp3_min_kbps, 64, 320)
         self.vbr = self._spin(form, "Warn if VBR average below (kbps)", s.vbr_min_avg_kbps, 64, 320)
@@ -160,10 +160,30 @@ class SettingsDialog(QDialog):
         self.hours = self._spin(form, "Delete undecided files after (hours)", s.retention_hours, 1, 24 * 30)
         self.maxmb = self._spin(form, "Max file size (MB)", s.max_file_mb, 10, 8192)
         self.exts = QLineEdit(", ".join(s.extensions)); form.addRow("Accepted formats", self.exts)
-        self.ffmpeg = self._folder_row(form, "FFmpeg folder (optional)", s.ffmpeg_path, "Bundled / system")
+
+        # Advanced: hidden until opened. Everything in here is for people who know what slskd is.
+        self.adv = QGroupBox("Advanced"); self.adv.setCheckable(True); self.adv.setChecked(False)
+        adv = QFormLayout(); self.adv_body = QWidget(); self.adv_body.setLayout(adv)
+        self.share = self._folder_row(adv, "Share this folder back to Soulseek (optional)", s.share_folder, "Off")
+        self.own_user = QLineEdit(s.soulseek_own_username); self.own_user.setPlaceholderText("Leave empty to use the built-in account")
+        adv.addRow("Use my own Soulseek username", self.own_user)
+        self.own_pass = QLineEdit(); self.own_pass.setEchoMode(QLineEdit.Password)
+        self.own_pass.setPlaceholderText("(unchanged)" if svc.manager.creds.get("soulseek_own_password") else "")
+        adv.addRow("Soulseek password", self.own_pass)
+        self.use_own = QCheckBox("Use an slskd I already run instead of the built-in engine"); self.use_own.setChecked(s.use_own_slskd)
+        adv.addRow(self.use_own)
+        self.slskd_url = QLineEdit(s.slskd_url); adv.addRow("slskd URL", self.slskd_url)
+        self.slskd_key = QLineEdit(s.slskd_api_key); self.slskd_key.setEchoMode(QLineEdit.Password)
+        adv.addRow("slskd API key", self.slskd_key)
+        self.slskd_dl = self._folder_row(adv, "slskd downloads folder", s.slskd_downloads_dir)
+        self.ffmpeg = self._folder_row(adv, "FFmpeg folder (optional)", s.ffmpeg_path, "Bundled / system")
+        box = QVBoxLayout(self.adv); box.addWidget(self.adv_body)
+        self.adv_body.setVisible(False); self.adv.toggled.connect(self.adv_body.setVisible)
+        outer.addWidget(self.adv)
+
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         bb.accepted.connect(self._save); bb.rejected.connect(self.reject)
-        form.addRow(bb)
+        outer.addWidget(bb)
 
     def _folder_row(self, form, label, value, placeholder=""):
         edit = QLineEdit(value); edit.setPlaceholderText(placeholder)
@@ -182,6 +202,13 @@ class SettingsDialog(QDialog):
         s = self.svc.settings
         s.library_dir = self.library.text().strip() or s.library_dir
         s.incoming_dir = self.incoming.text().strip()
+        s.share_folder = self.share.text().strip()
+        s.soulseek_own_username = self.own_user.text().strip()
+        if self.own_pass.text():
+            self.svc.manager.creds.set("soulseek_own_password", self.own_pass.text())
+        elif not s.soulseek_own_username:
+            self.svc.manager.creds.delete("soulseek_own_password")
+        s.use_own_slskd = self.use_own.isChecked()
         s.slskd_url = self.slskd_url.text().strip() or "http://127.0.0.1:5030"
         s.slskd_api_key = self.slskd_key.text().strip()
         s.slskd_downloads_dir = self.slskd_dl.text().strip()
@@ -285,19 +312,61 @@ class MainWindow(QMainWindow):
         self.status_timer = QTimer(self, interval=15000, timeout=self._poll_status); self.status_timer.start()
         self.clean_timer = QTimer(self, interval=3600 * 1000, timeout=lambda: (svc.cleanup_expired(), self.refresh()))
         self.clean_timer.start()
+        self._trouble_shown = False
+        QTimer.singleShot(0, self._start_backend)
+
+    # bundled engine ----------------------------------------------------------------------
+    def _start_backend(self):
+        if not self.svc.managed_mode:
+            self._poll_status()
+            return
+        if not self.svc.settings.firewall_notice_shown:
+            QMessageBox.information(self, APP_NAME, FIREWALL_NOTE)
+            s = self.svc.settings; s.firewall_notice_shown = True; self.svc.save_settings(s)
+        self._trouble_shown = False
+        self.svc.backend_state = "starting"
         self._poll_status()
+
+        def work():
+            self.svc.start_backend()
+            self.signals.status.emit(self.svc.connector_status())
+        self.io.start(Task(work, self.signals))
+
+    def _connection_trouble(self):
+        """One small dialog, once per failure: try again, or open the help page on the website."""
+        if self._trouble_shown:
+            return
+        self._trouble_shown = True
+        box = QMessageBox(self)
+        box.setWindowTitle(APP_NAME)
+        box.setIcon(QMessageBox.Warning)
+        box.setText("Having trouble connecting to the server.")
+        box.setInformativeText("Please try again. If it keeps happening, the help page explains what to check.")
+        retry = box.addButton("Try again", QMessageBox.AcceptRole)
+        help_ = box.addButton("Help", QMessageBox.HelpRole)
+        box.addButton("Not now", QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() is retry:
+            self._start_backend()
+        elif box.clickedButton() is help_:
+            QDesktopServices.openUrl(QUrl(SUPPORT_URL))
+
+    def closeEvent(self, e):
+        self.svc.stop_backend()
+        super().closeEvent(e)
 
     # layout -----------------------------------------------------------------------
     def _build(self):
         top = QHBoxLayout()
         title = QLabel(f"<b style='font-size:16px'>{APP_NAME}</b>")
         self.status = QLabel()
+        self.btn_retry = QPushButton("Try again"); self.btn_retry.setVisible(False); self.btn_retry.clicked.connect(self._start_backend)
         self.search = QLineEdit(); self.search.setPlaceholderText("Search Soulseek: artist, track, label…")
         self.search.setMinimumWidth(320); self.search.returnPressed.connect(self._search)
         find = QPushButton("Search Soulseek", objectName="primary"); find.clicked.connect(self._search)
         add = QPushButton("Add local files…"); add.clicked.connect(self._pick_files)
         settings = QPushButton("Settings"); settings.clicked.connect(self._settings)
-        for w in (title, self.status): top.addWidget(w)
+        for w in (title, self.status, self.btn_retry): top.addWidget(w)
         top.addStretch()
         for w in (self.search, find, add, settings): top.addWidget(w)
 
@@ -510,6 +579,10 @@ class MainWindow(QMainWindow):
         colour = "#2e7d4f" if st.logged_in else ("#c98a12" if st.available else "gray")
         self.status.setText(f"   <span style='color:{colour}'>●</span> {st.message}")
         self.status.setToolTip(st.message)
+        failed = self.svc.managed_mode and self.svc.backend_state == "failed"
+        self.btn_retry.setVisible(failed)
+        if failed:
+            self._connection_trouble()
 
     # actions ---------------------------------------------------------------------
     def _enqueue_paths(self, paths: list[Path]):
@@ -605,11 +678,18 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _settings(self):
+        s = self.svc.settings
+        before = (s.share_folder, s.soulseek_own_username, s.use_own_slskd)
         if SettingsDialog(self.svc, self).exec():
-            self.pool.setMaxThreadCount(max(1, self.svc.settings.max_concurrent_analyses))
+            s = self.svc.settings
+            self.pool.setMaxThreadCount(max(1, s.max_concurrent_analyses))
             self.refresh()
             self._check_ffmpeg()
-            self._poll_status()
+            if (s.share_folder, s.soulseek_own_username, s.use_own_slskd) != before:
+                self.svc.stop_backend()                    # engine config changed: restart it quietly
+                self._start_backend()
+            else:
+                self._poll_status()
 
     def _check_ffmpeg(self):
         try:

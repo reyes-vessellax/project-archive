@@ -1,7 +1,7 @@
 # Project Archive: UI handoff for front-end design
 
 The engine (Soulseek search through slskd, download into quarantine, checks, spectrogram, library moves)
-is built and tested (52 passing tests). This file is what the UI has to show and which buttons it can
+is built and tested (58 passing tests). This file is what the UI has to show and which buttons it can
 offer. Design anything you like on top, but every screen should map to the data and actions below.
 
 Stack: **Python + PySide6 (Qt)**, desktop app for macOS and Windows. Designs should be buildable as Qt
@@ -25,12 +25,18 @@ Local files can also be dragged in or picked up from a watched folder; they join
 
 ## Connection status (top bar)
 
+The engine (slskd) is bundled and started silently. The user never sees that name; use these strings as-is.
+
 | Shown as | Meaning |
 |---|---|
-| green dot · `Connected to Soulseek as <name>` | slskd is running and logged in; search works |
-| amber dot · `slskd is running but not logged in to Soulseek` | slskd up, no network yet |
-| grey dot · `Local mode. Add your slskd API key in Settings to search Soulseek.` | no API key set; drag & drop only |
-| grey dot · `Can't reach slskd at <url>. Is it running?` / `slskd rejected the API key…` | problems to fix in Settings |
+| grey dot · `Connecting to the server…` | engine starting (first launch can take ~10 s) |
+| amber dot · `Connected. Signing in to Soulseek…` | engine up, not on the network yet |
+| green dot · `Connected to Soulseek` | search works |
+| grey dot · `Having trouble connecting to the server.` + a **Try again** button | engine failed; also one dialog: "Having trouble connecting to the server. [Try again] [Help] [Not now]", Help opens the website FAQ |
+| grey dot · `Local mode: drag tracks in to check them. Soulseek search is off.` | engine not bundled and no own slskd set under Advanced |
+
+Before the very first engine start, one information dialog explains that the app accepts incoming
+connections and the firewall may ask (no technical words). Shown once.
 
 Refreshed every 15 seconds and after Settings is saved.
 
@@ -126,10 +132,13 @@ Top-bar status: `connector_status()`.
 
 ## Settings screen fields
 
-Download-to folder (the library), Incoming (watched) folder, slskd URL, slskd API key (password field;
-empty = Soulseek off), slskd downloads folder, MP3 warning level (default 320 kbps), VBR average warning
-level (default 220 kbps), check this many tracks at once (default 5), keep undecided files for (default
-24 h), max file size (default 2048 MB), accepted formats (mp3, wav, flac, aiff), FFmpeg location (optional).
+Main: Download-to folder (the library), Incoming (watched) folder, MP3 warning level (default 320 kbps),
+VBR average warning level (default 220 kbps), check this many tracks at once (default 5), keep undecided
+files for (default 24 h), max file size (default 2048 MB), accepted formats (mp3, wav, flac, aiff).
+
+**Advanced** (collapsed by default; nerdy, keep it out of sight): share a folder back to Soulseek
+(optional, off), own Soulseek username + password, "use an slskd I already run" with URL / API key /
+downloads folder, FFmpeg location.
 
 ## Rules the design must respect (from the spec)
 
@@ -139,4 +148,4 @@ level (default 220 kbps), check this many tracks at once (default 5), keep undec
   The bitrate in search results is what the peer claims; label it that way.
 - Don't auto-play audio.
 - Show measured facts separately from warnings.
-- Don't show the user's Soulseek password anywhere; the app never has it (slskd does).
+- Never show a Soulseek password, an API key, or the word "slskd" outside the Advanced section.

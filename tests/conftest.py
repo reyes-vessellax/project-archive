@@ -49,9 +49,15 @@ def fixtures(tmp_path_factory) -> dict[str, Path]:
 
 @pytest.fixture
 def service(tmp_path, monkeypatch):
+    """A service with NO bundled engine, so tests decide explicitly whether Soulseek is on."""
     monkeypatch.setenv("PROJECT_ARCHIVE_DATA", str(tmp_path / "data"))
+    from app.config import Settings
+    from app.core.credentials import CredentialStore
     from app.core.service import ArchiveService
-    svc = ArchiveService(tmp_path / "data" / "archive.db")
+    from app.core.slskd_manager import SlskdManager
+    manager = SlskdManager(Settings(), creds=CredentialStore(tmp_path / "secrets.json", use_keyring=False),
+                           instance_dir=tmp_path / "client", binary_dir=None)
+    svc = ArchiveService(tmp_path / "data" / "archive.db", manager=manager)
     s = svc.settings
     s.library_dir = str(tmp_path / "library")
     s.staging_dir = str(tmp_path / "staging")

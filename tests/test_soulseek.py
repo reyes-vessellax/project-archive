@@ -37,6 +37,7 @@ def slskd(tmp_path, fixtures):
 @pytest.fixture
 def connected(service, slskd):
     s = service.settings
+    s.use_own_slskd = True                      # "Advanced: use my own slskd" pointed at the fake
     s.slskd_url, s.slskd_api_key, s.slskd_downloads_dir = slskd.url, API_KEY, str(slskd.downloads_dir)
     service.save_settings(s)
     return service

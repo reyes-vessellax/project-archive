@@ -25,6 +25,12 @@ from . import jobs as J
 from .analyzer import analyze, sha256_file
 from .rules import FAIL, WARN
 from .safety import Rejected, is_inside, safe_filename, unique_path, validate_candidate
+from .slskd_manager import BackendUnavailable, SlskdManager
+
+# Wording the user sees for the connection. "slskd" never appears here.
+MSG_LOCAL = "Local mode: drag tracks in to check them. Soulseek search is off."
+MSG_STARTING = "Connecting to the server…"
+MSG_TROUBLE = "Having trouble connecting to the server."
 
 
 class ActionBlocked(RuntimeError):
@@ -32,33 +38,76 @@ class ActionBlocked(RuntimeError):
 
 
 class ArchiveService:
-    def __init__(self, db_path: Path | None = None, adapter_factory: Callable[[Settings], SourceAdapter | None] | None = None):
+    def __init__(self, db_path: Path | None = None,
+                 adapter_factory: Callable[["ArchiveService"], SourceAdapter | None] | None = None,
+                 manager: SlskdManager | None = None):
         self.db = Database(db_path or data_dir() / "archive.db")
         self.settings = Settings.from_dict(self.db.load_settings())
         self._lock = threading.RLock()
         self._seen: dict[str, tuple[int, float]] = {}    # incoming path -> (size, mtime) last scan
+        self.manager = manager or SlskdManager(self.settings)
         self._adapter_factory = adapter_factory or _default_adapter
         self.adapter: SourceAdapter | None = None
+        self.backend_state = "stopped"                   # stopped | starting | running | failed
+        self.backend_error = ""
         self._build_adapter()
 
     # settings ---------------------------------------------------------------------
     def save_settings(self, s: Settings) -> None:
         self.settings = s
+        self.manager.settings = s
         self.db.save_settings(s.to_dict())
         self._build_adapter()
 
     def _build_adapter(self) -> None:
         try:
-            self.adapter = self._adapter_factory(self.settings)
+            self.adapter = self._adapter_factory(self)
         except ConnectorError:
             self.adapter = None
 
+    @property
+    def managed_mode(self) -> bool:
+        """True when the app runs its own bundled Soulseek engine (the normal case)."""
+        return not self.settings.use_own_slskd and self.manager.available
+
+    # bundled engine lifecycle -----------------------------------------------------------
+    def start_backend(self) -> None:
+        """Start the bundled engine (blocking, up to ~40 s). Call from a worker thread."""
+        if not self.managed_mode:
+            return
+        self.backend_state, self.backend_error = "starting", ""
+        try:
+            self.manager.start()
+            self.backend_state = "running"
+            self._build_adapter()
+        except BackendUnavailable as e:
+            self.backend_state, self.backend_error = "failed", str(e)
+            self.adapter = None
+
+    def stop_backend(self) -> None:
+        self.manager.stop()
+        if self.managed_mode:
+            self.backend_state = "stopped"
+
     # Soulseek search -----------------------------------------------------------------------
     def connector_status(self) -> ConnectorStatus:
-        if not self.settings.soulseek_enabled:
-            return ConnectorStatus(available=False, message="Local mode. Add your slskd API key in Settings to search Soulseek.")
+        if self.managed_mode:
+            if self.backend_state == "starting":
+                return ConnectorStatus(available=False, message=MSG_STARTING)
+            if self.backend_state in ("failed", "stopped") or not self.manager.running:
+                return ConnectorStatus(available=False, message=MSG_TROUBLE)
+            st = self.adapter.health_check() if self.adapter else ConnectorStatus(available=False, message=MSG_TROUBLE)
+            if not st.available:
+                st.message = MSG_TROUBLE
+            elif not st.logged_in:
+                st.message = "Connected. Signing in to Soulseek…"
+            else:
+                st.message = "Connected to Soulseek"
+            return st
+        if not self.settings.own_slskd_configured:
+            return ConnectorStatus(available=False, message=MSG_LOCAL)
         if self.adapter is None:
-            return ConnectorStatus(available=False, message="Check the slskd URL in Settings.")
+            return ConnectorStatus(available=False, message="Check the slskd URL under Advanced in Settings.")
         return self.adapter.health_check()
 
     def search(self, query: str) -> SearchResult:
@@ -306,10 +355,16 @@ class ArchiveService:
         return self.db.jobs()
 
     def _adapter_or_block(self) -> SourceAdapter:
-        if not self.settings.soulseek_enabled:
-            raise ActionBlocked("Soulseek search is off. Add your slskd API key in Settings.")
+        if self.managed_mode:
+            if self.backend_state == "starting":
+                raise ActionBlocked("Still connecting to the server. Try again in a moment.")
+            if self.adapter is None:
+                raise ActionBlocked(MSG_TROUBLE + " Use 'Try again' in the status bar.")
+            return self.adapter
+        if not self.settings.own_slskd_configured:
+            raise ActionBlocked(MSG_LOCAL)
         if self.adapter is None:
-            raise ActionBlocked("Check the slskd URL in Settings.")
+            raise ActionBlocked("Check the slskd URL under Advanced in Settings.")
         return self.adapter
 
     def _require(self, job_id: str) -> dict:
@@ -330,10 +385,14 @@ class ArchiveService:
                 shutil.rmtree(folder, ignore_errors=True)
 
 
-def _default_adapter(s: Settings) -> SourceAdapter | None:
-    if not s.soulseek_enabled:
-        return None
+def _default_adapter(svc: "ArchiveService") -> SourceAdapter | None:
     from ..adapters.slskd_adapter import SlskdAdapter
+    s = svc.settings
+    if svc.managed_mode:
+        m = svc.manager
+        return SlskdAdapter(m.url, m.api_key, str(m.downloads_dir)) if m.running else None
+    if not s.own_slskd_configured:
+        return None
     return SlskdAdapter(s.slskd_url, s.slskd_api_key, s.slskd_downloads_dir)
 
 

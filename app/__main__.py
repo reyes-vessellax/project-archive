@@ -15,6 +15,23 @@ def self_test() -> int:
                 raise RuntimeError(f"{tool} didn't run")
             say(f"{tool} -> {exe}")
         import app.ui.main_window  # noqa: F401  (imports Qt and the whole UI)
+        # The bundled Soulseek engine: generate a throwaway config, start it, make sure the API answers, stop it.
+        import tempfile
+        from pathlib import Path
+        from app.config import Settings
+        from app.core.credentials import CredentialStore
+        from app.core.slskd_manager import SlskdManager, bundled_slskd_dir
+        if bundled_slskd_dir() is None:
+            say("engine: not bundled (Soulseek search off)")
+        else:
+            with tempfile.TemporaryDirectory() as tmp:
+                m = SlskdManager(Settings(), creds=CredentialStore(Path(tmp) / "s.json", use_keyring=False),
+                                 instance_dir=Path(tmp) / "client")
+                m.start()
+                try:
+                    say(f"engine: ok on {m.url}")
+                finally:
+                    m.stop()
     except Exception as e:
         say(f"self-test FAILED: {e}")
         return 1

@@ -1,4 +1,5 @@
-"""Build a desktop app folder with PyInstaller. Bundles FFmpeg from vendor/ffmpeg if present.
+"""Build a desktop app folder with PyInstaller. Bundles FFmpeg from vendor/ffmpeg and the Soulseek engine
+(slskd) from vendor/slskd when present.
 
     python packaging/build.py      ->  dist/Project Archive/   (Windows)
                                        dist/Project Archive.app (macOS)
@@ -31,4 +32,9 @@ if Path("vendor/ffmpeg").is_dir():
     args += ["--add-data", f"{os.path.join('vendor', 'ffmpeg')}{os.pathsep}ffmpeg"]
 else:
     print("NOTE: vendor/ffmpeg not found; the app will look for FFmpeg on the system.", file=sys.stderr)
+if Path("vendor/slskd").is_dir():
+    args += ["--add-data", f"{os.path.join('vendor', 'slskd')}{os.pathsep}slskd"]
+else:
+    print("NOTE: vendor/slskd not found; Soulseek search will be off unless the user points to their own slskd.",
+          file=sys.stderr)
 PyInstaller.__main__.run(args)

@@ -56,6 +56,15 @@ jobs:
           Copy-Item "$bin/ffmpeg.exe","$bin/ffprobe.exe" vendor/ffmpeg/
           $lic = Get-ChildItem ffmpeg-dl -Recurse -Filter LICENSE.txt | Select-Object -First 1
           if ($lic) { Copy-Item $lic.FullName vendor/ffmpeg/FFMPEG-LICENSE.txt }
+      - name: Fetch the Soulseek engine (slskd) to bundle
+        shell: pwsh
+        env:
+          SLSKD_VERSION: "0.26.2"
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/slskd/slskd/releases/download/$env:SLSKD_VERSION/slskd-$env:SLSKD_VERSION-win-x64.zip" -OutFile slskd.zip
+          New-Item -ItemType Directory -Force vendor/slskd | Out-Null
+          Expand-Archive slskd.zip -DestinationPath vendor/slskd
+          if (-not (Test-Path vendor/slskd/slskd.exe)) { throw "slskd.exe not found after extraction" }
       - name: Build
         run: |
           python -m pip install --upgrade pip
