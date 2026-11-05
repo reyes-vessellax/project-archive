@@ -15,7 +15,7 @@ from ..core import jobs as J
 from ..core.rules import fmt_time
 from ..core.service import ArchiveService
 from . import theme as T
-from .widgets import QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
+from .widgets import smooth, QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
 
 
 # ------------------------------------------------------------------ shared: a job -> row data
@@ -246,6 +246,7 @@ class SearchPage(QWidget):
         self.tree.itemSelectionChanged.connect(self._selection)
         self.tree.itemClicked.connect(self._clicked)
         self.tree.verticalScrollBar().valueChanged.connect(self._scrolled)
+        smooth(self.tree)
         lay.addWidget(self.tree, 1)
         # empty-state message sits where the rows would be, not up by the search bar
         self.empty = label("", "muted", wrap=True); self.empty.setParent(self.tree.viewport())

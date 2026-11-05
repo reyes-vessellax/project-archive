@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, QTimer, QUrl, QObject, QPoint, QRunnable, Qt, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QPropertyAnimation, QRectF, QTimer, QUrl, QObject, QPoint, QRunnable, Qt, Signal
 from PySide6.QtGui import QPainterPath, QPen, QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QVBoxLayout, QWidget)
@@ -109,11 +109,52 @@ def set_active(widget, active: bool) -> None:
     T.repolish(widget)
 
 
+class SmoothWheel(QObject):
+    """Animated wheel scrolling for any QAbstractScrollArea: per-pixel, eased, and wheel ticks that arrive
+    mid-animation extend the glide instead of jumping. Trackpads already send fine-grained deltas and are
+    left alone."""
+
+    def __init__(self, area):
+        super().__init__(area)
+        self.area = area
+        self.bar = area.verticalScrollBar()
+        self.anim = QPropertyAnimation(self.bar, b"value", self)
+        self.anim.setEasingCurve(QEasingCurve.OutCubic)
+        self.anim.setDuration(220)
+        self.target = None
+        try:
+            area.setVerticalScrollMode(area.ScrollPerPixel)      # item views default to jumping a row at a time
+        except Exception:
+            pass
+        area.viewport().installEventFilter(self)
+        area.installEventFilter(self)
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Wheel and ev.angleDelta().y() != 0 and not ev.pixelDelta().y():
+            if ev.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier):
+                return False
+            step = (ev.angleDelta().y() / 120.0) * max(self.bar.singleStep(), 1) * 4   # ~4 lines per notch
+            base = self.target if (self.anim.state() == QPropertyAnimation.Running and self.target is not None) else self.bar.value()
+            self.target = int(max(self.bar.minimum(), min(self.bar.maximum(), base - step)))
+            self.anim.stop(); self.anim.setStartValue(self.bar.value()); self.anim.setEndValue(self.target); self.anim.start()
+            ev.accept()
+            return True
+        return False
+
+
+def smooth(area) -> None:
+    """Attach SmoothWheel to a scroll area / item view (idempotent)."""
+    if not area.property("smoothwheel"):
+        area.setProperty("smoothwheel", True)
+        SmoothWheel(area)
+
+
 def scroll(inner: QWidget) -> QScrollArea:
     s = QScrollArea()
     s.setWidgetResizable(True)
     s.setFrameShape(QFrame.NoFrame)
     s.setWidget(inner)
+    smooth(s)
     return s
 
 

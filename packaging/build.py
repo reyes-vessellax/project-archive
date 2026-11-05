@@ -109,11 +109,17 @@ import shutil  # noqa: E402
 
 out = Path("dist") / (APP_NAME + (".app" if sys.platform == "darwin" else ""))
 internal = next((p for p in (out / "_internal", out / "Contents" / "Frameworks") if p.is_dir()), None)
+resources = out / "Contents" / "Resources"                 # macOS: data files live here (Frameworks symlinks to them)
 
 # Files PyInstaller pulls in that the app never uses. Glob patterns, relative to _internal/.
 JUNK = [
     "*.dist-info", "setuptools", "pkg_resources", "_distutils_hack",
     "PySide6/translations", "PySide6/qml", "PySide6/Qt6Qml*.dll", "PySide6/Qt6Quick*.dll", "PySide6/Qt6Pdf*.dll",
+    # macOS frameworks of the same modules
+    "PySide6/Qt/lib/QtQml*.framework", "PySide6/Qt/lib/QtQuick*.framework", "PySide6/Qt/lib/QtPdf*.framework",
+    "PySide6/Qt/lib/QtVirtualKeyboard.framework", "PySide6/Qt/lib/QtSvg*.framework", "PySide6/Qt/lib/QtWebEngine*.framework",
+    "PySide6/Qt/lib/QtDesigner*.framework", "PySide6/Qt/lib/QtQuick3D*.framework", "PySide6/Qt/translations",
+    "PySide6/Qt/qml", "PySide6/Qt/plugins/platforminputcontexts", "PySide6/Qt/plugins/virtualkeyboard",
     "PySide6/Qt6VirtualKeyboard.dll", "PySide6/Qt6Svg*.dll",
     "PySide6/plugins/platforminputcontexts", "PySide6/plugins/generic", "PySide6/plugins/iconengines",
     "PySide6/plugins/imageformats/qpdf.dll", "PySide6/plugins/imageformats/qtga.dll",
@@ -141,11 +147,14 @@ def tidy(root: Path) -> None:
 
 if internal is not None:
     tidy(internal)
+    if resources.is_dir():
+        tidy(resources)
     # The engine checks that its web-content folder exists even when headless; an empty one satisfies it.
-    (internal / "vendor" / "engine" / "wwwroot").mkdir(parents=True, exist_ok=True)
-    (internal / "vendor" / "engine" / "wwwroot" / "index.html").write_text("<!doctype html><title>headless</title>")
-    # A README at the top so a curious user knows what the folders are.
-    (out / "README.txt").write_text(
+    eng = next((d for d in (internal / "vendor" / "engine", resources / "vendor" / "engine") if d.is_dir()), internal / "vendor" / "engine")
+    (eng / "wwwroot").mkdir(parents=True, exist_ok=True)
+    (eng / "wwwroot" / "index.html").write_text("<!doctype html><title>headless</title>")
+    # A README at the top so a curious user knows what the folders are (Windows folder layout only).
+    (out / "README.txt" if sys.platform != "darwin" else Path("dist") / "README.txt").write_text(
         f"{APP_NAME}\n\n"
         f"{APP_NAME}.exe        the app\n"
         "_internal/          everything the app needs to run; nothing in here needs touching\n"

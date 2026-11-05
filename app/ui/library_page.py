@@ -14,7 +14,7 @@ from ..core import jobs as J
 from ..core.rules import fmt_time
 from ..core.service import ArchiveService
 from . import theme as T
-from .widgets import SpectrumView, button, hbox, label, page, vbox
+from .widgets import smooth, SpectrumView, button, hbox, label, page, vbox
 
 
 def reveal_in_folder(path: Path) -> None:
@@ -65,6 +65,7 @@ class LibraryPage(QWidget):
             self.tree.setColumnWidth(i, w)
         self.tree.sortByColumn(7, Qt.DescendingOrder)
         self.tree.itemSelectionChanged.connect(self._selection)
+        smooth(self.tree)
         self.tree.itemClicked.connect(self._clicked)
         self.tree.itemDoubleClicked.connect(lambda *_: self._reveal())
         lay.addWidget(self.tree, 1)

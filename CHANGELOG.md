@@ -16,6 +16,17 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.5.0 — unreleased (smooth scrolling, macOS build)
+
+- Smooth scrolling everywhere: lists scroll per pixel and wheel ticks glide (220 ms ease-out) instead
+  of jumping a row at a time; ticks that land mid-glide extend it. Trackpads are left as they are.
+- **macOS build** (Apple Silicon): `PiedPiper-<version>-macOS.zip` containing `Pied Piper.app` with a
+  static FFmpeg and the engine bundled, ad-hoc signed so it runs on Apple Silicon. Not notarized yet:
+  first open is right-click → Open (or System Settings → Privacy & Security → Open Anyway).
+- 0.5 rolls up everything since 0.4.0: tour, Library with inline drop-down and player, search that
+  matches other clients (ladder, locked files, ad bots greyed, typo fallback), no popups, auto-retry,
+  progress, Retry download, blip, start-up marks, spectrogram cap, Pied Piper placeholder.
+
 ## 0.4.16 — unreleased (spectrogram cap)
 
 - Library spectrograms on disk are capped at the newest 100 (~0.8 MB each → ~80 MB). Opening an older

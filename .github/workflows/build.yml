@@ -98,3 +98,66 @@ jobs:
           name: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-Windows
           path: dist/${{ steps.ver.outputs.name }}/
           retention-days: 30
+
+  macos-app:
+    needs: test
+    runs-on: macos-latest          # Apple Silicon runner; the app is arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Fetch FFmpeg to bundle (static arm64)
+        run: |
+          set -e
+          mkdir -p vendor/ffmpeg dl && cd dl
+          curl -fsSL -o ffmpeg.zip  "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip"
+          curl -fsSL -o ffprobe.zip "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffprobe.zip"
+          unzip -o -q ffmpeg.zip && unzip -o -q ffprobe.zip
+          cp ffmpeg ffprobe ../vendor/ffmpeg/ && chmod +x ../vendor/ffmpeg/ffmpeg ../vendor/ffmpeg/ffprobe
+          ../vendor/ffmpeg/ffmpeg -version | head -1
+          curl -fsSL -o ../vendor/ffmpeg/FFMPEG-LICENSE.txt "https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/COPYING.GPLv3" || true
+      - name: Fetch the Soulseek engine (slskd) to bundle
+        env:
+          SLSKD_VERSION: "0.26.2"
+        run: |
+          set -e
+          mkdir -p vendor/slskd
+          curl -fsSL -o slskd.zip "https://github.com/slskd/slskd/releases/download/${SLSKD_VERSION}/slskd-${SLSKD_VERSION}-osx-arm64.zip"
+          unzip -o -q slskd.zip -d vendor/slskd
+          test -f vendor/slskd/slskd || { echo "slskd binary not found"; ls -R vendor/slskd; exit 1; }
+          name=$(python -c "from app.config import APP_NAME; print(APP_NAME)")
+          mv vendor/slskd/slskd "vendor/slskd/$name Engine" && chmod +x "vendor/slskd/$name Engine"
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          python packaging/build.py
+      - name: Sign ad hoc (lets Apple Silicon run it; first open is right-click → Open)
+        run: |
+          name=$(python -c "from app.config import APP_NAME; print(APP_NAME)")
+          codesign --force --deep --sign - "dist/$name.app"
+          codesign --verify --deep --strict "dist/$name.app" && echo "signed (ad hoc)"
+      - name: Read version
+        id: ver
+        run: |
+          echo "version=$(python -c 'from app.config import APP_VERSION; print(APP_VERSION)')" >> $GITHUB_OUTPUT
+          echo "slug=$(python -c 'from app.config import APP_SLUG; print(APP_SLUG)')" >> $GITHUB_OUTPUT
+          echo "name=$(python -c 'from app.config import APP_NAME; print(APP_NAME)')" >> $GITHUB_OUTPUT
+      - name: Smoke test the built app
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -e
+          name="${{ steps.ver.outputs.name }}"
+          "dist/$name.app/Contents/MacOS/$name" --self-test || code=$?
+          cat self-test.log 2>/dev/null || cat "dist/$name.app/Contents/MacOS/self-test.log" 2>/dev/null || true
+          exit ${code:-0}
+      - name: Zip the app
+        run: |
+          cd dist && ditto -c -k --keepParent "${{ steps.ver.outputs.name }}.app" "../${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS
+          path: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS.zip
+          retention-days: 30
