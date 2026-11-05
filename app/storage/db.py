@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     remote_path TEXT,
     remote_size INTEGER,
     transfer_id TEXT,
-    progress REAL
+    progress REAL,
+    hidden INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS analyses (
     job_id TEXT PRIMARY KEY REFERENCES jobs(id),
@@ -46,7 +47,7 @@ CREATE INDEX IF NOT EXISTS jobs_source ON jobs(source_path, source_size, source_
 # Columns added after the first release. Existing databases get them with ALTER TABLE.
 MIGRATIONS = {
     "jobs": {"remote_user": "TEXT", "remote_path": "TEXT", "remote_size": "INTEGER",
-             "transfer_id": "TEXT", "progress": "REAL"},
+             "transfer_id": "TEXT", "progress": "REAL", "hidden": "INTEGER NOT NULL DEFAULT 0"},
 }
 
 
@@ -95,11 +96,14 @@ class Database:
             row = self._con.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return dict(row) if row else None
 
-    def jobs(self, states: tuple[str, ...] | None = None, limit: int = 500) -> list[dict]:
-        q, args = "SELECT * FROM jobs", ()
+    def jobs(self, states: tuple[str, ...] | None = None, limit: int = 500, include_hidden: bool = True) -> list[dict]:
+        where, args = [], ()
         if states:
-            q += f" WHERE state IN ({', '.join('?' * len(states))})"
+            where.append(f"state IN ({', '.join('?' * len(states))})")
             args = states
+        if not include_hidden:
+            where.append("hidden = 0")
+        q = "SELECT * FROM jobs" + (" WHERE " + " AND ".join(where) if where else "")
         q += " ORDER BY created_at DESC LIMIT ?"
         with self._lock:
             return [dict(r) for r in self._con.execute(q, (*args, limit)).fetchall()]

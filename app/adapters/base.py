@@ -9,6 +9,7 @@ existing, separately installed client (slskd) through its local API; that client
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,6 +35,8 @@ class Candidate:
     size: int                       # bytes, as reported
     display_name: str = ""          # last path component, for the UI
     folder: str = ""                # remote parent folder name, for the UI
+    artist: str = ""                # from "Artist - Title.ext" naming; empty when the name doesn't follow it
+    title: str = ""                 # the title part, or the whole file name without extension
     extension: str = ""
     bitrate_kbps: int | None = None # what the peer's client claims; verified later by our analysis
     vbr: bool | None = None
@@ -98,3 +101,20 @@ class SourceAdapter:
 
     def cancel(self, transfer: Transfer) -> bool:
         raise NotImplementedError
+
+
+_TRACK_NO = re.compile(r"^\s*(?:[A-Da-d]?\d{1,3})(?:[\s.\-_)]+)")
+
+
+def split_artist_title(filename: str) -> tuple[str, str]:
+    """"Artist - Title.mp3" -> ("Artist", "Title"); "03 - Artist - Title.flac" -> ("Artist", "Title").
+    Anything else -> ("", name without extension)."""
+    stem = Path(filename).stem.strip()
+    parts = [p.strip() for p in re.split(r"\s+-\s+", stem) if p.strip()]
+    if parts and _TRACK_NO.match(parts[0] + " ") and parts[0].strip(" .-_)").isdigit():
+        parts = parts[1:]                                   # leading track number as its own part
+    elif parts:
+        parts[0] = _TRACK_NO.sub("", parts[0], count=1) or parts[0]
+    if len(parts) >= 2:
+        return parts[0], " - ".join(parts[1:])
+    return "", (parts[0] if parts else stem)

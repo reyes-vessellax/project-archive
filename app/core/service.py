@@ -350,9 +350,19 @@ class ArchiveService:
                 self.db.event(None, "skipped", f"{p.name}: {e}")
         return staged
 
+    def hide(self, job_id: str) -> None:
+        """Remove a finished entry from the queue panel. History is kept; nothing on disk changes."""
+        job = self._require(job_id)
+        if job["state"] not in J.FINAL and job["state"] != J.ERROR:
+            raise ActionBlocked("Finish or cancel this track before removing it from the list.")
+        if job["state"] == J.ERROR:
+            self._remove_staging(job)                       # an errored track's staged copy goes too
+        self.db.update_job(job_id, hidden=1)
+
     # helpers --------------------------------------------------------------------------
     def jobs(self) -> list[dict]:
-        return self.db.jobs()
+        """What the queue panel shows: everything the user hasn't removed."""
+        return self.db.jobs(include_hidden=False)
 
     def _adapter_or_block(self) -> SourceAdapter:
         if self.managed_mode:

@@ -65,6 +65,12 @@ jobs:
           New-Item -ItemType Directory -Force vendor/slskd | Out-Null
           Expand-Archive slskd.zip -DestinationPath vendor/slskd
           if (-not (Test-Path vendor/slskd/slskd.exe)) { throw "slskd.exe not found after extraction" }
+          # Firewall and task-manager prompts show the executable's name and description, and users don't
+          # know what slskd is. Rename it and set its version info to the product name.
+          Invoke-WebRequest -Uri "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe" -OutFile rcedit.exe
+          Move-Item vendor/slskd/slskd.exe "vendor/slskd/Project Archive Engine.exe"
+          ./rcedit.exe "vendor/slskd/Project Archive Engine.exe" --set-version-string "FileDescription" "Project Archive Engine" --set-version-string "ProductName" "Project Archive" --set-version-string "CompanyName" "Project Archive" --set-version-string "OriginalFilename" "Project Archive Engine.exe"
+          if (-not (Test-Path "vendor/slskd/Project Archive Engine.exe")) { throw "engine rename failed" }
       - name: Build
         run: |
           python -m pip install --upgrade pip

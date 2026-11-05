@@ -44,8 +44,17 @@ def bundled_slskd_dir() -> Path | None:
     override = os.environ.get("PROJECT_ARCHIVE_SLSKD_DIR")
     if override:
         dirs.insert(0, Path(override))
-    exe = "slskd.exe" if sys.platform == "win32" else "slskd"
-    return next((d for d in dirs if (d / exe).is_file()), None)
+    return next((d for d in dirs if engine_exe(d) is not None), None)
+
+
+# The firewall prompt names the program by its executable, so the build ships the engine renamed
+# "Project Archive Engine" (with matching version info). The plain slskd name still works from source.
+ENGINE_NAMES = ("Project Archive Engine", "slskd")
+
+
+def engine_exe(folder: Path) -> Path | None:
+    suffix = ".exe" if sys.platform == "win32" else ""
+    return next((folder / (n + suffix) for n in ENGINE_NAMES if (folder / (n + suffix)).is_file()), None)
 
 
 def free_port() -> int:
@@ -140,7 +149,7 @@ class SlskdManager:
         if not self.available:
             raise BackendUnavailable("The download engine isn't included in this build.")
         cfg = self.write_config()
-        exe = self.binary_dir / ("slskd.exe" if sys.platform == "win32" else "slskd")
+        exe = engine_exe(self.binary_dir)
         user, password = self.soulseek_login()
         env = {**os.environ, "SLSKD_SLSK_USERNAME": user, "SLSKD_SLSK_PASSWORD": password,
                "NO_COLOR": "1", "DOTNET_CLI_TELEMETRY_OPTOUT": "1"}

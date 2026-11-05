@@ -18,7 +18,9 @@ Local files can also be dragged in or picked up from a watched folder; they join
 
 1. **Search results** (right side, replaces the review panel while browsing). A search box in the top
    bar, a results table, a **Check this file** button. Double-click does the same.
-2. **Queue** (left side, always visible). Every track in every state, newest first.
+2. **Queue** (left side, always visible). Every track in every state, newest first. Finished entries
+   (downloaded, deleted, cancelled, expired, error) show a small **×** top-right that removes them from the
+   panel (history is kept in the database).
 3. **Review** (right side). Facts, spectrogram, checks, decision buttons for the selected queue item.
    Selecting a queue item switches back to this page; a **Search results** button goes back to the table.
 4. **Settings** dialog.
@@ -45,8 +47,14 @@ Refreshed every 15 seconds and after Settings is saved.
 
 ## Search results: data per row
 
+Columns, in order: Title, Artist, Folder, User, Size, Bitrate, Length, Queue, Speed. All column edges are
+click-and-drag resizable. Rows come fastest-first (free slot, then shortest queue, then upload speed); no
+user sorting or filters. The search button is labelled just **Search**.
+
 ```
-display_name    "Artist - Track (Original Mix).mp3"   file name on the peer's machine
+title           "Track (Original Mix)"   from "Artist - Title.ext" naming; whole name if it doesn't follow it
+artist          "Artist"                 empty when the name doesn't follow "Artist - Title"
+display_name    "Artist - Track (Original Mix).mp3"   file name on the peer's machine (tooltip)
 folder          "Compilation Vol 2"                   remote parent folder (often the album/release)
 user            "someuser"                            peer that offers it
 size            bytes
@@ -59,7 +67,7 @@ upload_speed    bytes/s | null
 locked          true | false    can't be requested; show greyed
 ```
 
-Default sort: free slot first, shortest queue, then claimed bitrate. Results arrive over ~20 seconds; the
+Default order: free slot first, shortest queue, then fastest uploader; claimed bitrate breaks ties. Results arrive over ~20 seconds; the
 header shows "searching…" then "done". Only files in the accepted-formats list are shown.
 
 ## Track states (show as a badge in the queue)

@@ -20,7 +20,7 @@ from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
                                QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox,
-                               QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+                               QSplitter, QStackedWidget, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..adapters.base import Candidate, ConnectorError, SearchResult
 from ..config import APP_NAME
@@ -60,8 +60,8 @@ QPushButton#primary { background: #1f5f8b; color: white; border: none; border-ra
 QPushButton#primary:disabled { background: #9db3c4; }
 QPushButton#warn { background: #c98a12; color: white; border: none; border-radius: 4px; font-weight: 600; }
 QListWidget { border: none; }
-QListWidget::item { padding: 6px 4px; border-bottom: 1px solid palette(mid); }
-QListWidget::item:selected { background: #1f5f8b; color: white; }
+QListWidget::item { padding: 0px; border-bottom: 1px solid palette(mid); }
+QListWidget::item:selected { background: #dbe7f1; }
 QFrame#facts { border: 1px solid palette(mid); border-radius: 4px; }
 QTreeWidget { border: 1px solid palette(mid); }
 """
@@ -90,6 +90,28 @@ class Task(QRunnable):
         except Exception as e:                                      # keep the app alive, report it
             traceback.print_exc()
             self.signals.failed.emit("", f"Unexpected error: {e}")
+
+
+# --------------------------------------------------------------------------- queue row
+class QueueRow(QWidget):
+    """One entry in the left panel: name, status line, and a small × (top-right) once it's finished."""
+
+    def __init__(self, name: str, badge: str, colour: str | None, removable: bool, on_remove):
+        super().__init__()
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        title = QLabel(name); title.setStyleSheet("font-weight: 600;"); title.setToolTip(name)
+        title.setTextInteractionFlags(Qt.NoTextInteraction)
+        sub = QLabel(badge); sub.setStyleSheet(f"color: {colour or 'palette(text)'}; font-size: 12px;")
+        sub.setWordWrap(True)
+        x = QToolButton(); x.setText("×"); x.setToolTip("Remove from this list"); x.setAutoRaise(True)
+        x.setFixedSize(18, 18); x.setStyleSheet("QToolButton { color: gray; font-size: 14px; border: none; }"
+                                                 "QToolButton:hover { color: #b23b3b; }")
+        x.setVisible(removable); x.clicked.connect(on_remove)
+        x.setFocusPolicy(Qt.NoFocus)
+        top = QHBoxLayout(); top.setContentsMargins(0, 0, 0, 0); top.addWidget(title, 1); top.addWidget(x, 0, Qt.AlignTop)
+        lay = QVBoxLayout(self); lay.setContentsMargins(6, 4, 4, 4); lay.setSpacing(1); lay.addLayout(top); lay.addWidget(sub)
+        for w in (title, sub):
+            w.setAttribute(Qt.WA_TransparentForMouseEvents)   # clicks fall through to select the row
 
 
 # --------------------------------------------------------------------------- spectrogram view
@@ -278,17 +300,22 @@ class SettingsDialog(QDialog):
 
 # --------------------------------------------------------------------------- search results page
 class ResultsPage(QWidget):
-    COLS = ["File", "Folder", "User", "Size", "Bitrate", "Length", "Queue", "Speed"]
+    COLS = ["Title", "Artist", "Folder", "User", "Size", "Bitrate", "Length", "Queue", "Speed"]
+    WIDTHS = [260, 160, 160, 110, 70, 90, 60, 70, 80]
 
     def __init__(self, on_pick, on_back):
         super().__init__()
         self.on_pick = on_pick
-        self.title = QLabel("Search Soulseek for a track"); self.title.setStyleSheet("font-size:16px; font-weight:600;")
-        self.hint = QLabel("Results are what other users' clients report. Pick one and it is checked before anything "
-                           "reaches your library."); self.hint.setStyleSheet("color: gray;"); self.hint.setWordWrap(True)
+        self.title = QLabel("Search for a track"); self.title.setStyleSheet("font-size:16px; font-weight:600;")
+        self.hint = QLabel("Fastest sources first. Details are what the other user's software reports; every file is "
+                           "checked before anything reaches your library."); self.hint.setStyleSheet("color: gray;"); self.hint.setWordWrap(True)
         self.tree = QTreeWidget(); self.tree.setColumnCount(len(self.COLS)); self.tree.setHeaderLabels(self.COLS)
-        self.tree.setRootIsDecorated(False); self.tree.setAlternatingRowColors(True); self.tree.setSortingEnabled(True)
-        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tree.setRootIsDecorated(False); self.tree.setAlternatingRowColors(True); self.tree.setSortingEnabled(False)
+        hdr = self.tree.header()
+        hdr.setSectionResizeMode(QHeaderView.Interactive)      # click-and-drag every column edge
+        hdr.setStretchLastSection(False)
+        for i, w in enumerate(self.WIDTHS):
+            self.tree.setColumnWidth(i, w)
         self.tree.itemDoubleClicked.connect(lambda *_: self._pick())
         self.tree.itemSelectionChanged.connect(lambda: self.btn_pick.setEnabled(bool(self.tree.selectedItems())))
         self.btn_pick = QPushButton("Check this file", objectName="primary"); self.btn_pick.setEnabled(False)
@@ -301,23 +328,24 @@ class ResultsPage(QWidget):
         n = len(res.candidates)
         state = "searching…" if searching else "done"
         self.title.setText(f"“{res.query}” · {n} file{'s' if n != 1 else ''} · {state}")
-        self.tree.setSortingEnabled(False)
+        selected = self.tree.selectedItems()
+        keep = selected[0].data(0, Qt.UserRole).key if selected else None
         self.tree.clear()
         for c in sorted(res.candidates, key=_rank):
             it = QTreeWidgetItem([
-                c.display_name, c.folder, c.user, f"{c.size / 1e6:.1f} MB",
+                c.title or c.display_name, c.artist, c.folder, c.user, f"{c.size / 1e6:.1f} MB",
                 (f"{c.bitrate_kbps} kbps" + (" VBR" if c.vbr else "")) if c.bitrate_kbps else "?",
                 fmt_time(c.length_s) if c.length_s else "?",
                 "free slot" if c.free_slot else (str(c.queue_length) if c.queue_length is not None else "?"),
                 f"{c.upload_speed / 1e3:.0f} kB/s" if c.upload_speed else "?",
             ])
             it.setData(0, Qt.UserRole, c)
+            it.setToolTip(0, c.display_name)
             if c.locked:
-                it.setForeground(0, QColor("gray")); it.setText(0, c.display_name + "  (locked)")
+                it.setForeground(0, QColor("gray")); it.setText(0, (c.title or c.display_name) + "  (locked)")
             self.tree.addTopLevelItem(it)
-        self.tree.setSortingEnabled(True)
-        for i in range(1, len(self.COLS)):
-            self.tree.resizeColumnToContents(i)
+            if c.key == keep:
+                it.setSelected(True)
 
     def _pick(self):
         items = self.tree.selectedItems()
@@ -326,9 +354,11 @@ class ResultsPage(QWidget):
 
 
 def _rank(c: Candidate):
-    """Likely-fastest first: free slots, short queues, then the bitrate the peer claims."""
-    return (0 if c.free_slot else 1, c.queue_length if c.queue_length is not None else 1_000_000,
-            -(c.bitrate_kbps or 0), -(c.upload_speed or 0))
+    """Fastest to arrive first: a free slot beats any queue, then the shortest queue, then the fastest
+    uploader; claimed bitrate only breaks ties. Locked files go last."""
+    return (1 if c.locked else 0, 0 if c.free_slot else 1,
+            c.queue_length if c.queue_length is not None else 1_000_000,
+            -(c.upload_speed or 0), -(c.bitrate_kbps or 0))
 
 
 # --------------------------------------------------------------------------- main window
@@ -419,9 +449,9 @@ class MainWindow(QMainWindow):
         title = QLabel(f"<b style='font-size:16px'>{APP_NAME}</b>")
         self.status = QLabel()
         self.btn_retry = QPushButton("Try again"); self.btn_retry.setVisible(False); self.btn_retry.clicked.connect(self._start_backend)
-        self.search = QLineEdit(); self.search.setPlaceholderText("Search Soulseek: artist, track, label…")
+        self.search = QLineEdit(); self.search.setPlaceholderText("Artist, track, label…")
         self.search.setMinimumWidth(320); self.search.returnPressed.connect(self._search)
-        find = QPushButton("Search Soulseek", objectName="primary"); find.clicked.connect(self._search)
+        find = QPushButton("Search", objectName="primary"); find.clicked.connect(self._search)
         add = QPushButton("Add local files…"); add.clicked.connect(self._pick_files)
         settings = QPushButton("Settings"); settings.clicked.connect(self._settings)
         for w in (title, self.status, self.btn_retry): top.addWidget(w)
@@ -486,17 +516,30 @@ class MainWindow(QMainWindow):
         for job in self.svc.jobs():
             a = self.svc.db.analysis(job["id"]) if job["state"] not in (J.STAGING, J.ANALYZING, J.QUEUED) else None
             badge = self._badge(job, a)
-            item = QListWidgetItem(f"{job['original_name']}\n{badge}")
+            colour = COLORS[a["overall_status"]] if a and job["state"] == J.READY else \
+                ("gray" if job["state"] in J.FINAL or job["state"] == J.ERROR else None)
+            item = QListWidgetItem()
             item.setData(Qt.UserRole, job["id"])
-            if a and job["state"] == J.READY:
-                item.setForeground(QColor(COLORS[a["overall_status"]]))
-            elif job["state"] in J.FINAL:
-                item.setForeground(QColor("gray"))
+            row = QueueRow(job["original_name"], badge, colour,
+                           removable=job["state"] in J.FINAL or job["state"] == J.ERROR,
+                           on_remove=lambda _=False, jid=job["id"]: self._remove_entry(jid))
+            item.setSizeHint(row.sizeHint())
             self.queue.addItem(item)
+            self.queue.setItemWidget(item, row)
             if job["id"] == keep:
                 self.queue.setCurrentItem(item)
         self.queue.blockSignals(False)
         self._show_job(keep)
+
+    def _remove_entry(self, job_id: str):
+        try:
+            self.svc.hide(job_id)
+        except ActionBlocked as e:
+            QMessageBox.warning(self, APP_NAME, str(e))
+            return
+        if self.selected == job_id:
+            self.selected = None
+        self.refresh()
 
     def _badge(self, job, a) -> str:
         st = job["state"]
@@ -523,7 +566,7 @@ class MainWindow(QMainWindow):
             b.setVisible(bool(job)); b.setEnabled(False)
         self.btn_results.setVisible(self.search_id is not None)
         if not job:
-            self.name.setText("Search Soulseek above, or drop a track in to check it"); self.grade.setText("")
+            self.name.setText("Search above, or drop a track in to check it"); self.grade.setText("")
             for v in self.fact_labels.values(): v.setText("–")
             self.checks.setText(""); self.spectrum.clear_view("Spectrogram appears here after the check.")
             return

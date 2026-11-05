@@ -228,3 +228,29 @@ def test_old_database_gets_new_columns(tmp_path):
                   remote_path="p", remote_size=1, transfer_id="t", progress=0.5)
     assert db.job("x")["transfer_id"] == "t"
     db.close()
+
+
+# queue housekeeping ----------------------------------------------------------------------
+def test_remove_entry_hides_but_keeps_history(connected, slskd):
+    cand = next(c for c in search_all(connected, "cut off").candidates)
+    job = connected.request_download(cand)
+    with pytest.raises(ActionBlocked):
+        connected.hide(job["id"])                             # still downloading: not removable
+    connected.poll_downloads(); connected.analyze(job["id"]); connected.reject(job["id"])
+    connected.hide(job["id"])
+    assert job["id"] not in {j["id"] for j in connected.jobs()}          # gone from the panel
+    assert connected.db.job(job["id"])["state"] == J.REJECTED            # history kept
+
+
+def test_artist_title_from_filename():
+    from app.adapters.base import split_artist_title as s
+    assert s("Artist - Track (Original Mix).mp3") == ("Artist", "Track (Original Mix)")
+    assert s("03 - Artist - Track.flac") == ("Artist", "Track")
+    assert s("A1 Artist - Track.wav") == ("Artist", "Track")
+    assert s("Weird_Name_123.mp3") == ("", "Weird_Name_123")
+    assert s("Artist - Track - Remix.mp3") == ("Artist", "Track - Remix")
+
+
+def test_search_results_carry_artist_and_title(connected):
+    c = next(c for c in search_all(connected, "real track").candidates)
+    assert (c.artist, c.title) == ("Artist", "Real Track")
