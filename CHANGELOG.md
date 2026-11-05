@@ -16,6 +16,25 @@ one line changes and this file gets a note.
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 - Library tab as a browsable history (today it opens the library folder).
 
+## 0.3.3 — 2026-11-05 (resources, Error category)
+
+### Fixed: the app bogged down after 5–6 tracks
+- FFmpeg's output pipes were never closed after a decode, leaking two OS handles per track; and
+  each analysis kept tens of MB of spectrum data alive after it finished. Pipes are now closed,
+  the spectrum memory is released as soon as the PNG is written, and the number of spectra kept
+  per track is capped (a file lying about its length can't grow it without bound).
+- The engine is told to forget each download the moment it's moved into quarantine (or failed),
+  completed transfers and old searches are cleared on sign-in, every 10 minutes, and every five
+  searches — nothing stays lurking in its lists.
+- Cancel now removes the transfer from the engine instead of leaving it marked cancelled.
+
+### Error category
+- "Error" is its own word tag (red) for tracks whose download or check failed, with a short reason
+  (download failed / couldn't stage / check failed). Word tags are coloured everywhere: queue rows,
+  review rail, counts, verdict. Error rows get a red left edge in the review rail.
+- Search results from a source that already failed us, or whose file turned out broken, are shown in
+  red with "⚠ failed before" / "⚠ broken file" in the Speed column.
+
 ## 0.3.2 — 2026-11-05 (search speed, flashing window)
 
 - Fixed: a small blank window kept flashing at the top of the screen and stole focus (clicking the

@@ -174,7 +174,7 @@ def test_progress_and_cancel(connected, slskd):
         connected.reject(job["id"])                           # can't delete what hasn't arrived
     connected.cancel(job["id"])
     assert connected.db.job(job["id"])["state"] == J.CANCELLED
-    assert slskd.transfers[j["transfer_id"]]["state"] == "Completed, Cancelled"
+    assert j["transfer_id"] in slskd.removed                     # cancelled AND removed from the engine's list
 
 
 def test_failed_download_becomes_error(connected, slskd):
@@ -329,3 +329,43 @@ def test_errored_search_is_reported_not_silent(slskd):
     slskd.searches[sid]["meta"]["state"] = "Completed, Errored"
     res = a.search_results(sid)
     assert res.finished and res.error and "connection" in res.error
+
+
+# resources ----------------------------------------------------------------------------------
+def test_finished_download_is_forgotten_by_engine(connected, slskd):
+    cand = next(c for c in search_all(connected, "real track").candidates)
+    job = connected.request_download(cand)
+    tid = connected.db.job(job["id"])["transfer_id"]
+    connected.poll_downloads()
+    assert tid in slskd.removed and tid not in slskd.transfers      # not lurking in the engine's list
+
+
+def test_failed_download_is_forgotten_too(connected, slskd):
+    slskd.fail_next_download = True
+    cand = next(c for c in search_all(connected, "real track").candidates)
+    job = connected.request_download(cand)
+    tid = connected.db.job(job["id"])["transfer_id"]
+    connected.poll_downloads()
+    assert tid in slskd.removed
+
+
+def test_housekeeping_clears_old_searches(connected, slskd):
+    for q in ("real", "low", "cut"):
+        search_all(connected, q)
+    assert len(slskd.searches) == 3
+    connected.engine_housekeeping()
+    assert slskd.searches == {}
+
+
+def test_decode_closes_pipes_and_frees_frames(fixtures):
+    import gc, os
+    from app.media.decode import decode_and_analyze
+    before = len(os.listdir("/proc/self/fd")) if os.path.isdir("/proc/self/fd") else None
+    for _ in range(6):
+        d = decode_and_analyze(fixtures["mp3_320"], 44100, 40.0)
+        assert d.ok_exit and d.frames is not None
+        del d
+    gc.collect()
+    if before is not None:
+        after = len(os.listdir("/proc/self/fd"))
+        assert after <= before + 2, (before, after)                   # no handle growth across six decodes

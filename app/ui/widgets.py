@@ -210,6 +210,7 @@ class QueueRow(QWidget):
         super().__init__()
         self.job_id = job_id
         self.setObjectName("row")
+        self.setProperty("tag", tag)
         self.setCursor(Qt.PointingHandCursor)
         self.setMinimumHeight(60)
         lay = hbox(self, (8, 10, 8, 10), 16)

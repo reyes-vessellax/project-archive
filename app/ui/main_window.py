@@ -86,6 +86,8 @@ class MainWindow(QMainWindow):
         self.status_timer = QTimer(self, interval=15000, timeout=self._poll_status); self.status_timer.start()
         self.clean_timer = QTimer(self, interval=3600 * 1000, timeout=lambda: (svc.cleanup_expired(), self.refresh()))
         self.clean_timer.start()
+        self.hk_timer = QTimer(self, interval=10 * 60 * 1000, timeout=lambda: self.io.start(Task(svc.engine_housekeeping, self.signals)))
+        self.hk_timer.start()
         if svc.accounts.load() and svc.settings.setup_done:
             self._enter_app()
         else:
@@ -202,6 +204,19 @@ class MainWindow(QMainWindow):
         analyses = {j["id"]: (self.svc.db.analysis(j["id"]) if j["state"] not in (J.STAGING, J.ANALYZING, J.QUEUED) else None)
                     for j in jobs}
         self._jobs, self._analyses = jobs, analyses
+        # sources that already let us down, so the search table can flag them in red
+        problems = {}
+        for j in self.svc.db.jobs(include_hidden=True):
+            if not (j.get("remote_user") and j.get("remote_path")):
+                continue
+            key = f"{j['remote_user']}\n{j['remote_path']}"
+            if j["state"] == J.ERROR:
+                problems[key] = "failed before"
+            else:
+                a = analyses.get(j["id"]) if j["id"] in analyses else self.svc.db.analysis(j["id"])
+                if a and a["overall_status"] == "FAIL":
+                    problems[key] = "broken file"
+        self.searchp.set_problem_sources(problems)
         self.home.steps = self.steps
         self.home.refresh(jobs, analyses)
         ready = sum(1 for j in jobs if j["state"] == J.READY)
@@ -281,6 +296,8 @@ class MainWindow(QMainWindow):
             if self._connected or failed or timed_out:
                 c.finish()
                 self.root.setCurrentWidget(self.shell)
+                if self._connected:
+                    self.io.start(Task(self.svc.engine_housekeeping, self.signals))   # clear leftovers from last run
                 if failed:
                     self._connection_trouble()
                 elif timed_out and not self._connected:

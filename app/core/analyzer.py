@@ -53,6 +53,8 @@ def analyze(path: Path, settings: Settings, progress: Progress = lambda s: None)
                 spec_path = str(render(d.frames, path.parent / "spectrum.png"))
             except Exception:                       # spectrum is optional; never fabricate one
                 spec_path = None
+        d.frames = None                             # tens of MB per track: release before the next slot starts
+        del d
 
     checks = rules.evaluate(path.suffix, facts, decode, cutoff, settings)
     return _result(digest, facts, magic, decode, cutoff, spec_path, checks)

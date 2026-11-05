@@ -209,6 +209,26 @@ class SlskdAdapter(SourceAdapter):
         except ConnectorError:
             return False
 
+    def forget(self, transfer: Transfer) -> None:
+        user = parse.quote(transfer.user, safe="")
+        try:                                        # remove=true drops it from the client's list; it's already done
+            self._call("DELETE", f"/transfers/downloads/{user}/{transfer.transfer_id}", query={"remove": "true"})
+        except ConnectorError:
+            pass
+
+    def housekeeping(self) -> None:
+        """Completed downloads out of the client's list, old searches gone, nothing left lurking."""
+        try:
+            self._call("DELETE", "/transfers/downloads/all/completed")
+        except ConnectorError:
+            pass
+        try:
+            for s in self._call("GET", "/searches") or []:
+                if "Completed" in str(s.get("state", "")) and s.get("id"):
+                    self._call("DELETE", f"/searches/{s['id']}")
+        except ConnectorError:
+            pass
+
     # helpers ---------------------------------------------------------------------------------
     def _find_transfer(self, user: str, remote_path: str) -> Transfer | None:
         data = self._call("GET", f"/transfers/downloads/{parse.quote(user, safe='')}") or {}

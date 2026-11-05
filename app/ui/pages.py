@@ -45,7 +45,9 @@ def row_data(job: dict, analysis: dict | None, steps: dict[str, str]) -> dict:
     if st == J.PROMOTED:
         return dict(tag="Done", title=title, artist=artist, pct=None, meta="in library", removable=True)
     if st == J.ERROR:
-        return dict(tag="Broken", title=title, artist=artist, pct=None, meta="error", removable=True)
+        msg = (job.get("message") or "error")
+        short = "download failed" if "ownload" in msg else ("couldn't stage" if "stage" in msg else ("check failed" if "nalysis" in msg else "error"))
+        return dict(tag="Error", title=title, artist=artist, pct=None, meta=short, removable=True)
     return dict(tag="Gone", title=title, artist=artist, pct=None,
                 meta={J.REJECTED: "deleted", J.CANCELLED: "cancelled", J.EXPIRED: "expired"}.get(st, st.lower()), removable=True)
 
@@ -189,6 +191,9 @@ MAX_ROWS = 400
 
 class SearchPage(QWidget):
     search = Signal(str)
+
+    def _theme(self) -> str:
+        return getattr(self.svc.settings, "theme", "light")
     pick = Signal(object)        # Candidate
     COLS = ["#", "Title", "Mix", "Artist", "Folder", "User", "Size", "Rate", "Length", "Speed"]
     WIDTHS = [40, 240, 120, 150, 150, 100, 70, 60, 60, 190]
@@ -230,6 +235,10 @@ class SearchPage(QWidget):
         self.q.setEnabled(on); self.search_btn.setEnabled(on)
         self.btn.setEnabled(on and bool(self.tree.selectedItems()))
 
+    def set_problem_sources(self, keys: dict[str, str]):
+        """remote key -> short reason, for sources that already failed us (download errored, rejected, etc.)."""
+        self._problems = keys
+
     def show_results(self, res: SearchResult, searching: bool):
         n = len(res.candidates)
         self.title.setText(f"{n} source{'s' if n != 1 else ''}")
@@ -257,8 +266,17 @@ class SearchPage(QWidget):
             ])
             it.setData(0, Qt.UserRole, c)
             it.setToolTip(1, c.display_name)
-            if c.locked:
-                it.setForeground(1, self.palette().mid())
+            problem = getattr(self, "_problems", {}).get(c.key)
+            if problem:
+                from PySide6.QtGui import QColor
+                red = QColor(T.colours(self._theme())["fail"])
+                for col in range(self.tree.columnCount()):
+                    it.setForeground(col, red)
+                it.setText(9, f"⚠ {problem}")
+                it.setToolTip(9, f"This source failed before: {problem}")
+            elif c.locked:
+                for col in range(self.tree.columnCount()):
+                    it.setForeground(col, self.palette().mid())
             items.append(it)
         self.tree.addTopLevelItems(items)
         for it in items:
@@ -377,7 +395,7 @@ class ReviewPage(QWidget):
         self.rail_count.setText(str(sum(1 for j in shown if j["state"] == J.READY)))
         for j in shown:
             d = row_data(j, analyses.get(j["id"]), steps)
-            w = QWidget(); w.setObjectName("row"); w.setCursor(Qt.PointingHandCursor)
+            w = QWidget(); w.setObjectName("row"); w.setCursor(Qt.PointingHandCursor); w.setProperty("tag", d["tag"])
             hl = hbox(w, (10, 9, 10, 9), 12)
             t = label(d["tag"].upper(), "tag", d["tag"]); t.setFixedWidth(56)
             n = label(d["title"]); n.setStyleSheet("font-weight: 600;"); n.setToolTip(d["title"])
@@ -413,6 +431,9 @@ class ReviewPage(QWidget):
             issues = sum(1 for c in a["checks"] if c["status"] != "PASS")
             self.verdict_sub.setText({0: "Nothing to worry about", 1: "1 thing to check"}.get(issues, f"{issues} things to check")
                                      if status != "FAIL" else "Can't be used")
+        elif job["state"] == J.ERROR:
+            set_tag(self.verdict, "Error"); self.verdict.setText("Error")
+            self.verdict_sub.setText(d["meta"])
         else:
             set_tag(self.verdict, d["tag"]); self.verdict.setText(d["tag"] if busy else "")
             self.verdict_sub.setText(d["meta"] if busy else (job.get("message") or ""))

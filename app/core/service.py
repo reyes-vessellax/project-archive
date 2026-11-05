@@ -114,6 +114,9 @@ class ArchiveService:
 
     def search(self, query: str) -> SearchResult:
         adapter = self._adapter_or_block()
+        self._searches_started = getattr(self, "_searches_started", 0) + 1
+        if self._searches_started % 5 == 0:
+            self.engine_housekeeping()                       # old searches hold their results in the engine
         if self.managed_mode and not self.adapter_logged_in():
             raise ActionBlocked("Still signing in. Search opens as soon as you're connected.")
         return adapter.search(query)
@@ -178,8 +181,10 @@ class ArchiveService:
                     _tidy_empty_subfolder(t.local_path.parent, getattr(self.adapter, "downloads_dir", None))
                 except Exception as e:
                     self.db.update_job(job["id"], state=J.ERROR, message=f"Couldn't move the download into quarantine: {e}")
+                self.adapter.forget(t)                       # the engine has nothing more to do with it
             elif t.failed:
                 self.db.update_job(job["id"], state=J.ERROR, message=f"Download failed: {t.state}")
+                self.adapter.forget(t)
             else:
                 self.db.update_job(job["id"], progress=t.percent, message=t.state)
         return ready
@@ -321,6 +326,14 @@ class ArchiveService:
                 self.db.update_job(job["id"], state=J.EXPIRED, disposition="expired")
                 n += 1
         return n
+
+    def engine_housekeeping(self) -> None:
+        """Periodic: tell the engine to drop finished transfers and old searches."""
+        if self.adapter is not None:
+            try:
+                self.adapter.housekeeping()
+            except Exception:
+                pass
 
     def reconcile(self) -> None:
         """Run at startup: repair jobs interrupted by a crash or quit. Never deletes ambiguous files.

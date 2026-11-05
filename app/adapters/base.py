@@ -105,6 +105,12 @@ class SourceAdapter:
     def cancel(self, transfer: Transfer) -> bool:
         raise NotImplementedError
 
+    def forget(self, transfer: Transfer) -> None:
+        """Drop a finished transfer from the client's list so it stops tracking it."""
+
+    def housekeeping(self) -> None:
+        """Clear completed transfers and old searches the client still holds."""
+
 
 _TRACK_NO = re.compile(r"^\s*(?:[A-Da-d]?\d{1,3})(?:[\s.\-_)]+)")
 _DASHES = re.compile(r"\s*[\u2013\u2014\u2012-]\s*")           # -, –, —, ‒ with any spacing

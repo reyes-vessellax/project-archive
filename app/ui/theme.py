@@ -26,7 +26,7 @@ PALETTES = {
 
 # Word tags shown on queue rows and checks (design v5 wording).
 TAG_COLOUR = {"Down": "accent", "Check": "text", "Wait": "faint", "Good": "pass_", "Look": "warn", "Broken": "fail",
-              "Done": "muted", "Gone": "faint"}
+              "Error": "fail", "Done": "pass_", "Gone": "faint"}
 GRADE_WORD = {"PASS": "Good", "WARN": "Look", "FAIL": "Broken"}
 GRADE_LONG = {"PASS": "Good", "WARN": "Have a look", "FAIL": "Broken"}
 
@@ -48,7 +48,8 @@ def stylesheet(theme: str) -> str:
     display = f'"{DISPLAY}", "{SANS}", "Segoe UI", system-ui, sans-serif'
     mono = f'"{MONO}", "Consolas", monospace'
     tags = "\n".join(
-        f'QLabel[tag="{word}"] {{ color: {c[key]}; }}' for word, key in TAG_COLOUR.items()
+        f'QLabel#tag[tag="{word}"], QLabel#count[tag="{word}"], QLabel#verdict[tag="{word}"] {{ color: {c[key]}; }}'
+        for word, key in TAG_COLOUR.items()
     )
     return f"""
 * {{ font-family: {sans}; font-size: 13px; color: {c['text']}; }}
@@ -76,6 +77,10 @@ QLabel#mono {{ font-family: {mono}; font-size: 12px; color: {c['muted']}; }}
 QLabel#monotext {{ font-family: {mono}; font-size: 13px; }}
 QLabel#tag {{ font-family: {mono}; font-size: 10px; font-weight: 500; letter-spacing: 1px; color: {c['faint']}; }}
 {tags}
+QLabel#tag[tag="Good"], QLabel#tag[tag="Look"], QLabel#tag[tag="Broken"], QLabel#tag[tag="Error"], QLabel#tag[tag="Down"] {{ font-weight: 700; }}
+QLabel#verdict[tag="Error"] {{ color: {c['fail']}; }}
+QProgressBar[tag="Error"]::chunk {{ background: {c['fail']}; }}
+QWidget#row[tag="Error"] {{ border-left: 3px solid {c['fail']}; }}
 QLabel#count {{ font-family: {display}; font-size: 26px; font-weight: 800; }}
 QLabel#count[tag="Good"] {{ color: {c['pass_']}; }}
 QLabel#count[tag="Look"] {{ color: {c['warn']}; }}

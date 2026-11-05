@@ -46,8 +46,11 @@ def creation_flags() -> int:
 
 
 def run(args: list[str], timeout: float) -> subprocess.CompletedProcess:
-    proc = subprocess.run(args, capture_output=True, timeout=timeout, shell=False,
-                          creationflags=creation_flags(), stdin=subprocess.DEVNULL)
+    try:
+        proc = subprocess.run(args, capture_output=True, timeout=timeout, shell=False,
+                              creationflags=creation_flags(), stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired as e:               # subprocess.run kills the child on timeout; report it cleanly
+        raise RuntimeError(f"{Path(args[0]).name} didn't finish in {timeout:.0f}s") from e
     proc.stderr = proc.stderr[-MAX_STDERR:]
     return proc
 

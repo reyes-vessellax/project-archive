@@ -23,6 +23,7 @@ class FakeSlskd:
         self.library = library
         self.searches: dict[str, dict] = {}
         self.transfers: dict[str, dict] = {}        # id -> transfer row
+        self.removed: list[str] = []                # transfer ids the app told us to forget
         self.auto_complete = True                   # finish downloads on the first status poll
         self.logged_in = True
         self.fail_next_download = False
@@ -58,6 +59,8 @@ class FakeSlskd:
                         "isConnected": True, "isLoggedIn": server.logged_in,
                         "username": "dj_test" if server.logged_in else None,
                         "state": "Connected, LoggedIn" if server.logged_in else "Connected"}})
+                if parts[2:] == ["searches"]:
+                    return self._send(200, [s["meta"] for s in server.searches.values()])
                 if parts[2] == "searches" and len(parts) == 4:
                     s = server.searches.get(parts[3])
                     return self._send(200, s["meta"]) if s else self._send(404)
@@ -101,11 +104,20 @@ class FakeSlskd:
                 if not self._auth():
                     return
                 parts = [unquote(p) for p in urlsplit(self.path).path.split("/") if p]
+                if parts[2:] == ["transfers", "downloads", "all", "completed"]:
+                    for k in [k for k, t in server.transfers.items() if t["state"].startswith("Completed")]:
+                        server.removed.append(k); del server.transfers[k]
+                    return self._send(204)
+                if parts[2] == "searches" and len(parts) == 4:
+                    server.searches.pop(parts[3], None); return self._send(204)
                 if parts[2:4] == ["transfers", "downloads"] and len(parts) == 6:
                     t = server.transfers.get(parts[5])
                     if not t:
                         return self._send(404)
-                    t["state"] = "Completed, Cancelled"
+                    if "remove=true" in (urlsplit(self.path).query or ""):
+                        server.removed.append(parts[5]); del server.transfers[parts[5]]
+                    else:
+                        t["state"] = "Completed, Cancelled"
                     return self._send(204)
                 self._send(404)
 
