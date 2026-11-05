@@ -16,6 +16,7 @@ from ..storage.db import Database
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 MIN_PASSWORD = 10
+MAX_PASSWORD = 256
 BIO_MAX = 200
 
 
@@ -78,8 +79,8 @@ class AccountStore:
             raise AccountError("Please enter your name.")
         if not _EMAIL.match(email):
             raise AccountError("That email address doesn't look right.")
-        if len(password) < MIN_PASSWORD:
-            raise AccountError(f"Use at least {MIN_PASSWORD} characters for your password.")
+        if not MIN_PASSWORD <= len(password) <= MAX_PASSWORD:
+            raise AccountError(f"Use between {MIN_PASSWORD} and {MAX_PASSWORD} characters for your password.")
         from ..storage.db import now
         a = Account(name=name, email=email, created_at=now(), password_hash=_hash(password))
         self.save(a)
@@ -87,6 +88,8 @@ class AccountStore:
 
     def sign_in(self, email: str, password: str) -> Account:
         a = self.load()
+        if len(password) > MAX_PASSWORD:
+            raise AccountError("Email or password doesn't match.")
         if not a or a.email != email.strip().lower() or not _verify(password, a.password_hash):
             raise AccountError("Email or password doesn't match.")
         return a
@@ -95,8 +98,8 @@ class AccountStore:
         a = self.load()
         if not a or not _verify(current, a.password_hash):
             raise AccountError("Your current password doesn't match.")
-        if len(new) < MIN_PASSWORD:
-            raise AccountError(f"Use at least {MIN_PASSWORD} characters for your new password.")
+        if not MIN_PASSWORD <= len(new) <= MAX_PASSWORD:
+            raise AccountError(f"Use between {MIN_PASSWORD} and {MAX_PASSWORD} characters for your new password.")
         a.password_hash = _hash(new)
         self.save(a)
 

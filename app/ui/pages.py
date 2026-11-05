@@ -2,6 +2,7 @@
 through ArchiveService and raise signals; MainWindow does the work and calls refresh()."""
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -399,7 +400,7 @@ class ReviewPage(QWidget):
                 row = QWidget(); hl = hbox(row, (0, 10, 0, 10), 14)
                 word = T.GRADE_WORD[c["status"]]
                 t = label(word.upper(), "tag", word); t.setFixedWidth(56); t.setAlignment(Qt.AlignTop)
-                txt = label(f"<b>{c['title']}</b> — <span style='color: palette(mid)'>{c['message']}</span>", wrap=True)
+                txt = label(f"<b>{html.escape(c['title'])}</b> — <span style='color: palette(mid)'>{html.escape(c['message'])}</span>", wrap=True)
                 txt.setTextFormat(Qt.RichText)
                 hl.addWidget(t); hl.addWidget(txt, 1)
                 self.checks.addWidget(row); self.checks.addWidget(rule())

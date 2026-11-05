@@ -6,7 +6,9 @@ import unicodedata
 from pathlib import Path
 
 WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
-BAD_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+BAD_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]')
+# Invisible / direction-override characters that can make "evil\u202e3pm.exe" display as "evil.mp3".
+INVISIBLE = re.compile("[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]")
 MAX_NAME = 150
 
 
@@ -37,7 +39,7 @@ def validate_candidate(path: Path, extensions: list[str], max_bytes: int) -> int
 
 def safe_filename(name: str) -> str:
     """Strip anything that could escape a folder or break on Windows. Never returns an empty name."""
-    name = unicodedata.normalize("NFC", Path(name.replace("\\", "/")).name)
+    name = INVISIBLE.sub("", unicodedata.normalize("NFC", Path(name.replace("\\", "/")).name))
     stem, dot, ext = name.rpartition(".")
     if not dot:
         stem, ext = name, ""
@@ -66,3 +68,8 @@ def is_inside(child: Path, parent: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def clean_text(s: str) -> str:
+    """For showing remote strings in the UI: drop invisible / direction-override characters."""
+    return INVISIBLE.sub("", s or "")

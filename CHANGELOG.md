@@ -16,6 +16,22 @@ one line changes and this file gets a note.
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 - Library tab as a browsable history (today it opens the library folder).
 
+## 0.3.1 — 2026-11-05 (security pass)
+
+- A result's file type is taken from its file name, never from the type the peer's client reports;
+  a file named `evil.exe` tagged "mp3" is no longer listed, and can't be requested.
+- A requested download that fails validation on arrival (wrong type, empty, oversize) is deleted
+  instead of being left in the engine's folder. Nothing unreviewed stays on disk.
+- Invisible and right-to-left override characters are stripped from remote names everywhere they are
+  shown or saved, so a name can't display as a different file type than it is.
+- Text that comes from inside a file (decoder messages) is escaped before it is shown in the review
+  checks; no markup from a file reaches the interface.
+- Finished downloads are also found when the engine had to rename them for Windows
+  (`?`, `:`, `*` and friends become `_`).
+- Sizes reported by peers are clamped (negative or non-numeric → 0); passwords are capped at 256
+  characters so a huge password can't stall sign-in.
+- 72 automated tests.
+
 ## 0.3.0 — 2026-11-05
 
 ### New look (design v5)

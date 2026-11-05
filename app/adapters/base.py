@@ -119,7 +119,8 @@ def split_artist_title(filename: str) -> tuple[str, str]:
 def parse_track(filename: str) -> tuple[str, str, str]:
     """(artist, title, mix). `mix` is the trailing "(Extended Mix)" / "[Remix]" part, "" if none, and the
     title is returned WITHOUT it; "(feat. X)" stays in the title."""
-    stem = Path(filename).stem
+    from ..core.safety import clean_text
+    stem = Path(clean_text(filename)).stem
     stem = stem.replace("_", " ")
     stem = re.sub(r"\s+", " ", stem).strip()
     # split only on a dash that has space on both sides (so "Hip-Hop" and "Re-Edit" survive)

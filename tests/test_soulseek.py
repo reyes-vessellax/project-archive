@@ -262,3 +262,62 @@ def test_artist_title_from_filename():
 def test_search_results_carry_artist_and_title(connected):
     c = next(c for c in search_all(connected, "real track").candidates)
     assert (c.artist, c.title) == ("Artist", "Real Track")
+
+
+# hostile input --------------------------------------------------------------------------
+def test_extension_comes_from_the_name_not_the_peer(connected, slskd, fixtures):
+    slskd.library[r"@@peer\Music\evil.exe"] = fixtures["mp3_320"]
+    # the fake reports extension from the fixture (mp3); the NAME says .exe, and the name wins
+    res = search_all(connected, "evil")
+    assert res.candidates == []
+    cand = Candidate(source_kind="soulseek", user="peer_a", remote_path=r"@@peer\Music\evil.exe", size=1,
+                     display_name="evil.exe", extension="exe")
+    with pytest.raises(ActionBlocked):
+        connected.request_download(cand)
+
+
+def test_rejected_download_is_removed_from_disk(connected, slskd, fixtures):
+    # a file that passes the results filter but fails validation on arrival (here: zero bytes after download)
+    bad = slskd.downloads_dir.parent / "empty.mp3"; bad.write_bytes(b"")
+    slskd.library[r"@@peer\Music\empty.mp3"] = bad
+    cand = Candidate(source_kind="soulseek", user="peer_a", remote_path=r"@@peer\Music\empty.mp3", size=0,
+                     display_name="empty.mp3", extension="mp3")
+    job = connected.request_download(cand)
+    assert connected.poll_downloads() == []
+    j = connected.db.job(job["id"])
+    assert j["state"] == J.ERROR and "empty" in j["message"].lower()
+    assert not any(slskd.downloads_dir.rglob("*.mp3"))               # not left behind
+
+
+def test_invisible_characters_are_stripped(connected, slskd, fixtures):
+    sneaky = "@@peer\\Music\\evil‮3pm.exe"                          # displays as "evil.mp3"
+    slskd.library[sneaky] = fixtures["mp3_320"]
+    res = search_all(connected, "evil")
+    assert res.candidates == []                                        # it's really an .exe
+    from app.core.safety import safe_filename, clean_text
+    assert "‮" not in safe_filename("evil‮3pm.exe") and clean_text("a​b") == "ab"
+
+
+def test_locate_handles_windows_sanitised_names(slskd, fixtures):
+    a = SlskdAdapter(slskd.url, API_KEY, str(slskd.downloads_dir))
+    remote = r"@@peer\Music\What Is Love? (Mix) 12:00.mp3"
+    folder = slskd.downloads_dir / "Music"; folder.mkdir()
+    (folder / "What Is Love_ (Mix) 12_00.mp3").write_bytes(fixtures["mp3_320"].read_bytes())   # as slskd saves it on Windows
+    assert a.locate_download(remote, fixtures["mp3_320"].stat().st_size) is not None
+
+
+def test_bad_sizes_are_clamped(slskd):
+    a = SlskdAdapter(slskd.url, API_KEY, str(slskd.downloads_dir))
+    slskd.library  # fake reports real sizes; feed the parser a bad row directly
+    from app.adapters.slskd_adapter import SlskdAdapter as S
+    rows = [{"username": "u", "files": [{"filename": "x.mp3", "size": -5}, {"filename": "y.mp3", "size": "huge"}]}]
+    orig = a._call
+    a._call = lambda m, p, *x, **k: ({"state": "Completed", "searchText": "q"} if p.startswith("/searches/") and not p.endswith("responses") else rows)
+    res = a.search_results("s")
+    assert [c.size for c in res.candidates] == [0, 0]
+    a._call = orig
+
+
+def test_decoder_text_is_escaped_in_review():
+    import html
+    assert html.escape("<a href='x'>click</a>") == "&lt;a href=&#x27;x&#x27;&gt;click&lt;/a&gt;"

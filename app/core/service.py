@@ -131,6 +131,8 @@ class ArchiveService:
             s = self.settings
             if cand.size > s.max_file_mb * 1024 * 1024:
                 raise ActionBlocked(f"That file is {cand.size / 1e6:.0f} MB, over the {s.max_file_mb} MB limit in Settings.")
+            if cand.extension.lower() not in {e.lower().lstrip(".") for e in s.extensions}:
+                raise ActionBlocked(f".{cand.extension or '(none)'} files aren't accepted.")
             job_id = str(uuid.uuid4())
             expires = (datetime.now(timezone.utc) + timedelta(hours=s.retention_hours)).isoformat(timespec="seconds")
             self.db.insert_job(id=job_id, source_kind=cand.source_kind, source_path=None, original_name=name,
@@ -223,6 +225,11 @@ class ArchiveService:
                 raise Rejected("Unsafe file name.")
         except Exception as e:
             shutil.rmtree(job_dir, ignore_errors=True)
+            if move and isinstance(e, Rejected):
+                try:                                   # we asked for it, we don't keep it: nothing unreviewed stays
+                    source.unlink()
+                except OSError:
+                    pass
             self.db.update_job(job_id, state=J.ERROR, message=f"Couldn't stage: {e}")
             raise
         self.db.update_job(job_id, staged_path=str(staged), progress=100.0, message="Staged")

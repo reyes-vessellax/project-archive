@@ -19,6 +19,7 @@ import uuid
 from pathlib import Path
 from urllib import error, parse, request
 
+from ..core.safety import clean_text, safe_filename
 from .base import Candidate, ConnectorError, ConnectorStatus, SearchResult, SourceAdapter, Transfer, parse_track
 
 API = "/api/v0"
@@ -120,12 +121,16 @@ class SlskdAdapter(SourceAdapter):
                 path = str(f.get("filename") or "")
                 if not user or not path:
                     continue
-                name = remote_basename(path)
+                name = clean_text(remote_basename(path))
                 artist, title, mix = parse_track(name)
+                try:
+                    size = max(0, int(f.get("size") or 0))
+                except (TypeError, ValueError):
+                    size = 0
                 cands.append(Candidate(
                     source_kind=self.source_kind, user=user, remote_path=path,
-                    size=int(f.get("size") or 0), display_name=name, folder=remote_folder(path), artist=artist, title=title, mix=mix,
-                    extension=str(f.get("extension") or Path(remote_basename(path)).suffix.lstrip(".")).lower(),
+                    size=size, display_name=name, folder=clean_text(remote_folder(path)), artist=artist, title=title, mix=mix,
+                    extension=Path(name).suffix.lstrip(".").lower(),          # from the NAME; the peer's field is untrusted
                     bitrate_kbps=_int(f.get("bitRate")), vbr=f.get("isVariableBitRate"),
                     length_s=_int(f.get("length")), sample_rate_hz=_int(f.get("sampleRate")),
                     bit_depth=_int(f.get("bitDepth")), free_slot=r.get("hasFreeUploadSlot"),
@@ -189,11 +194,14 @@ class SlskdAdapter(SourceAdapter):
         if not self.downloads_dir or not self.downloads_dir.is_dir():
             return None
         name = remote_basename(remote_path)
+        wanted = {name, safe_filename(name), _slskd_sanitised(name)}
         best: tuple[float, Path] | None = None
         for root, dirs, files in os.walk(self.downloads_dir):
             dirs[:] = [d for d in dirs if not Path(root, d).is_symlink()]
-            if name in files:
-                p = Path(root, name)
+            for fname in files:
+                if fname not in wanted and _slskd_sanitised(fname) not in wanted:
+                    continue
+                p = Path(root, fname)
                 if p.is_symlink() or not p.is_file():
                     continue
                 st = p.stat()
@@ -202,6 +210,14 @@ class SlskdAdapter(SourceAdapter):
                 if best is None or st.st_mtime > best[0]:
                     best = (st.st_mtime, p)
         return best[1] if best else None
+
+
+_ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def _slskd_sanitised(name: str) -> str:
+    """slskd replaces characters Windows can't store with underscores when it saves a file."""
+    return _ILLEGAL.sub("_", name)
 
 
 def _transfer_from(row: dict) -> Transfer:
