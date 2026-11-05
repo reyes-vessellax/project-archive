@@ -87,10 +87,12 @@ class SlskdAdapter(SourceAdapter):
 
     # contract ------------------------------------------------------------------------------
     def health_check(self) -> ConnectorStatus:
+        # /application works with any key role; /server needs Administrator and answers 403 otherwise.
         try:
-            s = self._call("GET", "/server") or {}
+            app = self._call("GET", "/application") or {}
         except ConnectorError as e:
             return ConnectorStatus(available=False, message=str(e))
+        s = app.get("server") or {}
         logged = bool(s.get("isLoggedIn")) or "LoggedIn" in str(s.get("state", ""))
         user = str(s.get("username") or "")
         msg = f"Connected to Soulseek as {user}" if logged and user else \

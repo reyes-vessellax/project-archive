@@ -74,6 +74,7 @@ jobs:
         shell: pwsh
         run: |
           $p = Start-Process -FilePath "dist/Project Archive/Project Archive.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if (Test-Path "dist/Project Archive/self-test.log") { Get-Content "dist/Project Archive/self-test.log"; Remove-Item "dist/Project Archive/self-test.log" }
           if ($p.ExitCode -ne 0) { throw "self-test failed with exit code $($p.ExitCode)" }
       - uses: actions/upload-artifact@v4
         with:

@@ -3,8 +3,14 @@ import sys
 
 
 def self_test() -> int:
-    """Exit code 0 = bundle is healthy. Windowed builds have no console, so don't rely on printing."""
+    """Exit code 0 = bundle is healthy. Windowed builds have no console, so everything is also written
+    to self-test.log next to the executable (or the current folder) for CI to print."""
+    from pathlib import Path
+    log_path = (Path(sys.executable).parent if getattr(sys, "frozen", False) else Path.cwd()) / "self-test.log"
+    log = open(log_path, "w", encoding="utf-8")
+
     def say(msg):
+        log.write(msg + "\n"); log.flush()
         if sys.stdout:
             print(msg)
     try:
@@ -27,15 +33,23 @@ def self_test() -> int:
             with tempfile.TemporaryDirectory() as tmp:
                 m = SlskdManager(Settings(), creds=CredentialStore(Path(tmp) / "s.json", use_keyring=False),
                                  instance_dir=Path(tmp) / "client")
-                m.start()
                 try:
+                    m.start()
                     say(f"engine: ok on {m.url}")
+                except Exception as e:
+                    say(f"engine: FAILED: {e}")
+                    eng = Path(tmp) / "client" / "engine.log"
+                    if eng.exists():
+                        say("---- engine.log ----\n" + eng.read_text("utf-8", "replace")[-6000:])
+                    raise
                 finally:
                     m.stop()
     except Exception as e:
         say(f"self-test FAILED: {e}")
+        log.close()
         return 1
     say("self-test ok")
+    log.close()
     return 0
 
 

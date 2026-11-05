@@ -52,9 +52,12 @@ class FakeSlskd:
                 path = urlsplit(self.path).path
                 parts = [unquote(p) for p in path.split("/") if p]      # ["api","v0",...]
                 if parts[2:] == ["server"]:
-                    return self._send(200, {"isConnected": True, "isLoggedIn": server.logged_in,
-                                            "username": "dj_test" if server.logged_in else None,
-                                            "state": "Connected, LoggedIn" if server.logged_in else "Connected"})
+                    return self._send(403)                        # like real slskd: Administrator role only
+                if parts[2:] == ["application"]:
+                    return self._send(200, {"version": {"current": "0.26.2.0"}, "server": {
+                        "isConnected": True, "isLoggedIn": server.logged_in,
+                        "username": "dj_test" if server.logged_in else None,
+                        "state": "Connected, LoggedIn" if server.logged_in else "Connected"}})
                 if parts[2] == "searches" and len(parts) == 4:
                     s = server.searches.get(parts[3])
                     return self._send(200, s["meta"]) if s else self._send(404)
