@@ -430,3 +430,16 @@ def test_decode_closes_pipes_and_frees_frames(fixtures):
     if before is not None:
         after = len(os.listdir("/proc/self/fd"))
         assert after <= before + 2, (before, after)                   # no handle growth across six decodes
+
+
+def test_ad_bot_sources_are_greyed_and_blocked(connected, slskd, fixtures):
+    from app.core.service import looks_like_ad_bot
+    assert looks_like_ad_bot("https://www.rawzik.com") and looks_like_ad_bot("beatshop.store") and looks_like_ad_bot("www.mp3deals.net")
+    assert not looks_like_ad_bot("dweebus") and not looks_like_ad_bot("shrimp_associate") and not looks_like_ad_bot("dj.mike")
+    slskd.library[r"@@shop\RAWZIK - 2026\Artist - Real Track [rawzik.com].mp3"] = fixtures["mp3_320"]
+    slskd.user_for = {r"@@shop\RAWZIK - 2026\Artist - Real Track [rawzik.com].mp3": "https://www.rawzik.com"}
+    res = search_all(connected, "real track")
+    bot = [c for c in res.candidates if c.user == "https://www.rawzik.com"]
+    assert bot and all(c.note == "Ad bot" for c in bot)
+    with pytest.raises(ActionBlocked):
+        connected.request_download(bot[0])

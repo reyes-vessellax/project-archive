@@ -11,6 +11,7 @@ Two ways a track enters quarantine:
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import threading
 import uuid
@@ -38,8 +39,16 @@ class ActionBlocked(RuntimeError):
     """A user action isn't allowed right now. The message is shown to the user."""
 
 
-MAX_DOWNLOAD_RETRIES = 3
-RETRY_WAIT_S = (10, 30, 60)
+MAX_DOWNLOAD_RETRIES = 2            # the engine already makes 3 attempts of its own per request
+RETRY_WAIT_S = (15, 45)
+
+_BOT_USER = re.compile(r"(https?:|www\.|\.(com|net|org|io|co|xyz|site|store|shop|biz|info|me|tv|cc)(/|$))", re.I)
+
+
+def looks_like_ad_bot(user: str) -> bool:
+    """Accounts named after a web shop (e.g. "https://www.rawzik.com") answer every search with their
+    catalogue and never deliver; every request to one times out. Grey them out up front."""
+    return bool(user) and bool(_BOT_USER.search(user.strip()))
 
 
 def now_iso() -> str:
@@ -118,6 +127,12 @@ class ArchiveService:
             self.port_open, self.port_note = upnp.open_port(port, f"{APP_NAME} downloads")
         except Exception as e:                                  # noqa: BLE001
             self.port_open, self.port_note = False, f"Couldn't talk to the router: {e}"
+        try:
+            from datetime import datetime as _dt
+            with open(self.db.path.parent / "app.log", "a", encoding="utf-8") as f:
+                f.write(f"{_dt.now().isoformat(timespec='seconds')} port: {self.port_note}\n")
+        except OSError:
+            pass
 
     def reset_everything(self) -> None:
         """Start fresh: stop the engine, drop the database, quarantine, engine instance and logs. The Soulseek
@@ -191,7 +206,9 @@ class ArchiveService:
         exts = {e.lower().lstrip(".") for e in self.settings.extensions}
         res = self._adapter_or_block().search_results(search_id)
         for c in res.candidates:                           # shown greyed rather than hidden, so counts match other clients
-            if c.extension not in exts:
+            if looks_like_ad_bot(c.user):
+                c.note = "Ad bot"                           # answers every search with a shop's catalogue, never sends a byte
+            elif c.extension not in exts:
                 c.note = "Extension mismatch"
         return res
 
@@ -207,6 +224,8 @@ class ArchiveService:
                 raise ActionBlocked(f"That file is {cand.size / 1e6:.0f} MB, over the {s.max_file_mb} MB limit in Settings.")
             if cand.extension.lower() not in {e.lower().lstrip(".") for e in s.extensions}:
                 raise ActionBlocked(f".{cand.extension or '(none)'} files aren't accepted.")
+            if looks_like_ad_bot(cand.user):
+                raise ActionBlocked("That source is a shop's advertising account; it never sends files.")
             job_id = str(uuid.uuid4())
             expires = (datetime.now(timezone.utc) + timedelta(hours=s.retention_hours)).isoformat(timespec="seconds")
             self.db.insert_job(id=job_id, source_kind=cand.source_kind, source_path=None, original_name=name,

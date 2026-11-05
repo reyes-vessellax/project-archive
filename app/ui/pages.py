@@ -335,10 +335,11 @@ class SearchPage(QWidget):
         if idle:
             self.title.setText("Search"); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
         self.title.setText(f"{n} result{'s' if n != 1 else ''}")
-        skipped = sum(1 for c in res.candidates if c.note)
+        skipped = sum(1 for c in res.candidates if c.note == "Extension mismatch")
+        bots = sum(1 for c in res.candidates if c.note == "Ad bot")
         locked = sum(1 for c in res.candidates if c.locked and not c.note)
         tail = (f" · {skipped} other format{'s' if skipped != 1 else ''} greyed" if skipped else "") + \
-               (f" · {locked} locked" if locked else "")
+               (f" · {locked} locked" if locked else "") + (f" · {bots} ad bot{'s' if bots != 1 else ''}" if bots else "")
         if res.error:
             self.state.setText("")
         elif searching:
@@ -386,7 +387,10 @@ class SearchPage(QWidget):
             elif c.locked or c.note:
                 for col in range(self.tree.columnCount()):
                     it.setForeground(col, self.palette().mid())
-                if c.note:
+                if c.note == "Ad bot":
+                    it.setText(9, c.note)
+                    it.setToolTip(9, "This account is a web shop's advertising bot. It answers every search and never sends a file.")
+                elif c.note:
                     it.setText(9, c.note)
                     it.setToolTip(9, f"{c.note}: .{c.extension or '(none)'} isn't in your accepted formats (Settings → Checks).")
                 elif c.locked:

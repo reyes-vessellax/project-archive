@@ -20,6 +20,17 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.4.14 — unreleased (the time-outs, named)
+
+The 0.4.11 engine log settles the time-outs: every one of them was a request to the "user"
+`https://www.rawzik.com` — a shop's advertising account that answers every search with its catalogue
+and never sends a byte (the engine tried each one 3 times, 15 s apart). Every download from a real
+user went through at 3–12 MB/s, and the port was open. So:
+- Sources whose name looks like a web address are tagged **"Ad bot"**, greyed, sorted last and can't
+  be requested; the header counts them.
+- Our own automatic retries drop to 2 (15 s, 45 s) since the engine already makes 3 attempts per request.
+- The router/port result is written to `app.log` at start-up.
+
 ## 0.4.13 — unreleased
 
 - **Fixed:** after the first Download to Library, every later track's Download / Delete button stayed

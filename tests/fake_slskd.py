@@ -135,14 +135,16 @@ class FakeSlskd:
     # behaviour -----------------------------------------------------------------------
     def _make_search(self, sid: str, text: str, timeout_s: float = 15.0) -> dict:
         words = text.lower().split()
-        files = []
+        by_user: dict[str, list] = {}
         for remote, local in self.library.items():
             if all(w in remote.lower() for w in words):
-                files.append({"filename": remote, "size": local.stat().st_size,
+                user = getattr(self, "user_for", {}).get(remote, "peer_a")
+                by_user.setdefault(user, []).append({"filename": remote, "size": local.stat().st_size,
                               "extension": local.suffix.lstrip("."), "bitRate": 320, "length": 40,
                               "isVariableBitRate": False, "sampleRate": 44100, "bitDepth": None, "isLocked": False})
-        responses = [{"username": "peer_a", "hasFreeUploadSlot": True, "uploadSpeed": 500000, "queueLength": 0,
-                      "fileCount": len(files), "files": files}] if files else []
+        files = [f for fs in by_user.values() for f in fs]
+        responses = [{"username": u, "hasFreeUploadSlot": True, "uploadSpeed": 500000, "queueLength": 0,
+                      "fileCount": len(fs), "files": fs} for u, fs in by_user.items()]
         return {"meta": {"id": sid, "searchText": text, "state": "InProgress",
                          "responseCount": len(responses), "fileCount": len(files)},
                 "responses": responses, "ends_at": time.monotonic() + min(timeout_s, self.search_seconds)}
