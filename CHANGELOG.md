@@ -15,6 +15,10 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.4.7 — unreleased
+
+- Mark is now the "pp" monogram tile (top-left and window/taskbar icon), replacing the pipe.
+
 ## 0.4.6 — unreleased (Pied Piper placeholder, search feedback, start-up lights)
 
 - Placeholder name is now **Pied Piper** (one constant; DEADWAX and Project Archive installs migrate:

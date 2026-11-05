@@ -1,38 +1,27 @@
-"""The placeholder mark: a small pipe (the instrument), drawn in code so it follows the theme's accent colour.
+"""The placeholder mark: a "pp" monogram tile, drawn in code so it follows the theme's accent colour.
 An original glyph of our own — not any existing logo — so it can ship in test builds without question.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from ..config import APP_NAME
 from . import theme as T
 
 
-def paint_mark(p: QPainter, rect: QRectF, colour: QColor) -> None:
-    """A pipe lying at a slant with three finger holes and a short breath-line off the mouthpiece."""
+def paint_mark(p: QPainter, rect: QRectF, colour: QColor, text_colour: QColor | None = None) -> None:
+    """A rounded teal tile with a tight lowercase "pp" in the display face."""
     p.save()
     p.setRenderHint(QPainter.Antialiasing)
-    p.translate(rect.center())
-    p.rotate(-28)
-    L, W = rect.width() * 0.92, rect.height() * 0.26
-    body = QRectF(-L / 2, -W / 2, L, W)
-    path = QPainterPath()
-    path.addRoundedRect(body, W / 2, W / 2)
-    p.setPen(Qt.NoPen); p.setBrush(colour); p.drawPath(path)
-    # mouthpiece: slightly narrower cap on the left
-    p.drawRoundedRect(QRectF(-L / 2 - W * 0.25, -W * 0.34, W * 0.9, W * 0.68), W * 0.3, W * 0.3)
-    # holes
-    hole = W * 0.34
-    p.setBrush(QColor(255, 255, 255, 235))
-    for x in (-L * 0.08, L * 0.12, L * 0.32):
-        p.drawEllipse(QPointF(x, 0), hole / 2, hole / 2)
-    # a breath line: two short arcs off the far end
-    pen = QPen(colour); pen.setWidthF(max(1.0, W * 0.18)); pen.setCapStyle(Qt.RoundCap); p.setPen(pen); p.setBrush(Qt.NoBrush)
-    for i, r in enumerate((W * 0.9, W * 1.45)):
-        p.drawArc(QRectF(L / 2 - r + W * 0.1, -r, 2 * r, 2 * r), -40 * 16, 80 * 16)
+    size = rect.width()
+    p.setPen(Qt.NoPen); p.setBrush(colour)
+    p.drawRoundedRect(rect, size * 0.22, size * 0.22)
+    f = QFont(T.DISPLAY); f.setPixelSize(max(6, int(size * 0.62))); f.setWeight(QFont.ExtraBold)
+    f.setLetterSpacing(QFont.AbsoluteSpacing, -size * 0.06)
+    p.setFont(f); p.setPen(text_colour or QColor("#ffffff"))
+    p.drawText(rect.adjusted(0, -size * 0.06, 0, -size * 0.06), Qt.AlignCenter, "pp")
     p.restore()
 
 
@@ -40,12 +29,7 @@ def mark_pixmap(size: int, colour: str, bg: str | None = None, dpr: float = 1.0)
     pm = QPixmap(int(size * dpr), int(size * dpr)); pm.setDevicePixelRatio(dpr)
     pm.fill(QColor(bg) if bg else Qt.transparent)
     p = QPainter(pm)
-    if bg:                                            # app icon: a rounded tile with the mark in white
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setPen(Qt.NoPen); p.setBrush(QColor(bg)); p.drawRoundedRect(QRectF(0, 0, size, size), size * 0.22, size * 0.22)
-        paint_mark(p, QRectF(size * 0.12, size * 0.12, size * 0.76, size * 0.76), QColor("#ffffff"))
-    else:
-        paint_mark(p, QRectF(0, 0, size, size), QColor(colour))
+    paint_mark(p, QRectF(0, 0, size, size), QColor(bg or colour))
     p.end()
     return pm
 
