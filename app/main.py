@@ -13,6 +13,8 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    from .ui.theme import load_fonts
+    load_fonts()
     win = MainWindow(ArchiveService())
     win.show()
     return app.exec()

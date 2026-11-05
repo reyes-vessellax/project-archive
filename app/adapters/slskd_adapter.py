@@ -6,7 +6,7 @@ REST API with an API key. Nothing here implements the Soulseek protocol.
 Setup the user does once (documented in the README):
   1. Install and run slskd, enter their Soulseek credentials in slskd.yml.
   2. Add an API key under web.authentication.api_keys in slskd.yml.
-  3. Paste the slskd URL, the API key and slskd's downloads folder into Project Archive's Settings.
+  3. Paste the slskd URL, the API key and slskd's downloads folder into the app's Settings (Advanced).
 
 Everything slskd returns about remote files is untrusted metadata; our own analysis decides.
 """

@@ -1,8 +1,8 @@
 """Build a desktop app folder with PyInstaller. Bundles FFmpeg from vendor/ffmpeg and the Soulseek engine
 (slskd) from vendor/slskd when present.
 
-    python packaging/build.py      ->  dist/Project Archive/   (Windows)
-                                       dist/Project Archive.app (macOS)
+    python packaging/build.py      ->  dist/<APP_NAME>/     (Windows)
+                                       dist/<APP_NAME>.app  (macOS)
 
 Uses paths relative to the repo root, because PyInstaller splits some arguments on ':' (macOS) and
 the repo may live in a folder whose name contains one.
@@ -17,9 +17,12 @@ import PyInstaller.__main__
 
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
+sys.path.insert(0, str(ROOT))
+from app.config import APP_NAME  # noqa: E402
+
 args = [
     os.path.join("app", "__main__.py"),
-    "--name", "Project Archive",
+    "--name", APP_NAME,
     "--windowed",
     "--noconfirm",
     "--clean",

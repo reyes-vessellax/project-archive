@@ -1,4 +1,7 @@
-# Project Archive: UI handoff for front-end design
+# DEADWAX: UI handoff
+
+**0.3 implements design v5** (see the design canvas): Manrope + JetBrains Mono, one amber accent, light and dark.
+The product name is the `APP_NAME` constant in `app/config.py`; nothing else spells it out.
 
 The engine (Soulseek search through slskd, download into quarantine, checks, spectrogram, library moves)
 is built and tested (58 passing tests). This file is what the UI has to show and which buttons it can

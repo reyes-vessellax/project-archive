@@ -18,7 +18,7 @@ import sys
 import time
 from pathlib import Path
 
-from ..config import Settings, data_dir
+from ..config import APP_NAME, PREVIOUS_NAMES, Settings, data_dir
 from ..media.tools import creation_flags
 from .credentials import CredentialStore, new_api_key, new_password, new_soulseek_username
 
@@ -48,8 +48,8 @@ def bundled_slskd_dir() -> Path | None:
 
 
 # The firewall prompt names the program by its executable, so the build ships the engine renamed
-# "Project Archive Engine" (with matching version info). The plain slskd name still works from source.
-ENGINE_NAMES = ("Project Archive Engine", "slskd")
+# "<APP_NAME> Engine". The plain slskd name still works from source.
+ENGINE_NAMES = (f"{APP_NAME} Engine", *(f"{n} Engine" for n in PREVIOUS_NAMES), "slskd")
 
 
 def engine_exe(folder: Path) -> Path | None:

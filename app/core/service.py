@@ -19,12 +19,13 @@ from pathlib import Path
 from typing import Callable
 
 from ..adapters.base import Candidate, ConnectorError, ConnectorStatus, SearchResult, SourceAdapter, Transfer
-from ..config import Settings, data_dir
+from ..config import APP_NAME, Settings, data_dir
 from ..storage.db import Database, now
 from . import jobs as J
 from .analyzer import analyze, sha256_file
 from .rules import FAIL, WARN
 from .safety import Rejected, is_inside, safe_filename, unique_path, validate_candidate
+from .account import AccountStore
 from .slskd_manager import BackendUnavailable, SlskdManager
 
 # Wording the user sees for the connection. "slskd" never appears here.
@@ -45,6 +46,7 @@ class ArchiveService:
         self.settings = Settings.from_dict(self.db.load_settings())
         self._lock = threading.RLock()
         self._seen: dict[str, tuple[int, float]] = {}    # incoming path -> (size, mtime) last scan
+        self.accounts = AccountStore(self.db)
         self.manager = manager or SlskdManager(self.settings)
         self._adapter_factory = adapter_factory or _default_adapter
         self.adapter: SourceAdapter | None = None
@@ -100,9 +102,9 @@ class ArchiveService:
             if not st.available:
                 st.message = MSG_TROUBLE
             elif not st.logged_in:
-                st.message = "Connecting to Project Archive…"
+                st.message = f"Connecting to {APP_NAME}…"
             else:
-                st.message = "Connected to Project Archive"
+                st.message = f"Connected to {APP_NAME}"
             return st
         if not self.settings.own_slskd_configured:
             return ConnectorStatus(available=False, message=MSG_LOCAL)

@@ -1,4 +1,4 @@
-# Project Archive
+# DEADWAX (working name; was Project Archive)
 
 A Soulseek client built for DJs. Search Soulseek, pick a result, and the file lands in a quarantine folder
 where it is checked first: true format, bitrate, whether it plays all the way through, and a spectrogram
@@ -12,7 +12,7 @@ the Soulseek protocol ourselves.
 > The app reports evidence, not proof. A 320 kbps MP3 or a WAV can still come from a low-quality source.
 > It never labels a file "authentic" or "verified lossless". You make the final call.
 
-## Status (v0.2 test build)
+## Status (v0.3 test build)
 
 | Done | Next |
 |---|---|
@@ -25,7 +25,8 @@ the Soulseek protocol ourselves.
 | Soulseek search + download into quarantine through slskd | |
 | Parallel checking (5 at a time by default), the rest queue up | |
 | Bundled Soulseek engine with generated account + API key, Advanced settings | |
-| 58 automated tests on synthetic audio and a fake slskd | |
+| New look (design v5): light and dark, sign-up, account page, settings | |
+| 64 automated tests on synthetic audio and a fake slskd | |
 
 Store search (Beatport, Bandcamp, Juno, Traxsource, Discogs) is kept in the code for a later feature
 but is not on a button right now.
@@ -33,7 +34,7 @@ but is not on a button right now.
 ## Get the Windows app (no setup)
 
 1. On GitHub, open **Actions -> Test and build -> latest green run**.
-2. Download **ProjectArchive-Windows**, unzip it, run `Project Archive.exe`.
+2. Download **DEADWAX-Windows**, unzip it, run `DEADWAX.exe`.
 3. First launch shows "Windows protected your PC" because the app isn't signed yet:
    click **More info -> Run anyway**.
 
@@ -94,15 +95,15 @@ app/core      workflow: service (search/download/stage/analyze/promote/reject), 
 app/adapters  source connector contract + the slskd adapter (Soulseek through a local client)
 app/media     ffprobe/ffmpeg wrappers, streaming decode + spectrum, PNG spectrogram
 app/storage   SQLite job history (metadata only, never audio)
-app/ui        PySide6 window
+app/ui        PySide6: theme (palettes + stylesheet), onboarding, pages, settings, main window; bundled fonts (OFL)
 docs/         UI_HANDOFF.md (data + actions for front-end design), DECISIONS_AND_FLAGS.md (spec changes, attorney flags)
 tests/        synthetic fixtures generated at test time (no copyrighted audio)
 ```
 
 ## Data locations
 
-- Database + quarantine: `~/Library/Application Support/Project Archive` (Mac),
-  `%APPDATA%\Project Archive` (Windows)
+- Database + quarantine + engine: `~/Library/Application Support/DEADWAX` (Mac),
+  `%APPDATA%\DEADWAX` (Windows). An older `Project Archive` folder is renamed on first start.
 - Library (default): `~/Music/Project Archive Library`, changeable in Settings
 
 ## Out of scope (see the spec)

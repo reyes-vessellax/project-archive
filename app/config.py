@@ -6,11 +6,14 @@ import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
-APP_NAME = "Project Archive"
+# The product name, in ONE place. "DEADWAX" is a placeholder until the real name is chosen; every
+# visible use of the name reads this constant (window title, dialogs, bundled engine, data folder).
+APP_NAME = "DEADWAX"
+PREVIOUS_NAMES = ("Project Archive",)      # earlier placeholder; existing installs are migrated from it
 
 
 def data_dir() -> Path:
-    """Private per-user application data folder (database, staging/quarantine)."""
+    """Private per-user application data folder (database, staging/quarantine, engine)."""
     override = os.environ.get("PROJECT_ARCHIVE_DATA")
     if override:
         return Path(override)
@@ -20,11 +23,21 @@ def data_dir() -> Path:
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return base / APP_NAME
+    current = base / APP_NAME
+    if not current.exists():
+        for old in PREVIOUS_NAMES:                # keep the user's account, history and engine identity
+            prev = base / old
+            if prev.is_dir():
+                try:
+                    prev.rename(current)
+                except OSError:
+                    return prev
+                break
+    return current
 
 
 def default_library_dir() -> Path:
-    return Path.home() / "Music" / "Project Archive Library"
+    return Path.home() / "Music" / f"{APP_NAME} Library"
 
 
 @dataclass
@@ -41,6 +54,7 @@ class Settings:
     ffmpeg_path: str = ""                     # empty = bundled copy, then PATH
     max_concurrent_analyses: int = 5          # analysis slots; further tracks wait in the queue
     setup_done: bool = False                  # first-run setup (library folder + sharing) completed
+    theme: str = "light"                      # light | dark
     firewall_notice_shown: bool = False       # one-time explanation before the first engine start
     share_folder: str = ""                    # opt-in: a folder to share back on Soulseek (empty = off)
     # Advanced only. By default the app runs its own bundled copy of slskd (the Soulseek engine) with a

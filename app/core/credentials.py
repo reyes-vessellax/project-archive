@@ -11,7 +11,7 @@ import os
 import secrets
 from pathlib import Path
 
-from ..config import APP_NAME, data_dir
+from ..config import APP_NAME, PREVIOUS_NAMES, data_dir
 
 try:                                        # optional: present in the packaged app
     import keyring                          # type: ignore
@@ -36,12 +36,15 @@ class CredentialStore:
 
     def get(self, name: str) -> str | None:
         if self.use_keyring:
-            try:
-                v = keyring.get_password(SERVICE, name)
-                if v is not None:
-                    return v
-            except KeyringError:
-                pass
+            for service in (SERVICE, *PREVIOUS_NAMES):     # earlier placeholder names still hold valid secrets
+                try:
+                    v = keyring.get_password(service, name)
+                    if v is not None:
+                        if service != SERVICE:
+                            self.set(name, v)
+                        return v
+                except KeyringError:
+                    pass
         return self._file().get(name)
 
     def set(self, name: str, value: str) -> None:
