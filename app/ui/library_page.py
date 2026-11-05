@@ -104,11 +104,17 @@ class LibraryPage(QWidget):
     # ---------------------------------------------------------------- data
     def refresh(self):
         jobs = self.svc.db.jobs(states=(J.PROMOTED,), limit=5000)
+        key = tuple((j["id"], j.get("final_path"), j.get("updated_at")) for j in jobs)
+        if key == getattr(self, "_key", None):
+            return                                           # nothing changed: don't rebuild (that closed the drop-down)
+        self._key = key
         self._rows = [(j, self.svc.db.analysis(j["id"])) for j in jobs]
         self._filter(self.q.text())
 
     def _filter(self, text: str):
         words = [w for w in text.lower().split() if w]
+        keep = self._open_id
+        self.tree.blockSignals(True)                         # rebuilding isn't a selection change
         self.tree.setSortingEnabled(False)
         self.tree.clear()
         shown = 0
@@ -137,7 +143,14 @@ class LibraryPage(QWidget):
                 it.setText(8, Path(final).name + "  (moved or deleted)")
             self.tree.addTopLevelItem(it); shown += 1
         self.tree.setSortingEnabled(True)
-        if self._open_id and not any(j["id"] == self._open_id for j, _ in self._rows):
+        reselected = False
+        if keep:
+            for i in range(self.tree.topLevelItemCount()):
+                it = self.tree.topLevelItem(i)
+                if it.data(0, Qt.UserRole) == keep:
+                    it.setSelected(True); reselected = True; break
+        self.tree.blockSignals(False)
+        if keep and not reselected:
             self._collapse()
         total = len(self._rows)
         self.sub.setText(f"{shown} of {total} tracks" if words else f"{total} track{'s' if total != 1 else ''}")

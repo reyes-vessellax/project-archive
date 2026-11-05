@@ -69,8 +69,8 @@ def label(text: str = "", role: str = "", tag: str = "", wrap: bool = False, tip
     return w
 
 
-def button(text: str, role: str = "ghost", on_click=None) -> QPushButton:
-    b = QPushButton(text.replace("&", "&&"))      # a bare & would become a keyboard mnemonic
+def button(text: str, role: str = "ghost", on_click=None, parent=None) -> QPushButton:
+    b = QPushButton(text.replace("&", "&&"), parent)      # a bare & would become a keyboard mnemonic
     b.setObjectName(role)
     b.setCursor(Qt.PointingHandCursor)
     if on_click:
@@ -232,12 +232,14 @@ class QueueRow(QWidget):
         self.setMinimumHeight(60)
         lay = hbox(self, (4, 10, 12, 10), 12)
         # × first, on the left, where the hand already is; a blank spacer keeps rows aligned when it's hidden
-        self.x = button("×", "x", lambda: self.removed.emit(self.job_id))
+        # NOTE: every child is added to the layout BEFORE any setVisible(): a parentless widget that is shown
+        # becomes its own top-level window for a frame — the "flashing dialog boxes" of 0.3/0.4.
+        self.x = button("×", "x", lambda: self.removed.emit(self.job_id), parent=self)
         self.x.setToolTip("Remove from the list" if tag in ("Done", "Gone", "Error") else "Delete this track from quarantine")
         self.x.setFixedWidth(22)
-        self.x.setVisible(removable)
-        self.x_space = QWidget(); self.x_space.setFixedWidth(22); self.x_space.setVisible(not removable)
+        self.x_space = QWidget(self); self.x_space.setFixedWidth(22)
         lay.addWidget(self.x); lay.addWidget(self.x_space)
+        self.x.setVisible(removable); self.x_space.setVisible(not removable)
         self.tag = label(tag.upper(), "tag", tag); self.tag.setFixedWidth(60)
         lay.addWidget(self.tag)
         names = vbox(spacing=2)
@@ -246,10 +248,10 @@ class QueueRow(QWidget):
         self.artist = label(artist or " ", "muted")
         names.addWidget(self.title); names.addWidget(self.artist)
         lay.addLayout(names, 1)
-        self.bar = QProgressBar(); self.bar.setTextVisible(False); self.bar.setFixedWidth(150); self.bar.setRange(0, 100)
+        self.bar = QProgressBar(self); self.bar.setTextVisible(False); self.bar.setFixedWidth(150); self.bar.setRange(0, 100)
         self.bar.setValue(int(pct) if pct is not None else 0); self.bar.setProperty("tag", tag)
-        self.bar.setVisible(pct is not None)
         lay.addWidget(self.bar)
+        self.bar.setVisible(pct is not None)
         self.meta = label(meta, "mono"); self.meta.setFixedWidth(120); self.meta.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lay.addWidget(self.meta)
         for w in (self.tag, self.title, self.artist, self.meta, self.bar, self.x_space):

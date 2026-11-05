@@ -6,6 +6,11 @@ one line changes and this file gets a note.
 
 ## Unreleased
 
+- Library drop-down should open *inline under the clicked row* (slide down) and scroll with the list,
+  rather than as a panel under the whole list.
+- Cap saved spectrograms (e.g. newest 100); for older library tracks, re-analyse on demand from the
+  stored path.
+
 - Account backend on the website (sign-up, sign-in, license check); the in-app screens already exist.
 - Plan & billing: the account page shows the section; nothing is stored or charged yet.
 - App icon (window, taskbar, exe).
@@ -14,6 +19,19 @@ one line changes and this file gets a note.
 - macOS build with the bundled engine.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
+
+## 0.4.11 — unreleased (the flashing windows, found)
+
+### Fixed: blank windows flashing while tracks are added or change state
+`app.log` named them: `QWidget 22x480`, `QProgressBar 150x3`, `QPushButton#x 18x18` — the three parts of a
+queue row (the × spacer, the progress bar, the ×) were made visible *before* being placed in the row,
+so each was its own top-level window for a frame, every time a row was built or rebuilt. They are now
+parented first. A test drives the real window through every flow that used to flash and fails if any
+widget is ever shown as a stray window (it reproduced the exact list from the log before the fix).
+
+- Library drop-down no longer closes on its own: the page re-read and rebuilt its list on every poll,
+  which dropped the selection. It now rebuilds only when the library actually changed, and keeps the
+  open row selected across rebuilds.
 
 ## 0.4.10 — unreleased (results fill top-down)
 
