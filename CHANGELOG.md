@@ -15,7 +15,7 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
-## 0.4.4 — unreleased (more search results)
+## 0.4.5 — unreleased (more search results)
 
 Aimed at matching what SoulseekQt shows for the same words.
 - **Open port.** The engine now listens on a fixed port chosen once per user (49152–65000) and the app

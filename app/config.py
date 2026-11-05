@@ -9,7 +9,7 @@ from pathlib import Path
 # The product name, in ONE place. "DEADWAX" is a placeholder until the real name is chosen; every
 # visible use of the name reads this constant (window title, dialogs, bundled engine, data folder).
 APP_NAME = "DEADWAX"
-APP_VERSION = "0.4.4"                     # keep in step with pyproject.toml; the build names the artifact with it
+APP_VERSION = "0.4.5"                     # keep in step with pyproject.toml; the build names the artifact with it
 PREVIOUS_NAMES = ("Project Archive",)      # earlier placeholder; existing installs are migrated from it
 
 

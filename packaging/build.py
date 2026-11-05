@@ -92,6 +92,9 @@ def tidy(root: Path) -> None:
 
 if internal is not None:
     tidy(internal)
+    # The engine checks that its web-content folder exists even when headless; an empty one satisfies it.
+    (internal / "vendor" / "engine" / "wwwroot").mkdir(parents=True, exist_ok=True)
+    (internal / "vendor" / "engine" / "wwwroot" / "index.html").write_text("<!doctype html><title>headless</title>")
     # A README at the top so a curious user knows what the folders are.
     (out / "README.txt").write_text(
         f"{APP_NAME}\n\n"
