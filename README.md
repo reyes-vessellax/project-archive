@@ -11,8 +11,8 @@ reject it. Everything runs locally on your own computer: no uploads, no servers.
 
 | Done | Next |
 |---|---|
-| Real format detection, bitrate (CBR/VBR), sample rate, bit depth, channels | Jim's front-end design |
-| Full play-through test with claimed-vs-actual length check | Windows testing (Jim) |
+| Real format detection, bitrate (CBR/VBR), sample rate, bit depth, channels | Chris's front-end design |
+| Full play-through test with claimed-vs-actual length check | Windows testing (Chris) |
 | Spectrogram + frequency-cutoff warning | History / search filters |
 | PASS / WARN / FAIL with plain-English reasons | App icon, signing (later) |
 | Quarantine, Save to Library (hash-verified, never overwrites), Reject | |
