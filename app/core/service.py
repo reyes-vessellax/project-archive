@@ -155,14 +155,23 @@ class ArchiveService:
             return ConnectorStatus(available=False, message="Check the slskd URL under Advanced in Settings.")
         return self.adapter.health_check()
 
-    def search(self, query: str) -> SearchResult:
+    def search(self, query: str, timeout_s: float = 45.0, check_login: bool = True) -> SearchResult:
         adapter = self._adapter_or_block()
         self._searches_started = getattr(self, "_searches_started", 0) + 1
         if self._searches_started % 5 == 0:
             self.engine_housekeeping()                       # old searches hold their results in the engine
-        if self.managed_mode and not self.adapter_logged_in():
+        if check_login and self.managed_mode and not self.adapter_logged_in():
             raise ActionBlocked("Still signing in. Search opens as soon as you're connected.")
-        return adapter.search(query)
+        return adapter.search(query, timeout_s=timeout_s)
+
+    def search_status(self, search_id: str) -> tuple[bool, int, int, str]:
+        return self._adapter_or_block().search_status(search_id)
+
+    def forget_search(self, search_id: str) -> None:
+        try:
+            self._adapter_or_block().forget_search(search_id)
+        except Exception:
+            pass
 
     def adapter_logged_in(self) -> bool:
         try:

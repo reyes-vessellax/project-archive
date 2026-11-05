@@ -44,7 +44,14 @@ def connected(service, slskd):
 
 
 def search_all(svc, query: str):
+    """Start a search and wait for it to finish, the way the window does (results only exist once it has)."""
+    import time
     res = svc.search(query)
+    for _ in range(200):
+        done, *_rest = svc.search_status(res.search_id)
+        if done:
+            break
+        time.sleep(0.05)
     return svc.search_results(res.search_id)
 
 
@@ -84,7 +91,10 @@ def test_client_not_running():
 
 def test_search_returns_normalised_candidates(slskd):
     a = SlskdAdapter(slskd.url, API_KEY, str(slskd.downloads_dir))
-    res = a.search_results(a.search("artist track").search_id)
+    sid = a.search("artist track").search_id
+    assert a.search_results(sid).candidates == []                     # nothing until the engine finishes
+    import time; time.sleep(slskd.search_seconds + 0.2)
+    res = a.search_results(sid)
     assert res.finished and len(res.candidates) == 3
     c = next(c for c in res.candidates if c.remote_path == REMOTE_GOOD)
     assert c.user == "peer_a" and c.display_name == "Artist - Real Track.mp3" and c.folder == "Compilation Vol 2"
@@ -331,6 +341,7 @@ def test_errored_search_is_reported_not_silent(slskd):
     a = SlskdAdapter(slskd.url, API_KEY, str(slskd.downloads_dir))
     sid = a.search("anything").search_id
     slskd.searches[sid]["meta"]["state"] = "Completed, Errored"
+    slskd.searches[sid]["ends_at"] = 0
     res = a.search_results(sid)
     assert res.finished and res.error and "connection" in res.error
 

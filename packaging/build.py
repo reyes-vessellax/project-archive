@@ -31,11 +31,25 @@ def make_icon(path: Path) -> bool:
         app = QApplication.instance() or QApplication([])
         T.load_fonts()
         import struct
+        from PySide6.QtGui import QImage
         sizes = (16, 24, 32, 48, 64, 128, 256)
         blobs = []
         for s in sizes:
             pm = mark_pixmap(s, "#ffffff", bg=T.colours("light")["accent"])
-            buf = QBuffer(); buf.open(QIODevice.WriteOnly); pm.save(buf, "PNG"); blobs.append(bytes(buf.data()))
+            if s >= 256:                                     # PNG entry (what Windows expects at 256)
+                buf = QBuffer(); buf.open(QIODevice.WriteOnly); pm.save(buf, "PNG"); blobs.append(bytes(buf.data()))
+                continue
+            # classic DIB entry: BITMAPINFOHEADER + bottom-up BGRA rows + empty AND mask (safest for taskbar/Explorer)
+            img = pm.toImage().convertToFormat(QImage.Format_ARGB32)
+            rows = []
+            for y in range(s - 1, -1, -1):
+                line = bytes(img.constScanLine(y))[: s * 4]
+                rows.append(line)
+            xor = b"".join(rows)
+            mask_row = ((s + 31) // 32) * 4
+            and_mask = b"\x00" * (mask_row * s)
+            hdr = struct.pack("<IiiHHIIiiII", 40, s, s * 2, 1, 32, 0, len(xor) + len(and_mask), 0, 0, 0, 0)
+            blobs.append(hdr + xor + and_mask)
         header = struct.pack("<HHH", 0, 1, len(sizes))
         offset = 6 + 16 * len(sizes)
         entries = b""
@@ -43,6 +57,7 @@ def make_icon(path: Path) -> bool:
             entries += struct.pack("<BBBBHHII", s % 256, s % 256, 0, 0, 1, 32, len(b), offset)
             offset += len(b)
         path.write_bytes(header + entries + b"".join(blobs))
+        print(f"icon: wrote {path} ({path.stat().st_size} bytes, {len(sizes)} sizes)")
         return True
     except Exception as e:                                  # noqa: BLE001
         print(f"NOTE: couldn't render the icon: {e}", file=sys.stderr)

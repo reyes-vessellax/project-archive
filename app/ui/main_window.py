@@ -39,8 +39,8 @@ def _applog(line: str) -> None:
         pass
 
 
-SEARCH_WAIT_S = 45            # hard cap on collecting results (matches the engine's own search timeout)
-SEARCH_QUIET_S = 10           # once results have started, stop when nothing new arrives for this long
+SEARCH_FAST_S = 6             # the quick engine search: first rows land when it ends
+SEARCH_FULL_S = 40            # the long engine search: the far-away and slow sources
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
 FIREWALL_ASK = (f"To download from other users, {APP_NAME} needs to accept incoming connections.\n\n"
                 f"Allow it now? Windows will ask you to confirm once. Nothing is shared from your computer "
@@ -75,6 +75,7 @@ class MainWindow(QMainWindow):
         self._acache: dict[str, dict] = {}                   # finished analyses never change; read each once
         self.signals.failed.connect(self._on_failed)
         self.signals.results.connect(self._on_results)
+        self.signals.progress_search.connect(lambda r, f, more: self.searchp.set_progress(r, f, more))
         self.signals.status.connect(self._on_status)
         self.signals.staged.connect(self._start_analysis)
         self.steps: dict[str, str] = {}
@@ -470,28 +471,48 @@ class MainWindow(QMainWindow):
         self.search_running = True
 
         def work():
+            """Two engine searches for one query: a quick one (first rows in ~SEARCH_FAST_S) and a long one
+            (the slow, far-away sources). The engine only hands out a search's responses once that search
+            has finished, so the quick one is what makes the page feel alive; the long one fills it in."""
             sid = None
             try:
-                res = self.svc.search(q)
-                sid = self.search_id = res.search_id
-                started = last_growth = time.monotonic()
-                seen = -1
-                delay = 0.3                                   # first results usually land within a second
+                fast = self.svc.search(q, timeout_s=SEARCH_FAST_S)
+                sid = self.search_id = fast.search_id
+                full = self.svc.search(q, timeout_s=SEARCH_FULL_S, check_login=False)
+                started = time.monotonic()
+                fast_done = full_done = False
+                fast_res = None
+                delay = 0.5
                 while True:
                     time.sleep(delay)
-                    delay = min(1.5, delay * 1.6)
-                    if self.search_id != res.search_id:
-                        return
-                    latest = self.svc.search_results(res.search_id); latest.query = q
-                    n = len(latest.candidates)
+                    delay = min(1.5, delay * 1.4)
+                    if self.search_id != fast.search_id:
+                        return                                              # a newer search took over
                     now = time.monotonic()
-                    _applog(f"search poll {res.search_id[:8]} n={n} state={latest.state!r} finished={latest.finished} t={now - started:.1f}s")
-                    if n != seen:
-                        seen, last_growth = n, now
-                        self.signals.results.emit(latest)        # redraw only when something changed
-                    if latest.finished or now - started > SEARCH_WAIT_S or (n and now - last_growth > SEARCH_QUIET_S):
+                    if not fast_done:
+                        done, n_resp, n_files, err = self.svc.search_status(fast.search_id)
+                        if done:
+                            fast_done = True
+                            fast_res = self.svc.search_results(fast.search_id); fast_res.query = q
+                            _applog(f"fast {fast.search_id[:8]} done: {len(fast_res.candidates)} candidates")
+                            self.signals.results.emit(fast_res)             # first rows
+                        else:
+                            self.signals.progress_search.emit(n_resp, n_files, False)
+                    else:
+                        done, n_resp, n_files, err = self.svc.search_status(full.search_id)
+                        self.signals.progress_search.emit(n_resp, n_files, True)
+                        if done:
+                            full_done = True
+                    if full_done or now - started > SEARCH_FULL_S + 20:
+                        final = self.svc.search_results(full.search_id); final.query = q
+                        if fast_res is not None:                            # union, fast rows first
+                            seen = {c.key for c in final.candidates}
+                            final.candidates = final.candidates + [c for c in fast_res.candidates if c.key not in seen]
+                        final.search_id = fast.search_id; final.finished = True
+                        _applog(f"full {full.search_id[:8]} done: {len(final.candidates)} candidates after merge")
                         self.search_running = False
-                        self.signals.results.emit(latest)
+                        self.signals.results.emit(final)
+                        self.io.start(Task(lambda: self.svc.forget_search(full.search_id), self.signals))
                         return
             except Exception as e:
                 import traceback

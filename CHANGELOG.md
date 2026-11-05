@@ -15,6 +15,25 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.4.9 — unreleased (THE search fix)
+
+### Fixed: searches showed nothing although the engine had results
+Root cause, from the 0.4.8 logs: the engine does not hand out a search's responses until that search
+has **finished** — while it runs, `/searches/{id}/responses` is `[]` even as the search record's
+response count climbs. Our search timeout and our own polling cap were the same number (15 s in
+0.3.x, 45 s in 0.4.x), so the app gave up a few seconds before the engine finished and never asked
+again. Big artists worked in early builds only because the engine happened to finish first.
+
+Now every query runs **two** engine searches: a quick one (6 s) whose results land as soon as it ends,
+and a long one (40 s) for the slow and far-away sources; when the long one finishes its results replace
+the list (quick rows kept). While waiting, the page shows the live count from the engine ("29 sources
+· 121 files so far"). The fake engine used by the tests now behaves the same way, so this can't slip
+through again.
+
+- Locked files (shared only with the peer's own list) appear greyed as "Locked".
+- The exe icon is written with classic bitmap entries (plus PNG at 256), which the taskbar and
+  Explorer render reliably; the build log confirms the icon was embedded.
+
 ## 0.4.8 — unreleased (search diagnostics, locked files, exe icon)
 
 - Search results now include files the peer has **locked** (shared only with their own list), greyed

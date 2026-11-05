@@ -96,6 +96,14 @@ class SourceAdapter:
         """Latest results for a search started earlier."""
         raise NotImplementedError
 
+    def forget_search(self, search_id: str) -> None:
+        """Drop a finished search from the engine."""
+
+    def search_status(self, search_id: str) -> tuple[bool, int, int, str]:
+        """(finished, responses_so_far, files_so_far, error) without fetching the results themselves."""
+        r = self.search_results(search_id)
+        return r.finished, len({c.user for c in r.candidates}), len(r.candidates), r.error
+
     def request_download(self, candidate: Candidate) -> Transfer:
         """Ask the client to download the file into the client's own downloads folder."""
         raise NotImplementedError

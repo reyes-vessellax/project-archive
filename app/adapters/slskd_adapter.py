@@ -155,6 +155,21 @@ class SlskdAdapter(SourceAdapter):
                                          "minimumResponseFileCount": 1})
         return SearchResult(query=query, search_id=sid, finished=False)
 
+    def search_status(self, search_id: str) -> tuple[bool, int, int, str]:
+        """The engine only exposes a search's responses once it has finished; while it runs, the search
+        record still carries live counts, which is what the waiting screen shows."""
+        meta = self._call("GET", f"/searches/{search_id}") or {}
+        state = str(meta.get("state", ""))
+        error = ""
+        if "Errored" in state:
+            error = "The search couldn't run. You may have lost the connection; it reconnects on its own."
+        elif "Cancelled" in state:
+            error = "The search was cancelled."
+        return "Completed" in state, _int(meta.get("responseCount")) or 0, _int(meta.get("fileCount")) or 0, error
+
+    def forget_search(self, search_id: str) -> None:
+        self._call("DELETE", f"/searches/{search_id}")
+
     def search_results(self, search_id: str) -> SearchResult:
         meta = self._call("GET", f"/searches/{search_id}") or {}
         state = str(meta.get("state", ""))

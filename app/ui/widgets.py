@@ -35,6 +35,7 @@ class Signals(QObject):
     status = Signal(object)              # ConnectorStatus
     staged = Signal(str)                 # job_id that finished downloading and needs analysis
     notice = Signal(str)
+    progress_search = Signal(int, int, bool)   # responses so far, files so far, first rows already shown
 
 
 class Task(QRunnable):

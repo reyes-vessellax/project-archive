@@ -282,21 +282,26 @@ class SearchPage(QWidget):
     def begin_search(self, query: str):
         """The moment Search is pressed: old rows go, the header names the new query, the text starts moving."""
         self._ranked = []; self._shown = 0; self._fill(0)
-        self._anim_query = query; self._anim_i = 0; self._anim_dots = 0
+        self._anim_query = query; self._anim_i = 0; self._anim_dots = 0; self._prog = (0, 0, False)
         self.title.setText(f"Searching for “{query}”")
         self.state.setText("")
         self.search_btn.setText("Searching…"); self.search_btn.setEnabled(False)
         self._animate(); self._anim.start()
+
+    def set_progress(self, responses: int, files: int, more: bool):
+        self._prog = (responses, files, more)
 
     def _animate(self):
         self._anim_dots = (self._anim_dots + 1) % 4
         if self._anim_dots == 0:
             self._anim_i = (self._anim_i + 1) % len(self._phrases)
         text = self._phrases[self._anim_i] + "." * (self._anim_dots or 3)
+        r, f, more = getattr(self, "_prog", (0, 0, False))
+        found = f"{r} source{'s' if r != 1 else ''} · {f} file{'s' if f != 1 else ''} so far" if r else ""
         if self.tree.topLevelItemCount() == 0:
-            self._show_empty(f"{text}\nLooking for “{self._anim_query}”")
+            self._show_empty(f"{text}\nLooking for “{self._anim_query}”" + (f"\n{found}" if found else ""))
         else:
-            self.state.setText(f"fastest first · {text.lower()}")
+            self.state.setText("fastest first · " + (f"the long search has {found}, landing shortly" if (more and found) else text.lower()))
 
     def end_search(self):
         self._anim.stop()

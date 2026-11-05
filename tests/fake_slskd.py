@@ -6,6 +6,7 @@ downloads folder, in a subfolder named after the remote folder, the way slskd do
 from __future__ import annotations
 
 import json
+import time
 import shutil
 import threading
 import uuid
@@ -60,13 +61,18 @@ class FakeSlskd:
                         "username": "dj_test" if server.logged_in else None,
                         "state": "Connected, LoggedIn" if server.logged_in else "Connected"}})
                 if parts[2:] == ["searches"]:
-                    return self._send(200, [s["meta"] for s in server.searches.values()])
+                    return self._send(200, [server._meta(k) for k in list(server.searches)])
                 if parts[2] == "searches" and len(parts) == 4:
                     s = server.searches.get(parts[3])
+                    if s:
+                        return self._send(200, server._meta(parts[3]))
                     return self._send(200, s["meta"]) if s else self._send(404)
                 if parts[2] == "searches" and len(parts) == 5 and parts[4] == "responses":
                     s = server.searches.get(parts[3])
-                    return self._send(200, s["responses"]) if s else self._send(404)
+                    if not s:
+                        return self._send(404)
+                    # like the real engine: nothing until the search has finished
+                    return self._send(200, s["responses"] if server._finished(parts[3]) else [])
                 if parts[2:4] == ["transfers", "downloads"] and len(parts) == 5:
                     rows = [t for t in server.transfers.values() if t["username"] == parts[4]]
                     return self._send(200, {"username": parts[4], "directories": [{"directory": "x", "files": rows}]})
@@ -86,8 +92,9 @@ class FakeSlskd:
                 parts = [unquote(p) for p in urlsplit(self.path).path.split("/") if p]
                 if parts[2:] == ["searches"]:
                     sid = body.get("id") or str(uuid.uuid4())
-                    server.searches[sid] = server._make_search(sid, body["searchText"])
-                    return self._send(201, server.searches[sid]["meta"])
+                    server.searches[sid] = server._make_search(sid, body["searchText"],
+                                                               timeout_s=(body.get("searchTimeout") or 15000) / 1000)
+                    return self._send(201, server._meta(sid))
                 if parts[2:4] == ["transfers", "downloads"] and len(parts) == 5:
                     user = parts[4]
                     for f in body:
@@ -125,7 +132,7 @@ class FakeSlskd:
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
 
     # behaviour -----------------------------------------------------------------------
-    def _make_search(self, sid: str, text: str) -> dict:
+    def _make_search(self, sid: str, text: str, timeout_s: float = 15.0) -> dict:
         words = text.lower().split()
         files = []
         for remote, local in self.library.items():
@@ -135,9 +142,21 @@ class FakeSlskd:
                               "isVariableBitRate": False, "sampleRate": 44100, "bitDepth": None, "isLocked": False})
         responses = [{"username": "peer_a", "hasFreeUploadSlot": True, "uploadSpeed": 500000, "queueLength": 0,
                       "fileCount": len(files), "files": files}] if files else []
-        return {"meta": {"id": sid, "searchText": text, "state": "Completed, TimedOut",
+        return {"meta": {"id": sid, "searchText": text, "state": "InProgress",
                          "responseCount": len(responses), "fileCount": len(files)},
-                "responses": responses}
+                "responses": responses, "ends_at": time.monotonic() + min(timeout_s, self.search_seconds)}
+
+    search_seconds = 0.6                        # tests shouldn't wait for a real 45 s search
+
+    def _finished(self, sid: str) -> bool:
+        s = self.searches.get(sid)
+        return bool(s) and time.monotonic() >= s["ends_at"]
+
+    def _meta(self, sid: str) -> dict:
+        s = self.searches[sid]
+        if not self._finished(sid):
+            return {**s["meta"], "state": "InProgress"}
+        return {**s["meta"], "state": s["meta"]["state"] if "Completed" in s["meta"]["state"] else "Completed, TimedOut"}
 
     def _advance(self, t: dict) -> None:
         if t["state"].startswith("Completed"):
