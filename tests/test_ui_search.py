@@ -32,9 +32,10 @@ def test_pressing_search_shows_rows(window):
     w, app = window
     spin(app, 0.5)
     w._search("artist")
-    for _ in range(100):
+    for _ in range(150):
         spin(app, 0.1)
-        if w.searchp.tree.topLevelItemCount() > 0 and not w.search_running:
+        foot = w.searchp._foot_item
+        if w.searchp.tree.topLevelItemCount() > 0 and foot is not None and "All results shown" in foot.text(1):
             break
     assert w.searchp.tree.topLevelItemCount() > 0, (w.searchp.title.text(), w.searchp.empty.text(), w.statusBar().currentMessage())
     assert "result" in w.searchp.title.text()
