@@ -16,6 +16,11 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.5.1 — unreleased
+
+- Search buttons always return to "Search" when a search ends (the error path left them stuck).
+- macOS icon generated as .icns (the Mac build failed on the .ico); icon corners transparent.
+
 ## 0.5.0 — unreleased (smooth scrolling, macOS build)
 
 - Smooth scrolling everywhere: lists scroll per pixel and wheel ticks glide (220 ms ease-out) instead

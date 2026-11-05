@@ -64,9 +64,32 @@ def make_icon(path: Path) -> bool:
         return False
 
 
-ICON = Path("build") / "app.ico"
+def make_icns(path: Path) -> bool:
+    """macOS wants .icns: render the mark at the standard sizes into an .iconset and let iconutil pack it."""
+    try:
+        import subprocess
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        from app.ui import theme as T
+        from app.ui.brand import mark_pixmap
+        app = QApplication.instance() or QApplication([])
+        T.load_fonts()
+        iconset = path.with_suffix(".iconset")
+        iconset.mkdir(parents=True, exist_ok=True)
+        for s in (16, 32, 128, 256, 512):
+            mark_pixmap(s, "#ffffff", bg=T.colours("light")["accent"]).save(str(iconset / f"icon_{s}x{s}.png"), "PNG")
+            mark_pixmap(s, "#ffffff", bg=T.colours("light")["accent"], dpr=2.0).save(str(iconset / f"icon_{s}x{s}@2x.png"), "PNG")
+        subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(path)], check=True)
+        print(f"icon: wrote {path} ({path.stat().st_size} bytes)")
+        return True
+    except Exception as e:                                  # noqa: BLE001
+        print(f"NOTE: couldn't render the .icns: {e}", file=sys.stderr)
+        return False
+
+
+ICON = Path("build") / ("app.icns" if sys.platform == "darwin" else "app.ico")
 ICON.parent.mkdir(exist_ok=True)
-HAVE_ICON = make_icon(ICON)
+HAVE_ICON = make_icns(ICON) if sys.platform == "darwin" else make_icon(ICON)
 
 args = [
     os.path.join("app", "__main__.py"),
