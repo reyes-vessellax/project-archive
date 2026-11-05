@@ -226,6 +226,7 @@ class LibraryPage(QWidget):
             return
         self._park_panel()
         self.panel = self._build_panel()
+        self.panel.setParent(self.tree.viewport()); self.panel.hide()
         self._fill_panel(it)
         child = QTreeWidgetItem(it)
         child.setFlags(Qt.ItemIsEnabled)
@@ -238,8 +239,8 @@ class LibraryPage(QWidget):
         self.panel.setFixedHeight(12 if animate else full)
         self.panel.setFixedWidth(max(300, self.tree.viewport().width() - 2))
         child.setSizeHint(0, self.panel.size())
+        self.tree.setItemWidget(child, 0, self.panel)       # parented into the tree first, shown after
         self.panel.show()
-        self.tree.setItemWidget(child, 0, self.panel)
         it.setExpanded(True)
         self.tree.scrollToItem(it, QTreeWidget.PositionAtTop)
         if animate:
