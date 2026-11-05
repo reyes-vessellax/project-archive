@@ -27,8 +27,8 @@ from .pages import HomePage, ReviewPage, SearchPage
 from .settings_page import SettingsPage
 from .widgets import AvatarMenu, Signals, Task, TopBar, vbox
 
-SEARCH_WAIT_S = 12            # hard cap on collecting results
-SEARCH_QUIET_S = 3.5          # stop early once nothing new has arrived for this long
+SEARCH_WAIT_S = 15            # hard cap on collecting results (matches the engine's own search timeout)
+SEARCH_QUIET_S = 3.5          # once results have started, stop when nothing new arrives for this long
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
 FIREWALL_NOTE = (f"To download from other users, {APP_NAME} accepts incoming connections.\n\n"
                  "If Windows or macOS asks whether to allow this, choose Allow. Nothing is shared from your "
@@ -106,7 +106,6 @@ class MainWindow(QMainWindow):
         for p in (self.home, self.searchp, self.review, self.settings):
             self.pages.addWidget(p)
         self.root.addWidget(shell); self.shell = shell
-        self.menu = AvatarMenu(self); self.menu.picked.connect(self._menu_pick)
 
         self.home.search.connect(self._search); self.searchp.search.connect(self._search)
         self.home.open_job.connect(self._open_job); self.home.remove_job.connect(self._remove_entry)
@@ -121,7 +120,10 @@ class MainWindow(QMainWindow):
         self.apply_theme()
 
     def apply_theme(self):
-        QApplication.instance().setStyleSheet(T.stylesheet(self.svc.settings.theme))
+        theme = self.svc.settings.theme
+        if getattr(self, "_applied_theme", None) != theme:
+            self._applied_theme = theme
+            QApplication.instance().setStyleSheet(T.stylesheet(theme))
         if hasattr(self, "home"):
             accent = T.colours(self.svc.settings.theme)["accent"]
             self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent)
@@ -165,7 +167,9 @@ class MainWindow(QMainWindow):
             self.topbar.set_active("queue" if self.pages.currentWidget() is self.home else "ready")
 
     def _menu(self):
-        self.menu.show_for(self.svc.accounts.load(), self.topbar.avatar, self.svc.settings.theme)
+        menu = AvatarMenu(self)                           # built on click, destroyed on close
+        menu.picked.connect(self._menu_pick)
+        menu.show_for(self.svc.accounts.load(), self.topbar.avatar, self.svc.settings.theme)
 
     def _menu_pick(self, key: str):
         if key in ("account", "settings", "appearance"):

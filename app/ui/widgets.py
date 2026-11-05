@@ -163,8 +163,10 @@ class AvatarMenu(QFrame):
     picked = Signal(str)
 
     def __init__(self, parent: QWidget):
-        super().__init__(parent, Qt.Popup)
+        super().__init__(parent, Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         self.setObjectName("menu")
+        self.setAttribute(Qt.WA_DeleteOnClose)            # exists only while open: nothing to flash later
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setFixedWidth(280)
         lay = vbox(self, (8, 8, 8, 8), 2)
         head = QWidget(); h = hbox(head, (14, 10, 14, 12), 12)
@@ -181,7 +183,7 @@ class AvatarMenu(QFrame):
                           (None, None), ("help", "Help & FAQ"), ("whatsnew", "What's new"), (None, None), ("signout", "Sign out")):
             if key is None:
                 lay.addWidget(rule()); continue
-            b = button(text, "menuitem", lambda _=False, k=key: (self.hide(), self.picked.emit(k)))
+            b = button(text, "menuitem", lambda _=False, k=key: (self.close(), self.picked.emit(k)))
             if key == "appearance":
                 self.appearance = b
             lay.addWidget(b)

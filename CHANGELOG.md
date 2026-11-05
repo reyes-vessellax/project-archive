@@ -16,7 +16,14 @@ one line changes and this file gets a note.
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 - Library tab as a browsable history (today it opens the library folder).
 
-## 0.3.2 — 2026-11-05 (search speed)
+## 0.3.2 — 2026-11-05 (search speed, flashing window)
+
+- Fixed: a small blank window kept flashing at the top of the screen and stole focus (clicking the
+  avatar "kicked you out"). The avatar menu was a hidden popup window that got re-styled on every
+  status tick. It is now created on click and destroyed on close, and the stylesheet is applied only
+  when the theme actually changes.
+- A search that the engine ends with an error now says so ("The search couldn't run…") instead of a
+  silent "0 sources"; a real empty result gets a plain explanation and a suggestion.
 
 - First results appear in about 0.3 s (was at least 1 s): the first poll is at 300 ms and backs off
   to 1.5 s; the table redraws only when the number of results changed.

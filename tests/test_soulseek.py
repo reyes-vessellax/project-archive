@@ -321,3 +321,11 @@ def test_bad_sizes_are_clamped(slskd):
 def test_decoder_text_is_escaped_in_review():
     import html
     assert html.escape("<a href='x'>click</a>") == "&lt;a href=&#x27;x&#x27;&gt;click&lt;/a&gt;"
+
+
+def test_errored_search_is_reported_not_silent(slskd):
+    a = SlskdAdapter(slskd.url, API_KEY, str(slskd.downloads_dir))
+    sid = a.search("anything").search_id
+    slskd.searches[sid]["meta"]["state"] = "Completed, Errored"
+    res = a.search_results(sid)
+    assert res.finished and res.error and "connection" in res.error

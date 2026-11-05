@@ -233,7 +233,14 @@ class SearchPage(QWidget):
     def show_results(self, res: SearchResult, searching: bool):
         n = len(res.candidates)
         self.title.setText(f"{n} source{'s' if n != 1 else ''}")
-        self.state.setText("fastest first · still collecting…" if searching else "fastest first")
+        if res.error:
+            self.state.setText(res.error)
+        elif searching:
+            self.state.setText("fastest first · still collecting…")
+        elif n == 0:
+            self.state.setText("Nobody online is sharing a match right now. Try fewer words, or try again in a minute.")
+        else:
+            self.state.setText("fastest first")
         selected = self.tree.selectedItems()
         keep = selected[0].data(0, Qt.UserRole).key if selected else None
         ranked = sorted(res.candidates, key=_rank)[:MAX_ROWS]

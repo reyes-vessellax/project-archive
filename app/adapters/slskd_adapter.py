@@ -130,7 +130,7 @@ class SlskdAdapter(SourceAdapter):
               ("Connected to Soulseek" if logged else "Signing in to Soulseek…")
         return ConnectorStatus(available=True, logged_in=logged, username=user, message=msg)
 
-    def search(self, query: str, timeout_s: float = 8.0) -> SearchResult:
+    def search(self, query: str, timeout_s: float = 15.0) -> SearchResult:
         query = " ".join(query.split())
         if len(query) < 2:
             raise ConnectorError("Type at least two characters to search.")
@@ -143,7 +143,13 @@ class SlskdAdapter(SourceAdapter):
 
     def search_results(self, search_id: str) -> SearchResult:
         meta = self._call("GET", f"/searches/{search_id}") or {}
-        finished = "Completed" in str(meta.get("state", ""))
+        state = str(meta.get("state", ""))
+        finished = "Completed" in state
+        error = ""
+        if "Errored" in state:
+            error = "The search couldn't run. You may have lost the connection; it reconnects on its own."
+        elif "Cancelled" in state:
+            error = "The search was cancelled."
         rows = self._call("GET", f"/searches/{search_id}/responses") or []
         cands = []
         for r in rows:
@@ -169,7 +175,7 @@ class SlskdAdapter(SourceAdapter):
                     locked=bool(f.get("isLocked")),
                 ))
         return SearchResult(query=str(meta.get("searchText") or ""), search_id=search_id,
-                            finished=finished, candidates=cands)
+                            finished=finished, candidates=cands, state=state, error=error)
 
     def request_download(self, candidate: Candidate) -> Transfer:
         if candidate.locked:

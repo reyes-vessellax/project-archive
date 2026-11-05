@@ -60,6 +60,8 @@ class SearchResult:
     search_id: str
     finished: bool
     candidates: list[Candidate] = field(default_factory=list)
+    state: str = ""                 # the client's own state string, e.g. "Completed, TimedOut"
+    error: str = ""                 # plain-English reason when the search ended badly, else ""
 
 
 @dataclass
