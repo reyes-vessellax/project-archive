@@ -567,10 +567,9 @@ class ReviewPage(QWidget):
 
     def set_busy(self, on: bool):
         """While a Download/Delete is being carried out off-thread, the decision buttons can't be pressed twice."""
-        if on:
-            for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_remove):
-                b.setEnabled(False)
-        # when it's over, the next refresh() sets every button from the job's real state
+        for b in (self.btn_save, self.btn_anyway, self.btn_remove, self.btn_retry):
+            b.setEnabled(not on)
+        self.btn_delete.setEnabled(not on and self.btn_delete.property("can") is True)
 
     def set_rail(self, jobs: list[dict], analyses: dict[str, dict | None], steps: dict[str, str]):
         while self.rail.count() > 1:
@@ -679,9 +678,12 @@ class ReviewPage(QWidget):
         ready = job["state"] == J.READY and bool(a)
         self.btn_save.setVisible(ready and status == "PASS")
         self.btn_anyway.setVisible(ready and status == "WARN")
+        for b in (self.btn_save, self.btn_anyway, self.btn_remove, self.btn_retry):
+            b.setEnabled(True)                                 # a previous Download/Delete may have greyed them
         self.btn_cancel.setVisible(job["state"] == J.QUEUED)
         finished = job["state"] in J.FINAL
-        self.btn_delete.setVisible(job["state"] != J.QUEUED and not finished); self.btn_delete.setEnabled(job["state"] in (J.READY, J.ERROR))
+        self.btn_delete.setVisible(job["state"] != J.QUEUED and not finished)
+        self.btn_delete.setProperty("can", job["state"] in (J.READY, J.ERROR)); self.btn_delete.setEnabled(job["state"] in (J.READY, J.ERROR))
         self.btn_remove.setVisible(finished)
         dl_failed = job["state"] == J.ERROR and bool(job.get("remote_user")) and not job.get("staged_path")
         self.btn_retry.setVisible(dl_failed)

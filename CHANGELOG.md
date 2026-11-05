@@ -20,6 +20,13 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.4.13 — unreleased
+
+- **Fixed:** after the first Download to Library, every later track's Download / Delete button stayed
+  greyed (introduced in 0.4.2 when those actions moved off the UI thread; the buttons were disabled for
+  the copy and never re-enabled). There is no reason to pace downloads; they run back to back. A test
+  now clicks Download on one track and checks the next track's button is usable.
+
 ## 0.4.12 — unreleased (downloads that time out)
 
 - **"Completed, TimedOut" downloads.** The engine gave a source 30 s to get the transfer going before
