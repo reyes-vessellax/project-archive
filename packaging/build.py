@@ -174,6 +174,13 @@ if internal is not None:
     tidy(internal)
     if resources.is_dir():
         tidy(resources)
+    if sys.platform == "darwin":
+        # tidy() may leave links whose target is gone (Frameworks <-> Resources mirror each other); codesign
+        # refuses a bundle with a dangling link
+        dangling = [p for p in out.rglob("*") if p.is_symlink() and not p.exists()]
+        for p in dangling:
+            p.unlink()
+        print(f"tidy: removed {len(dangling)} dangling link(s)")
     # The engine checks that its web-content folder exists even when headless; an empty one satisfies it.
     for eng in (internal / "vendor" / "engine", resources / "vendor" / "engine"):
         if not eng.is_dir():
