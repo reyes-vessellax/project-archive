@@ -70,7 +70,8 @@ class HomePage(QWidget):
         self.q = QLineEdit(); self.q.setObjectName("hero"); self.q.setPlaceholderText("Search for a track…")
         self.q.returnPressed.connect(lambda: self.search.emit(self.q.text()))
         srow.addWidget(self.q, 1)
-        srow.addWidget(button("Search", "accent", lambda: self.search.emit(self.q.text())))
+        self.search_btn = button("Search", "accent", lambda: self.search.emit(self.q.text()))
+        srow.addWidget(self.search_btn)
         srow.addWidget(button("Add files", "ghost", self.add_files.emit))
         lay.addLayout(srow)
 
@@ -117,6 +118,11 @@ class HomePage(QWidget):
         rail.addStretch(1)
         rw = QWidget(); rw.setLayout(rail); rw.setMinimumWidth(320); rw.setMaximumWidth(420)
         body.addWidget(rw, 2)
+
+    def set_connected(self, on: bool, message: str = ""):
+        self.q.setEnabled(on)
+        self.q.setPlaceholderText("Search for a track…" if on else (message or "Connecting…"))
+        self.search_btn.setEnabled(on)
 
     def refresh(self, jobs: list[dict], analyses: dict[str, dict | None]):
         # queue list
@@ -186,7 +192,8 @@ class SearchPage(QWidget):
         self.q = QLineEdit(); self.q.setObjectName("hero"); self.q.setPlaceholderText("Search for a track…")
         self.q.returnPressed.connect(lambda: self.search.emit(self.q.text()))
         srow.addWidget(self.q, 1)
-        srow.addWidget(button("Search", "accent", lambda: self.search.emit(self.q.text())))
+        self.search_btn = button("Search", "accent", lambda: self.search.emit(self.q.text()))
+        srow.addWidget(self.search_btn)
         lay.addLayout(srow)
         head = hbox(spacing=12)
         self.title = label("Search", "h2"); head.addWidget(self.title)
@@ -208,6 +215,10 @@ class SearchPage(QWidget):
         row.addWidget(label("Lands in quarantine, gets checked, then waits for your decision.", "faint"))
         row.addStretch(1)
         lay.addLayout(row)
+
+    def set_connected(self, on: bool):
+        self.q.setEnabled(on); self.search_btn.setEnabled(on)
+        self.btn.setEnabled(on and bool(self.tree.selectedItems()))
 
     def show_results(self, res: SearchResult, searching: bool):
         n = len(res.candidates)

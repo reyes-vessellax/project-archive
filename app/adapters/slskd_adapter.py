@@ -49,10 +49,10 @@ class SlskdAdapter(SourceAdapter):
         self.timeout = timeout
         host = parse.urlsplit(self.base_url)
         if host.scheme not in ("http", "https"):
-            raise ConnectorError("slskd URL must start with http:// or https://")
+            raise ConnectorError("The engine address must start with http:// or https://.")
         if host.scheme == "http" and (host.hostname or "") not in LOOPBACK:
             # Spec 9.1: the client API should stay on this machine unless it's protected by TLS.
-            raise ConnectorError("Plain http to slskd is only allowed on this computer (localhost). Use https for a remote slskd.")
+            raise ConnectorError("Plain http to the engine is only allowed on this computer (localhost). Use https for a remote one.")
 
     # HTTP ------------------------------------------------------------------------------
     def _call(self, method: str, path: str, body=None, query: dict | None = None):
@@ -71,20 +71,20 @@ class SlskdAdapter(SourceAdapter):
                 raw = resp.read(MAX_BODY)
         except error.HTTPError as e:
             if e.code in (401, 403):
-                raise ConnectorError("slskd rejected the API key. Check it in Settings.") from e
+                raise ConnectorError("The engine rejected the API key.") from e
             if e.code == 404:
-                raise ConnectorError(f"slskd doesn't know that item ({method} {path}).") from e
-            raise ConnectorError(f"slskd error {e.code} on {method} {path}.") from e
+                raise ConnectorError(f"The engine doesn't know that item ({method} {path}).") from e
+            raise ConnectorError(f"The engine answered with an error ({e.code}).") from e
         except error.URLError as e:
-            raise ConnectorError(f"Can't reach slskd at {self.base_url}. Is it running?") from e
+            raise ConnectorError("Can't reach the engine. Is it running?") from e
         except TimeoutError as e:
-            raise ConnectorError("slskd didn't answer in time.") from e
+            raise ConnectorError("The engine didn't answer in time.") from e
         if not raw:
             return None
         try:
             return json.loads(raw.decode("utf-8", "replace"))
         except json.JSONDecodeError as e:
-            raise ConnectorError("slskd returned something that isn't JSON.") from e
+            raise ConnectorError("The engine returned something unexpected.") from e
 
     # contract ------------------------------------------------------------------------------
     def health_check(self) -> ConnectorStatus:
@@ -97,7 +97,7 @@ class SlskdAdapter(SourceAdapter):
         logged = bool(s.get("isLoggedIn")) or "LoggedIn" in str(s.get("state", ""))
         user = str(s.get("username") or "")
         msg = f"Connected to Soulseek as {user}" if logged and user else \
-              ("Connected to Soulseek" if logged else "slskd is running but not logged in to Soulseek")
+              ("Connected to Soulseek" if logged else "Signing in to Soulseek…")
         return ConnectorStatus(available=True, logged_in=logged, username=user, message=msg)
 
     def search(self, query: str, timeout_s: float = 15.0) -> SearchResult:
@@ -147,7 +147,7 @@ class SlskdAdapter(SourceAdapter):
         self._call("POST", f"/transfers/downloads/{user}", [{"filename": candidate.remote_path, "size": candidate.size}])
         t = self._find_transfer(candidate.user, candidate.remote_path)
         if t is None:
-            raise ConnectorError("slskd accepted the download but didn't list it. Try again.")
+            raise ConnectorError("The download was accepted but isn't listed yet. Try again in a moment.")
         return t
 
     def transfer_status(self, transfer: Transfer) -> Transfer:
@@ -155,7 +155,7 @@ class SlskdAdapter(SourceAdapter):
         try:
             row = self._call("GET", f"/transfers/downloads/{user}/{transfer.transfer_id}")
         except ConnectorError as e:
-            if "doesn't know" in str(e):               # slskd dropped it from its list
+            if "doesn't know" in str(e):               # the engine dropped it from its list
                 t = self._find_transfer(transfer.user, transfer.remote_path)
                 if t:
                     return self._with_local(t)
@@ -185,7 +185,7 @@ class SlskdAdapter(SourceAdapter):
         if t.done and t.local_path is None:
             t.local_path = self.locate_download(t.remote_path, t.size)
             if t.local_path is None:
-                t.done, t.failed, t.state = False, True, "Finished but the file wasn't found in slskd's downloads folder"
+                t.done, t.failed, t.state = False, True, "Finished, but the file wasn't found in the downloads folder"
         return t
 
     def locate_download(self, remote_path: str, size: int) -> Path | None:

@@ -16,7 +16,19 @@ one line changes and this file gets a note.
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 - Library tab as a browsable history (today it opens the library folder).
 
-## 0.3.1 — 2026-11-05 (security pass)
+## 0.3.1 — 2026-11-05 (security pass + start-up fix)
+
+### Start-up
+- Fixed: a dialog box naming the engine kept popping up while the engine was still signing in
+  (every failed background call opened its own popup, and search polls once a second).
+  Background problems now show once in the status strip, never as a popup, and no message names
+  the engine.
+- New "Getting things ready…" screen after sign-up and on every launch: spinner and three steps
+  (engine, network, sharing). The app opens when signed in; after 90 s it opens anyway with a note,
+  and a real failure shows the Try again / Help dialog.
+- Search is disabled with the connection message as its placeholder until the engine is signed in.
+
+### Security
 
 - A result's file type is taken from its file name, never from the type the peer's client reports;
   a file named `evil.exe` tagged "mp3" is no longer listed, and can't be requested.

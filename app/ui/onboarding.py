@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLineEdit, QSizePolicy, QStackedWidget, QWidget
 
 from ..config import APP_NAME
@@ -214,6 +214,50 @@ class ReadyPage(QWidget):
         lay.addStretch(1)
 
 
+class ConnectingPage(QWidget):
+    """Shown while the engine starts and signs in. A spinner, three steps, then it closes itself."""
+    done = Signal()
+
+    def __init__(self, svc: ArchiveService):
+        super().__init__()
+        self.svc = svc
+        outer, lay = _centered()
+        root = vbox(self); root.addWidget(outer)
+        lay.addWidget(label(APP_NAME, "h2"))
+        lay.addWidget(_steps(2))
+        self.title = label("Getting things ready…", "big"); lay.addWidget(self.title)
+        self.spinner = label("", "h1"); self.spinner.setStyleSheet("font-size: 28px; color: palette(mid);"); lay.addWidget(self.spinner)
+        self.rows = {}
+        for key, text in (("engine", "Starting the engine"), ("network", "Signing in to the network"), ("shares", "Sharing your library")):
+            r = hbox(spacing=12)
+            dot = label("●", "tag"); dot.setProperty("tag", ""); txt = label(text, "muted")
+            r.addWidget(dot); r.addWidget(txt); r.addStretch(1)
+            lay.addLayout(r); self.rows[key] = (dot, txt)
+        self.note = label("This takes a few seconds the first time. If your firewall asks to allow incoming connections, "
+                          "choose Allow — that's how other users send you files.", "faint", wrap=True)
+        lay.addWidget(self.note)
+        lay.addStretch(1)
+        self._frames = "◐◓◑◒"; self._i = 0
+        self._spin = QTimer(self, interval=120, timeout=self._tick)
+
+    def _tick(self):
+        self._i = (self._i + 1) % len(self._frames)
+        self.spinner.setText(self._frames[self._i])
+
+    def start(self):
+        self._spin.start()
+        for dot, txt in self.rows.values():
+            set_tag(dot, ""); txt.setObjectName("muted")
+
+    def mark(self, key: str, state: str):
+        dot, txt = self.rows[key]
+        set_tag(dot, {"done": "Good", "busy": "Down", "fail": "Broken"}.get(state, ""))
+
+    def finish(self):
+        self._spin.stop()
+        self.done.emit()
+
+
 class Onboarding(QStackedWidget):
     """Owns the four screens and emits `finished` when the user reaches the app."""
     finished = Signal()
@@ -222,8 +266,8 @@ class Onboarding(QStackedWidget):
         super().__init__()
         self.svc = svc
         self.signup = SignUpPage(svc); self.signin = SignInPage(svc)
-        self.library = LibraryPage(svc); self.ready = ReadyPage(svc)
-        for w in (self.signup, self.signin, self.library, self.ready):
+        self.library = LibraryPage(svc); self.ready = ReadyPage(svc); self.connecting = ConnectingPage(svc)
+        for w in (self.signup, self.signin, self.library, self.ready, self.connecting):
             self.addWidget(w)
         self.signup.switch.connect(lambda: self.setCurrentWidget(self.signin))
         self.signin.switch.connect(lambda: self.setCurrentWidget(self.signup))

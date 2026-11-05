@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self._backend_started = False
         self._jobs: list[dict] = []
         self._analyses: dict[str, dict | None] = {}
+        self._connected = False
 
         self.setWindowTitle(APP_NAME)
         self.resize(1280, 860)
@@ -125,13 +126,23 @@ class MainWindow(QMainWindow):
             self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent)
 
     def _enter_app(self):
-        self.root.setCurrentWidget(self.shell)
         self._refresh_account()
         self.refresh()
         self._check_ffmpeg()
+        if self.svc.managed_mode and not self._connected:
+            self.onboarding.connecting.start()
+            self.onboarding.connecting.mark("engine", "busy")
+            self.onboarding.setCurrentWidget(self.onboarding.connecting)
+            self.root.setCurrentWidget(self.onboarding)
+            self._connect_deadline = time.monotonic() + 90
+        else:
+            self.root.setCurrentWidget(self.shell)
         if not self._backend_started:
             self._backend_started = True
             QTimer.singleShot(0, self._start_backend)
+
+    def _waiting_screen(self) -> bool:
+        return self.root.currentWidget() is self.onboarding and self.onboarding.currentWidget() is self.onboarding.connecting
 
     def _refresh_account(self):
         a = self.svc.accounts.load()
@@ -252,8 +263,27 @@ class MainWindow(QMainWindow):
         slots = self.svc.settings.max_concurrent_analyses
         detail = f"{min(chk, slots)}/{slots} checking · {down} downloading" if (chk or down) else ""
         self.topbar.set_status(st.message, colour, detail)
-        if self.svc.managed_mode and self.svc.backend_state == "failed" and self.root.currentWidget() is self.shell:
+        self._connected = bool(st.logged_in) or not self.svc.managed_mode
+        self.home.set_connected(self._connected, st.message)
+        self.searchp.set_connected(self._connected)
+        if self._waiting_screen():
+            c = self.onboarding.connecting
+            if st.available:
+                c.mark("engine", "done"); c.mark("network", "done" if st.logged_in else "busy")
+                c.mark("shares", "done" if (st.logged_in and self.svc.settings.share_folder) else ("" if not self.svc.settings.share_folder else "busy"))
+            failed = self.svc.backend_state == "failed"
+            timed_out = time.monotonic() > getattr(self, "_connect_deadline", 0)
+            if self._connected or failed or timed_out:
+                c.finish()
+                self.root.setCurrentWidget(self.shell)
+                if failed:
+                    self._connection_trouble()
+                elif timed_out and not self._connected:
+                    self.statusBar().showMessage("Still signing in. You can add local files meanwhile.", 8000)
+        elif self.svc.managed_mode and self.svc.backend_state == "failed" and self.root.currentWidget() is self.shell:
             self._connection_trouble()
+        if self.svc.managed_mode and st.available and not st.logged_in:
+            QTimer.singleShot(2000, self._poll_status)      # poll faster while signing in
 
     def closeEvent(self, e):
         self.svc.stop_backend()
@@ -264,30 +294,36 @@ class MainWindow(QMainWindow):
         q = q.strip()
         if not q:
             return
+        if self.svc.managed_mode and not self._connected:
+            self.statusBar().showMessage("Still connecting. Search opens as soon as you're signed in.", 5000)
+            return
         self.home.q.setText(q); self.searchp.q.setText(q)
         self.pages.setCurrentWidget(self.searchp); self.topbar.set_active("")
         self.searchp.show_results(SearchResult(query=q, search_id="", finished=False), searching=True)
         self.search_running = True
 
         def work():
-            res = self.svc.search(q)
-            self.search_id = res.search_id
-            started = time.monotonic()
-            while True:
-                time.sleep(1.0)
-                if self.search_id != res.search_id:
-                    return
-                latest = self.svc.search_results(res.search_id); latest.query = q
-                self.signals.results.emit(latest)
-                if latest.finished or time.monotonic() - started > SEARCH_WAIT_S:
-                    self.search_running = False
+            try:
+                res = self.svc.search(q)
+                self.search_id = res.search_id
+                started = time.monotonic()
+                while True:
+                    time.sleep(1.0)
+                    if self.search_id != res.search_id:
+                        return
+                    latest = self.svc.search_results(res.search_id); latest.query = q
                     self.signals.results.emit(latest)
-                    return
+                    if latest.finished or time.monotonic() - started > SEARCH_WAIT_S:
+                        return
+            finally:
+                self.search_running = False
+                self.signals.done.emit("")
         self.io.start(Task(work, self.signals))
 
     def _on_results(self, res: SearchResult):
         if res.search_id == self.search_id:
             self.searchp.show_results(res, searching=self.search_running)
+        self._last_results = res
 
     def _pick_candidate(self, cand: Candidate):
         def work():
@@ -353,8 +389,12 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def _on_failed(self, _job_id, message):
+        """Background problems show in the status strip, once, never as a popup."""
         self.refresh()
-        QMessageBox.warning(self, APP_NAME, message)
+        if message != getattr(self, "_last_notice", None):
+            self._last_notice = message
+            self.statusBar().showMessage(message, 8000)
+            QTimer.singleShot(8500, lambda: setattr(self, "_last_notice", None))
 
     def _pick_files(self):
         exts = " ".join(f"*.{e}" for e in self.svc.settings.extensions)

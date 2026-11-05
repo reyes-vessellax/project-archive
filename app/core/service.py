@@ -113,7 +113,16 @@ class ArchiveService:
         return self.adapter.health_check()
 
     def search(self, query: str) -> SearchResult:
-        return self._adapter_or_block().search(query)
+        adapter = self._adapter_or_block()
+        if self.managed_mode and not self.adapter_logged_in():
+            raise ActionBlocked("Still signing in. Search opens as soon as you're connected.")
+        return adapter.search(query)
+
+    def adapter_logged_in(self) -> bool:
+        try:
+            return bool(self.adapter and self.adapter.health_check().logged_in)
+        except Exception:
+            return False
 
     def search_results(self, search_id: str) -> SearchResult:
         exts = {e.lower().lstrip(".") for e in self.settings.extensions}
@@ -161,7 +170,7 @@ class ArchiveService:
             try:
                 t = self.adapter.transfer_status(t)
             except ConnectorError as e:
-                self.db.update_job(job["id"], message=f"Waiting for slskd: {e}")
+                self.db.update_job(job["id"], message="Waiting for the engine…")
                 continue
             if t.done and t.local_path:
                 try:
