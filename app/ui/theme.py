@@ -11,8 +11,9 @@ from pathlib import Path
 from PySide6.QtGui import QFontDatabase
 
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
-SANS = "Manrope"
-MONO = "JetBrains Mono"
+SANS = "Sora"                 # body and UI
+DISPLAY = "Sora"              # headlines: h1, big, hero search, counts, verdict, brand
+MONO = "IBM Plex Mono"
 
 PALETTES = {
     "light": dict(bg="#fbfbfa", panel="#ffffff", line="#ebebe7", text="#1b1b1a", muted="#6b6b66", faint="#a4a49e",
@@ -44,6 +45,7 @@ def colours(theme: str) -> dict:
 def stylesheet(theme: str) -> str:
     c = colours(theme)
     sans = f'"{SANS}", "Segoe UI", system-ui, sans-serif'
+    display = f'"{DISPLAY}", "{SANS}", "Segoe UI", system-ui, sans-serif'
     mono = f'"{MONO}", "Consolas", monospace'
     tags = "\n".join(
         f'QLabel[tag="{word}"] {{ color: {c[key]}; }}' for word, key in TAG_COLOUR.items()
@@ -56,7 +58,7 @@ QToolTip {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['
 
 /* top bar */
 QWidget#topbar {{ background: {c['bg']}; }}
-QPushButton#brand {{ background: none; border: none; font-weight: 800; font-size: 15px; padding: 6px 0; min-height: 0; border-radius: 0; }}
+QPushButton#brand {{ background: none; border: none; font-family: {display}; font-weight: 800; font-size: 15px; padding: 6px 0; min-height: 0; border-radius: 0; }}
 QPushButton#tab {{ background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 2px; min-height: 0; color: {c['faint']}; font-weight: 600; font-size: 14px; }}
 QPushButton#tab:hover {{ color: {c['text']}; }}
 QPushButton#tab[active="true"] {{ color: {c['text']}; border-bottom: 2px solid {c['accent']}; }}
@@ -65,20 +67,20 @@ QLabel#status {{ color: {c['muted']}; }}
 QLabel#statusdot {{ font-size: 16px; }}
 
 /* text roles */
-QLabel#h1 {{ font-size: 30px; font-weight: 800; }}
+QLabel#h1 {{ font-family: {display}; font-size: 30px; font-weight: 800; }}
 QLabel#h2 {{ font-size: 15px; font-weight: 700; }}
-QLabel#big {{ font-size: 34px; font-weight: 800; }}
+QLabel#big {{ font-family: {display}; font-size: 34px; font-weight: 800; }}
 QLabel#muted {{ color: {c['muted']}; }}
 QLabel#faint {{ color: {c['faint']}; }}
 QLabel#mono {{ font-family: {mono}; font-size: 12px; color: {c['muted']}; }}
 QLabel#monotext {{ font-family: {mono}; font-size: 13px; }}
 QLabel#tag {{ font-family: {mono}; font-size: 10px; font-weight: 500; letter-spacing: 1px; color: {c['faint']}; }}
 {tags}
-QLabel#count {{ font-size: 26px; font-weight: 800; }}
+QLabel#count {{ font-family: {display}; font-size: 26px; font-weight: 800; }}
 QLabel#count[tag="Good"] {{ color: {c['pass_']}; }}
 QLabel#count[tag="Look"] {{ color: {c['warn']}; }}
 QLabel#count[tag="Broken"] {{ color: {c['fail']}; }}
-QLabel#verdict {{ font-size: 22px; font-weight: 800; }}
+QLabel#verdict {{ font-family: {display}; font-size: 22px; font-weight: 800; }}
 QLabel#verdict[tag="Good"] {{ color: {c['pass_']}; }}
 QLabel#verdict[tag="Look"] {{ color: {c['warn']}; }}
 QLabel#verdict[tag="Broken"] {{ color: {c['fail']}; }}
@@ -86,7 +88,7 @@ QLabel#verdict[tag="Broken"] {{ color: {c['fail']}; }}
 /* inputs */
 QLineEdit {{ background: transparent; border: none; border-bottom: 1px solid {c['line']}; padding: 8px 2px; font-size: 15px; selection-background-color: {c['accent']}; }}
 QLineEdit:focus {{ border-bottom: 1px solid {c['accent']}; }}
-QLineEdit#hero {{ font-size: 28px; font-weight: 600; padding: 12px 2px; }}
+QLineEdit#hero {{ font-family: {display}; font-size: 28px; font-weight: 600; padding: 12px 2px; }}
 QLineEdit#monoinput {{ font-family: {mono}; font-size: 13px; }}
 QPlainTextEdit {{ background: transparent; border: none; border-bottom: 1px solid {c['line']}; padding: 6px 2px; font-size: 15px; }}
 QPlainTextEdit:focus {{ border-bottom: 1px solid {c['accent']}; }}

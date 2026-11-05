@@ -1,6 +1,6 @@
 # DEADWAX: UI handoff
 
-**0.3 implements design v5** (see the design canvas): Manrope + JetBrains Mono, one amber accent, light and dark.
+**0.3 implements design v5** (see the design canvas): Sora + IBM Plex Mono, one amber accent, light and dark.
 The product name is the `APP_NAME` constant in `app/config.py`; nothing else spells it out.
 
 The engine (Soulseek search through slskd, download into quarantine, checks, spectrogram, library moves)
