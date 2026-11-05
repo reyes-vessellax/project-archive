@@ -130,14 +130,14 @@ class SlskdAdapter(SourceAdapter):
               ("Connected to Soulseek" if logged else "Signing in to Soulseek…")
         return ConnectorStatus(available=True, logged_in=logged, username=user, message=msg)
 
-    def search(self, query: str, timeout_s: float = 15.0) -> SearchResult:
+    def search(self, query: str, timeout_s: float = 45.0) -> SearchResult:
         query = " ".join(query.split())
         if len(query) < 2:
             raise ConnectorError("Type at least two characters to search.")
         sid = str(uuid.uuid4())
         self._call("POST", "/searches", {"id": sid, "searchText": query[:200],
-                                         "searchTimeout": int(timeout_s * 1000), "fileLimit": 4000,
-                                         "filterResponses": True, "responseLimit": 300,
+                                         "searchTimeout": int(timeout_s * 1000), "fileLimit": 20000,
+                                         "filterResponses": True, "responseLimit": 2000,
                                          "minimumResponseFileCount": 1})
         return SearchResult(query=query, search_id=sid, finished=False)
 

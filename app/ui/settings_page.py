@@ -178,6 +178,11 @@ class SettingsPage(QWidget):
         self.own_pass = QLineEdit(); self.own_pass.setEchoMode(QLineEdit.Password)
         self._field(lay, "Use my own Soulseek username", self.own_user)
         self._field(lay, "Soulseek password", self.own_pass)
+        self.upnp = QCheckBox("Ask the router to open the download port automatically (UPnP)")
+        self.upnp.setToolTip("Other users deliver search results and files straight to you when this port is reachable. "
+                             "Off, or with a router that refuses, everything still works through the slower indirect route.")
+        lay.addWidget(self.upnp)
+        self.port_note = label("", "faint"); lay.addWidget(self.port_note)
         self.use_own = QCheckBox("Use an slskd I already run instead of the built-in engine")
         lay.addWidget(self.use_own)
         self.slskd_url = QLineEdit(); self.slskd_url.setObjectName("monoinput")
@@ -215,6 +220,9 @@ class SettingsPage(QWidget):
         self.own_user.setText(s.soulseek_own_username); self.own_pass.setText("")
         self.own_pass.setPlaceholderText("(unchanged)" if self.svc.manager.creds.get("soulseek_own_password") else "")
         self.use_own.setChecked(s.use_own_slskd); self.slskd_url.setText(s.slskd_url); self.slskd_key.setText(s.slskd_api_key)
+        self.upnp.setChecked(bool(s.upnp))
+        port = s.listen_port
+        self.port_note.setText((f"Download port {port}: " + (self.svc.port_note or "not checked yet")) if port else "")
         self.slskd_dl.setText(s.slskd_downloads_dir); self.ffmpeg.setText(s.ffmpeg_path)
 
     def _choose(self, edit: QLineEdit):
@@ -238,6 +246,7 @@ class SettingsPage(QWidget):
         elif not s.soulseek_own_username:
             self.svc.manager.creds.delete("soulseek_own_password")
         s.use_own_slskd = self.use_own.isChecked()
+        s.upnp = self.upnp.isChecked()
         s.slskd_url = self.slskd_url.text().strip() or "http://127.0.0.1:5030"
         s.slskd_api_key = self.slskd_key.text().strip(); s.slskd_downloads_dir = self.slskd_dl.text().strip()
         s.ffmpeg_path = self.ffmpeg.text().strip()

@@ -15,6 +15,19 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.4.4 — unreleased (more search results)
+
+Aimed at matching what SoulseekQt shows for the same words.
+- **Open port.** The engine now listens on a fixed port chosen once per user (49152–65000) and the app
+  asks the router to forward it with UPnP at every start (`app/core/upnp.py`, standard library only).
+  Other users deliver results and files straight to us instead of via the server's slow indirect
+  route. Settings → Advanced shows the port and whether the router agreed; UPnP can be turned off.
+- **Longer collection.** Searches stay open up to 45 s (was 15) and stop 10 s after the last new
+  result (was 3.5); first rows still paint within a second and the count ticks up.
+- **Bigger caps.** The engine keeps up to 2,000 responses / 20,000 files per search (was 300 / 4,000).
+- **Other formats are shown, greyed, tagged "Extension mismatch"** instead of hidden, so the source
+  count matches other clients. They sort to the bottom and can't be picked; the header says how many.
+
 ## 0.4.3 — unreleased (no popups, Search tab, library drop-down)
 
 - **Search** tab in the top bar brings back your last results at any time.

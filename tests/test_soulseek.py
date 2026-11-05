@@ -109,10 +109,14 @@ def test_local_mode_when_no_key(service):
         service.search("anything")
 
 
-def test_search_filters_to_accepted_formats(connected, slskd, fixtures):
+def test_search_marks_other_formats_instead_of_hiding_them(connected, slskd, fixtures):
     slskd.library[r"@@peer\Music\notes.txt"] = fixtures["mp3_320"]       # a peer sharing non-audio
     res = search_all(connected, "music")
-    assert all(c.extension == "mp3" for c in res.candidates)
+    odd = [c for c in res.candidates if c.extension == "txt"]
+    assert odd and all(c.note == "Extension mismatch" for c in odd)
+    assert all(not c.note for c in res.candidates if c.extension == "mp3")
+    with pytest.raises(ActionBlocked):                                   # still can't be requested
+        connected.request_download(odd[0])
 
 
 def test_full_flow_pass_then_download_to_library(connected, slskd, fixtures):
@@ -269,7 +273,7 @@ def test_extension_comes_from_the_name_not_the_peer(connected, slskd, fixtures):
     slskd.library[r"@@peer\Music\evil.exe"] = fixtures["mp3_320"]
     # the fake reports extension from the fixture (mp3); the NAME says .exe, and the name wins
     res = search_all(connected, "evil")
-    assert res.candidates == []
+    assert [c.note for c in res.candidates] == ["Extension mismatch"]   # shown greyed, never requestable
     cand = Candidate(source_kind="soulseek", user="peer_a", remote_path=r"@@peer\Music\evil.exe", size=1,
                      display_name="evil.exe", extension="exe")
     with pytest.raises(ActionBlocked):
@@ -293,7 +297,7 @@ def test_invisible_characters_are_stripped(connected, slskd, fixtures):
     sneaky = "@@peer\\Music\\evil‮3pm.exe"                          # displays as "evil.mp3"
     slskd.library[sneaky] = fixtures["mp3_320"]
     res = search_all(connected, "evil")
-    assert res.candidates == []                                        # it's really an .exe
+    assert [c.note for c in res.candidates] == ["Extension mismatch"]   # it's really an .exe: greyed, not requestable
     from app.core.safety import safe_filename, clean_text
     assert "‮" not in safe_filename("evil‮3pm.exe") and clean_text("a​b") == "ab"
 

@@ -79,12 +79,32 @@ class ArchiveService:
             return
         self.backend_state, self.backend_error = "starting", ""
         try:
+            had_port = self.settings.listen_port
             self.manager.start()
+            if self.settings.listen_port != had_port:              # picked on first start: keep it
+                self.db.save_settings(self.settings.to_dict())
             self.backend_state = "running"
             self._build_adapter()
         except BackendUnavailable as e:
             self.backend_state, self.backend_error = "failed", str(e)
             self.adapter = None
+            return
+        self.open_port()
+
+    port_open: bool = False
+    port_note: str = ""
+
+    def open_port(self) -> None:
+        """Ask the router to forward the engine's port (UPnP). Best effort; a few seconds; call off the UI thread."""
+        from . import upnp
+        port = int(self.settings.listen_port or 0)
+        if not port or not self.settings.upnp:
+            self.port_open, self.port_note = False, "Port forwarding is off (Settings → Advanced)." if port else ""
+            return
+        try:
+            self.port_open, self.port_note = upnp.open_port(port, f"{APP_NAME} downloads")
+        except Exception as e:                                  # noqa: BLE001
+            self.port_open, self.port_note = False, f"Couldn't talk to the router: {e}"
 
     def stop_backend(self) -> None:
         self.manager.stop()
@@ -130,7 +150,9 @@ class ArchiveService:
     def search_results(self, search_id: str) -> SearchResult:
         exts = {e.lower().lstrip(".") for e in self.settings.extensions}
         res = self._adapter_or_block().search_results(search_id)
-        res.candidates = [c for c in res.candidates if c.extension in exts]
+        for c in res.candidates:                           # shown greyed rather than hidden, so counts match other clients
+            if c.extension not in exts:
+                c.note = "Extension mismatch"
         return res
 
     def request_download(self, cand: Candidate) -> dict:

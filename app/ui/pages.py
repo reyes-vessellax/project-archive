@@ -280,12 +280,14 @@ class SearchPage(QWidget):
         if idle:
             self.title.setText("Search"); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
         self.title.setText(f"{n} source{'s' if n != 1 else ''}")
+        skipped = sum(1 for c in res.candidates if c.note)
+        tail = f" · {skipped} other format{'s' if skipped != 1 else ''} greyed" if skipped else ""
         if res.error:
             self.state.setText("")
         elif searching:
-            self.state.setText("fastest first · still collecting…")
+            self.state.setText("fastest first · still collecting…" + tail)
         else:
-            self.state.setText("fastest first" if n else "")
+            self.state.setText(("fastest first" + tail) if n else "")
         if n == 0:
             if res.error:
                 self._show_empty(res.error)
@@ -324,9 +326,12 @@ class SearchPage(QWidget):
                     it.setForeground(col, red)
                 it.setText(9, f"⚠ {problem}")
                 it.setToolTip(9, f"This source failed before: {problem}")
-            elif c.locked:
+            elif c.locked or c.note:
                 for col in range(self.tree.columnCount()):
                     it.setForeground(col, self.palette().mid())
+                if c.note:
+                    it.setText(9, c.note)
+                    it.setToolTip(9, f"{c.note}: .{c.extension or '(none)'} isn't in your accepted formats (Settings → Checks).")
             items.append(it)
         self.tree.addTopLevelItems(items)
         left = len(self._ranked) - self._shown
@@ -364,7 +369,8 @@ class SearchPage(QWidget):
 
     def _selection(self):
         items = self.tree.selectedItems()
-        self.btn.setEnabled(bool(items) and isinstance(items[0].data(0, Qt.UserRole), Candidate))
+        c = items[0].data(0, Qt.UserRole) if items else None
+        self.btn.setEnabled(isinstance(c, Candidate) and not c.note and not c.locked)
 
     def _pick(self):
         items = self.tree.selectedItems()
@@ -384,7 +390,7 @@ def _speed(c: Candidate) -> str:
 
 
 def _rank(c: Candidate):
-    return (1 if c.locked else 0, 0 if c.free_slot else 1,
+    return (1 if (c.locked or c.note) else 0, 0 if c.free_slot else 1,
             c.queue_length if c.queue_length is not None else 1_000_000,
             -(c.upload_speed or 0), -(c.bitrate_kbps or 0))
 

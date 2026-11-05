@@ -48,6 +48,7 @@ class Candidate:
     queue_length: int | None = None # files already waiting on that peer
     upload_speed: int | None = None # bytes/s the peer reported
     locked: bool = False            # peer restricts this file; can't be requested
+    note: str = ""                  # why it can't be picked here, e.g. "Extension mismatch" (shown greyed, not hidden)
 
     @property
     def key(self) -> str:

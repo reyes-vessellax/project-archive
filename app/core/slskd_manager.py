@@ -117,7 +117,12 @@ class SlskdManager:
         web_user = self.creds.get_or_create(KEY_WEB_USER, lambda: "pa_" + new_password()[:12])
         web_pass = self.creds.get_or_create(KEY_WEB_PASS, new_password)
         shares = [self.settings.share_folder] if self.settings.share_folder.strip() else []
+        if not self.settings.listen_port:
+            import random
+            self.settings.listen_port = random.randint(49152, 65000)
         cfg = {
+            "soulseek": {"listen_port": int(self.settings.listen_port),
+                         "distributed_network": {"disabled": False, "child_limit": 10}},
             "headless": True,
             "remote_file_management": False,
             "directories": {"downloads": str(self.downloads_dir), "incomplete": str(self.instance_dir / "incomplete")},

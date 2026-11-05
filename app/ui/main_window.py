@@ -29,8 +29,8 @@ from .settings_page import SettingsPage
 from .tour import TourOverlay, default_steps
 from .widgets import AvatarMenu, Signals, Task, TopBar, vbox
 
-SEARCH_WAIT_S = 15            # hard cap on collecting results (matches the engine's own search timeout)
-SEARCH_QUIET_S = 3.5          # once results have started, stop when nothing new arrives for this long
+SEARCH_WAIT_S = 45            # hard cap on collecting results (matches the engine's own search timeout)
+SEARCH_QUIET_S = 10           # once results have started, stop when nothing new arrives for this long
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
 FIREWALL_ASK = (f"To download from other users, {APP_NAME} needs to accept incoming connections.\n\n"
                 f"Allow it now? Windows will ask you to confirm once. Nothing is shared from your computer "
@@ -334,6 +334,8 @@ class MainWindow(QMainWindow):
         def work():
             self.svc.start_backend()
             self.signals.status.emit(self.svc.connector_status())
+            if self.svc.port_note:
+                self.signals.notice.emit(self.svc.port_note)
         self.io.start(Task(work, self.signals))
 
     def _ensure_firewall(self):
