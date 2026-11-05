@@ -73,7 +73,7 @@ def _audio_probe(exe_ffmpeg: str) -> str:
         from PySide6.QtWidgets import QApplication
         app = QApplication.instance() or QApplication([])
         dev = QMediaDevices.defaultAudioOutput()
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             f = Path(tmp) / "probe.mp3"
             subprocess.run([exe_ffmpeg, "-v", "error", "-f", "lavfi", "-i", "sine=f=440:d=3", "-c:a", "libmp3lame",
                             "-b:a", "128k", str(f)], check=True, timeout=60)
@@ -81,7 +81,8 @@ def _audio_probe(exe_ffmpeg: str) -> str:
             player.setSource(QUrl.fromLocalFile(str(f))); player.play()
             loop = QEventLoop(); QTimer.singleShot(1500, loop.quit); loop.exec()
             pos, err = player.position(), player.errorString()
-            player.stop()
+            player.stop(); player.setSource(QUrl())            # let go of the file before the folder is removed
+            loop = QEventLoop(); QTimer.singleShot(300, loop.quit); loop.exec()
         return f"device={'none' if dev.isNull() else dev.description()!r} position_after_1.5s={pos}ms error={err!r}"
     except Exception as e:                                  # noqa: BLE001
         return f"backend unavailable: {e}"

@@ -15,7 +15,7 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
-## 0.4.2 — unreleased (no popups, Search tab, library drop-down)
+## 0.4.3 — unreleased (no popups, Search tab, library drop-down)
 
 - **Search** tab in the top bar brings back your last results at any time.
 - Library: click a track and a drop-down opens under the list with the spectrogram + player, verdict,

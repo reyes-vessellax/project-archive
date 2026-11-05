@@ -37,7 +37,7 @@ args = [
         "PySide6.QtVirtualKeyboard", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtOpenGL",
         "PySide6.QtOpenGLWidgets", "PySide6.Qt3DCore", "PySide6.QtCharts", "PySide6.QtDataVisualization",
         "PySide6.QtSql", "PySide6.QtTest", "PySide6.QtXml", "PySide6.QtSvg", "PySide6.QtSvgWidgets",
-        "tkinter", "setuptools", "pkg_resources", "unittest", "pydoc", "doctest", "xmlrpc", "email", "http.server",
+        "tkinter", "setuptools", "pkg_resources", "unittest", "pydoc", "doctest", "xmlrpc",   # (email stays: http.client needs it)
     )), []),
 ]
 # Everything we ship that isn't Python lives under _internal/vendor/<thing>/, so the folder reads:
