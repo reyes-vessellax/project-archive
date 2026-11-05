@@ -36,7 +36,8 @@ class Candidate:
     display_name: str = ""          # last path component, for the UI
     folder: str = ""                # remote parent folder name, for the UI
     artist: str = ""                # from "Artist - Title.ext" naming; empty when the name doesn't follow it
-    title: str = ""                 # the title part, or the whole file name without extension
+    title: str = ""                 # the title part (mix included), or the whole file name without extension
+    mix: str = ""                   # "Extended Mix", "Dom Dolla Remix"… from trailing (…) / […]; empty if none
     extension: str = ""
     bitrate_kbps: int | None = None # what the peer's client claims; verified later by our analysis
     vbr: bool | None = None
@@ -104,17 +105,39 @@ class SourceAdapter:
 
 
 _TRACK_NO = re.compile(r"^\s*(?:[A-Da-d]?\d{1,3})(?:[\s.\-_)]+)")
+_DASHES = re.compile(r"\s*[\u2013\u2014\u2012-]\s*")           # -, –, —, ‒ with any spacing
+_FEAT = re.compile(r"^(feat|ft|featuring|with)\b", re.I)
+_TRAIL = re.compile(r"\s*[\(\[]([^()\[\]]*)[\)\]]\s*$")
 
 
 def split_artist_title(filename: str) -> tuple[str, str]:
-    """"Artist - Title.mp3" -> ("Artist", "Title"); "03 - Artist - Title.flac" -> ("Artist", "Title").
-    Anything else -> ("", name without extension)."""
-    stem = Path(filename).stem.strip()
-    parts = [p.strip() for p in re.split(r"\s+-\s+", stem) if p.strip()]
-    if parts and _TRACK_NO.match(parts[0] + " ") and parts[0].strip(" .-_)").isdigit():
-        parts = parts[1:]                                   # leading track number as its own part
+    """"Artist - Title (Mix).mp3" -> ("Artist", "Title (Mix)"). Handles underscores, en/em dashes and
+    leading track numbers. Anything else -> ("", name without extension)."""
+    return parse_track(filename)[:2]
+
+
+def parse_track(filename: str) -> tuple[str, str, str]:
+    """(artist, title, mix). `mix` is the trailing "(Extended Mix)" / "[Remix]" part, "" if none;
+    `title` keeps it, so callers can show either."""
+    stem = Path(filename).stem
+    stem = stem.replace("_", " ")
+    stem = re.sub(r"\s+", " ", stem).strip()
+    # split only on a dash that has space on both sides (so "Hip-Hop" and "Re-Edit" survive)
+    parts = [p.strip() for p in re.split(r"\s+[\u2013\u2014\u2012-]\s+", stem) if p.strip()]
+    if len(parts) >= 2 and re.fullmatch(r"[A-Da-d]?\d{1,3}\.?", parts[0]):
+        parts = parts[1:]                                   # "01 - …" / "A1 - …": a track number on its own
     elif parts:
         parts[0] = _TRACK_NO.sub("", parts[0], count=1) or parts[0]
     if len(parts) >= 2:
-        return parts[0], " - ".join(parts[1:])
-    return "", (parts[0] if parts else stem)
+        artist, title = parts[0], " - ".join(parts[1:])     # Soulseek convention; "Title - Artist" is rare
+    elif parts:
+        artist, title = "", parts[0]
+    else:
+        artist, title = "", stem
+    mix = ""
+    m = _TRAIL.search(title)
+    while m and not _FEAT.match(m.group(1).strip()):
+        mix = (m.group(1).strip() + (" " + mix if mix else "")).strip()
+        title = title[:m.start()].rstrip()
+        m = _TRAIL.search(title)
+    return artist, (title + (f" ({mix})" if mix else "")).strip(), mix

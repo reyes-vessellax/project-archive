@@ -570,7 +570,12 @@ class MainWindow(QMainWindow):
             for v in self.fact_labels.values(): v.setText("–")
             self.checks.setText(""); self.spectrum.clear_view("Spectrogram appears here after the check.")
             return
-        self.name.setText(job["original_name"])
+        tags = (a or {}).get("facts", {}).get("tags", {}) if a else {}
+        if tags.get("artist") and tags.get("title"):            # real embedded tags beat the file-name guess
+            self.name.setText(f"{tags['artist']} — {tags['title']}")
+            self.name.setToolTip(job["original_name"])
+        else:
+            self.name.setText(job["original_name"]); self.name.setToolTip("")
         busy = job["state"] in (J.STAGING, J.ANALYZING, J.QUEUED)
         ready = job["state"] == J.READY and a
         status = a["overall_status"] if a else None

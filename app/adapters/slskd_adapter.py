@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 from urllib import error, parse, request
 
-from .base import Candidate, ConnectorError, ConnectorStatus, SearchResult, SourceAdapter, Transfer, split_artist_title
+from .base import Candidate, ConnectorError, ConnectorStatus, SearchResult, SourceAdapter, Transfer, parse_track
 
 API = "/api/v0"
 MAX_BODY = 32 * 1024 * 1024          # never read more than this from the client
@@ -121,10 +121,10 @@ class SlskdAdapter(SourceAdapter):
                 if not user or not path:
                     continue
                 name = remote_basename(path)
-                artist, title = split_artist_title(name)
+                artist, title, mix = parse_track(name)
                 cands.append(Candidate(
                     source_kind=self.source_kind, user=user, remote_path=path,
-                    size=int(f.get("size") or 0), display_name=name, folder=remote_folder(path), artist=artist, title=title,
+                    size=int(f.get("size") or 0), display_name=name, folder=remote_folder(path), artist=artist, title=title, mix=mix,
                     extension=str(f.get("extension") or Path(remote_basename(path)).suffix.lstrip(".")).lower(),
                     bitrate_kbps=_int(f.get("bitRate")), vbr=f.get("isVariableBitRate"),
                     length_s=_int(f.get("length")), sample_rate_hz=_int(f.get("sampleRate")),

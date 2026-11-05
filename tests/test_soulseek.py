@@ -247,8 +247,16 @@ def test_artist_title_from_filename():
     assert s("Artist - Track (Original Mix).mp3") == ("Artist", "Track (Original Mix)")
     assert s("03 - Artist - Track.flac") == ("Artist", "Track")
     assert s("A1 Artist - Track.wav") == ("Artist", "Track")
-    assert s("Weird_Name_123.mp3") == ("", "Weird_Name_123")
+    assert s("Weird_Name_123.mp3") == ("", "Weird Name 123")
     assert s("Artist - Track - Remix.mp3") == ("Artist", "Track - Remix")
+    # Soulseek realities: underscores, en dashes, feat., labels in brackets, A1-style track codes
+    from app.adapters.base import parse_track as pt
+    assert pt("John_Summit_-_Deep_End_(Dom_Dolla_Remix).mp3") == ("John Summit", "Deep End (Dom Dolla Remix)", "Dom Dolla Remix")
+    assert pt("John Summit – Thin Line (Extended Mix).mp3") == ("John Summit", "Thin Line (Extended Mix)", "Extended Mix")
+    assert pt("John Summit - Where You Are (feat. Hayla) (Extended Mix).flac") == ("John Summit", "Where You Are (feat. Hayla) (Extended Mix)", "Extended Mix")
+    assert pt("John Summit & Guz - Thin Line [Defected].mp3") == ("John Summit & Guz", "Thin Line (Defected)", "Defected")
+    assert pt("A1 - John Summit - Deep End (Hip-Hop Re-Edit).wav") == ("John Summit", "Deep End (Hip-Hop Re-Edit)", "Hip-Hop Re-Edit")
+    assert pt("02 Deep End (Extended Mix).mp3") == ("", "Deep End (Extended Mix)", "Extended Mix")
 
 
 def test_search_results_carry_artist_and_title(connected):
