@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QUrl, Qt, Signal
+from PySide6.QtCore import QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFrame, QGridLayout, QHeaderView, QLineEdit, QTreeWidget, QTreeWidgetItem, QWidget
 
@@ -58,6 +58,7 @@ class LibraryPage(QWidget):
 
         self.tree = QTreeWidget(); self.tree.setColumnCount(len(self.COLS)); self.tree.setHeaderLabels(self.COLS)
         self.tree.setRootIsDecorated(False); self.tree.setSortingEnabled(True); self.tree.setAlternatingRowColors(False)
+        self.tree.setIndentation(0)                          # the drop-down row sits flush with its track
         self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
         hdr = self.tree.header(); hdr.setSectionResizeMode(QHeaderView.Interactive); hdr.setStretchLastSection(True)
         for i, w in enumerate(self.WIDTHS):
@@ -68,34 +69,12 @@ class LibraryPage(QWidget):
         self.tree.itemDoubleClicked.connect(lambda *_: self._reveal())
         lay.addWidget(self.tree, 1)
 
-        # the drop-down: opens under the list for the selected track — spectrogram + player, facts, checks
-        self.panel = QFrame(); self.panel.setObjectName("card"); self.panel.hide()
-        pl = hbox(self.panel, (20, 16, 20, 16), 24)
-        left = vbox(spacing=8)
-        self.p_title = label("", "h2"); self.p_artist = label("", "muted")
-        left.addWidget(self.p_title); left.addWidget(self.p_artist)
-        self.spectrum = SpectrumView(170); left.addWidget(self.spectrum)
-        self.p_note = label("", "faint"); left.addWidget(self.p_note)
-        left.addStretch(1)
-        pl.addLayout(left, 3)
-        right = vbox(spacing=10)
-        grid = QGridLayout(); grid.setHorizontalSpacing(18); grid.setVerticalSpacing(6)
-        self.facts: dict[str, object] = {}
-        for i, name in enumerate(("Verdict", "Format", "Bitrate", "Rate", "Length", "Channels", "Added", "File")):
-            k = label(name.upper(), "tag"); v = label("", "monotext"); v.setWordWrap(True)
-            grid.addWidget(k, i, 0, Qt.AlignTop); grid.addWidget(v, i, 1)
-            self.facts[name] = v
-        right.addLayout(grid)
-        self.checks_host = vbox(spacing=4); right.addLayout(self.checks_host)
-        right.addStretch(1)
-        acts = hbox(spacing=10)
-        self.btn_reveal = button("Show in folder", "primary", self._reveal)
-        self.btn_details = button("Full details", "ghost", self._emit_open)
-        self.btn_close = button("Close", "ghost", self._collapse)
-        acts.addWidget(self.btn_reveal); acts.addWidget(self.btn_details); acts.addStretch(1); acts.addWidget(self.btn_close)
-        right.addLayout(acts)
-        pl.addLayout(right, 2)
-        lay.addWidget(self.panel)
+        # the drop-down: built fresh each time it opens, as a full-width row under the clicked track
+        self.panel: QFrame | None = None
+        self.spectrum: SpectrumView | None = None
+        self._accent = "#0f7b6c"
+        self._child: QTreeWidgetItem | None = None
+        self._anim = QTimer(self, interval=16, timeout=self._grow_step); self._grow_target = 0
         self.empty = label("Nothing downloaded yet. Approved tracks show up here.", "faint")
         lay.addWidget(self.empty)
         self._open_id: str | None = None
@@ -115,6 +94,7 @@ class LibraryPage(QWidget):
         words = [w for w in text.lower().split() if w]
         keep = self._open_id
         self.tree.blockSignals(True)                         # rebuilding isn't a selection change
+        self._park_panel()                                   # clear() would delete it with the rows
         self.tree.setSortingEnabled(False)
         self.tree.clear()
         shown = 0
@@ -152,6 +132,8 @@ class LibraryPage(QWidget):
         self.tree.blockSignals(False)
         if keep and not reselected:
             self._collapse()
+        elif keep and reselected:
+            self._mount_panel(self._item_for(keep), animate=False)
         total = len(self._rows)
         self.sub.setText(f"{shown} of {total} tracks" if words else f"{total} track{'s' if total != 1 else ''}")
         self.empty.setVisible(total == 0)
@@ -173,25 +155,141 @@ class LibraryPage(QWidget):
         if self._just_expanded:
             self._just_expanded = False
             return
-        if self._open_id and item.data(0, Qt.UserRole) == self._open_id and not self.panel.isHidden():
+        if self._open_id and item.data(0, Qt.UserRole) == self._open_id and self.panel is not None:
             self._collapse(); self.tree.clearSelection()
 
+    def _build_panel(self) -> QFrame:
+        panel = QFrame(); panel.setObjectName("card")
+        pl = hbox(panel, (20, 16, 20, 16), 24)
+        left = vbox(spacing=8)
+        self.p_title = label("", "h2"); self.p_artist = label("", "muted")
+        left.addWidget(self.p_title); left.addWidget(self.p_artist)
+        self.spectrum = SpectrumView(170); self.spectrum.set_accent(self._accent); left.addWidget(self.spectrum)
+        self.p_note = label("", "faint"); left.addWidget(self.p_note)
+        left.addStretch(1)
+        pl.addLayout(left, 3)
+        right = vbox(spacing=10)
+        grid = QGridLayout(); grid.setHorizontalSpacing(18); grid.setVerticalSpacing(6)
+        self.facts = {}
+        for i, name in enumerate(("Verdict", "Format", "Bitrate", "Rate", "Length", "Channels", "Added", "File")):
+            k = label(name.upper(), "tag"); v = label("", "monotext"); v.setWordWrap(True)
+            grid.addWidget(k, i, 0, Qt.AlignTop); grid.addWidget(v, i, 1)
+            self.facts[name] = v
+        right.addLayout(grid)
+        self.checks_host = vbox(spacing=4); right.addLayout(self.checks_host)
+        right.addStretch(1)
+        acts = hbox(spacing=10)
+        self.btn_reveal = button("Show in folder", "primary", self._reveal)
+        self.btn_details = button("Full details", "ghost", self._emit_open)
+        self.btn_close = button("Close", "ghost", self._collapse)
+        acts.addWidget(self.btn_reveal); acts.addWidget(self.btn_details); acts.addStretch(1); acts.addWidget(self.btn_close)
+        right.addLayout(acts)
+        pl.addLayout(right, 2)
+        return panel
+
+    def set_accent(self, colour: str):
+        self._accent = colour
+        if self.spectrum is not None:
+            try:
+                self.spectrum.set_accent(colour)
+            except RuntimeError:
+                pass
+
+    def _item_for(self, job_id: str):
+        for i in range(self.tree.topLevelItemCount()):
+            it = self.tree.topLevelItem(i)
+            if it.data(0, Qt.UserRole) == job_id:
+                return it
+        return None
+
+    def _park_panel(self):
+        """Take the open panel out of the tree. The tree owns the widget, so it goes with the row."""
+        self._anim.stop()
+        if self.spectrum is not None:
+            try:
+                self.spectrum.stop()
+            except RuntimeError:
+                pass
+        if self._child is not None:
+            try:
+                parent = self._child.parent()
+                if parent is not None:
+                    parent.removeChild(self._child)         # deletes the item widget (our panel) with it
+            except RuntimeError:
+                pass
+            self._child = None
+        self.panel = None; self.spectrum = None
+
+    def _mount_panel(self, it, animate: bool = True):
+        """Slide the panel open as a full-width row directly under `it`; it scrolls with the list."""
+        if it is None:
+            return
+        self._park_panel()
+        self.panel = self._build_panel()
+        self._fill_panel(it)
+        child = QTreeWidgetItem(it)
+        child.setFlags(Qt.ItemIsEnabled)
+        child.setFirstColumnSpanned(True) if hasattr(child, "setFirstColumnSpanned") else None
+        self._child = child
+        self.panel.setMaximumHeight(16777215)
+        self.panel.adjustSize()
+        full = max(self.panel.sizeHint().height(), 260)
+        self._grow_target = full
+        self.panel.setFixedHeight(12 if animate else full)
+        self.panel.setFixedWidth(max(300, self.tree.viewport().width() - 2))
+        child.setSizeHint(0, self.panel.size())
+        self.panel.show()
+        self.tree.setItemWidget(child, 0, self.panel)
+        it.setExpanded(True)
+        self.tree.scrollToItem(it, QTreeWidget.PositionAtTop)
+        if animate:
+            self._anim.start()
+        else:
+            self._grow_step()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if self.panel is not None and self._child is not None:
+            try:
+                self.panel.setFixedWidth(max(300, self.tree.viewport().width() - 2))
+                self._child.setSizeHint(0, self.panel.size()); self.tree.doItemsLayout()
+            except RuntimeError:
+                pass
+
+    def _grow_step(self):
+        if self.panel is None:
+            self._anim.stop(); return
+        h = self.panel.height()
+        step = max(10, (self._grow_target - h) // 4)
+        nh = min(self._grow_target, h + step)
+        self.panel.setFixedHeight(nh)
+        if self._child is not None:
+            self._child.setSizeHint(0, self.panel.size())
+            self.tree.doItemsLayout()
+        if nh >= self._grow_target:
+            self._anim.stop()
+            if self._child is not None and self._child.parent() is not None:
+                self.tree.scrollToItem(self._child.parent(), QTreeWidget.PositionAtTop)
+
     def _collapse(self):
-        self.spectrum.stop()
-        self.panel.hide()
+        self._park_panel()
         self._open_id = None
         self._just_expanded = False
 
     def _expand(self, it):
         job_id = it.data(0, Qt.UserRole)
-        job = self.svc.db.job(job_id)
-        if not job:
+        if not self.svc.db.job(job_id):
             return
+        self._open_id = job_id
+        self._just_expanded = True
+        self._mount_panel(it)
+
+    def _fill_panel(self, it):
+        job_id = it.data(0, Qt.UserRole)
+        job = self.svc.db.job(job_id)
         a = self.svc.db.analysis(job_id) or {}
         f = a.get("facts", {}) or {}
         final = job.get("final_path") or ""
-        self._open_id = job_id
-        self._just_expanded = True
         self.p_title.setText(it.text(0) + (f"  ·  {it.text(2)}" if it.text(2) else ""))
         self.p_artist.setText(it.text(1))
         exists = bool(final) and Path(final).exists()
@@ -223,7 +321,6 @@ class LibraryPage(QWidget):
             hl.addWidget(tag); hl.addWidget(txt, 1)
             self.checks_host.addWidget(row)
         self.btn_reveal.setEnabled(exists)
-        self.panel.show()
 
     def _reveal(self):
         it = self._selected()

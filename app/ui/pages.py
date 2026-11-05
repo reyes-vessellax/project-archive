@@ -288,7 +288,7 @@ class SearchPage(QWidget):
     def begin_search(self, query: str):
         """The moment Search is pressed: old rows go, the header names the new query, the text starts moving."""
         self._ranked = []; self._shown = 0
-        self._anim_query = query; self._anim_i = 0; self._anim_dots = 0; self._prog = (0, 0, False)
+        self._anim_query = query; self._anim_i = 0; self._anim_dots = 0; self._prog = (0, 0, False); self._dropped = ""
         self._fill(0)
         self.title.setText(f"Searching for “{query}”")
         self.state.setText("")
@@ -319,6 +319,8 @@ class SearchPage(QWidget):
         found = f"{r} user{'s' if r != 1 else ''} · {f} file{'s' if f != 1 else ''} so far" if r else ""
         if not self._ranked:
             self._show_empty(f"{text}\nLooking for “{self._anim_query}”" + (f"\n{found}" if found else ""))
+        elif getattr(self, "_dropped", ""):
+            pass                                                # the fallback banner stays put
         else:
             self.state.setText(f"fastest first · {text.lower()}")
         self._set_foot("." * (self._anim_dots or 3))
@@ -357,7 +359,11 @@ class SearchPage(QWidget):
             self._show_empty("")
         selected = self.tree.selectedItems()
         keep = selected[0].data(0, Qt.UserRole).key if selected and isinstance(selected[0].data(0, Qt.UserRole), Candidate) else None
-        self._ranked = sorted(res.candidates, key=_rank)
+        self._dropped = res.dropped
+        self._ranked = sorted(res.candidates, key=lambda c: _rank(c, res.dropped))
+        if res.dropped:
+            self.state.setText(f'Nothing matched “{res.query}” — showing results for “{res.sent}” (without “{res.dropped}”)'
+                               + (" · still collecting…" if searching else ""))
         # keep whatever the user has already scrolled open, at least one page
         want = max(PAGE_ROWS, min(self._shown, len(self._ranked)))
         self._fill(want, keep)
@@ -462,8 +468,10 @@ def _speed(c: Candidate) -> str:
     return rate or "?"
 
 
-def _rank(c: Candidate):
+def _rank(c: Candidate, dropped: str = ""):
+    from ..core.fuzzy import closeness
     return (1 if (c.locked or c.note) else 0, 0 if c.free_slot else 1,
+            closeness(c.display_name or "", dropped) if dropped else 0,     # fallback: near-misses of the typo first
             c.queue_length if c.queue_length is not None else 1_000_000,
             -(c.upload_speed or 0), -(c.bitrate_kbps or 0))
 

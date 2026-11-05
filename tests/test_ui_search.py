@@ -41,3 +41,16 @@ def test_pressing_search_shows_rows(window):
     assert "result" in w.searchp.title.text()
     assert w.searchp._foot_item is not None and "All results shown" in w.searchp._foot_item.text(1)
     assert not w.searchp.empty.isVisible()
+
+
+def test_zero_results_retries_without_the_shaky_word(window, slskd):
+    w, app = window
+    spin(app, 0.3)
+    w._search("artist trak")                                   # "trak" matches nothing; "artist" does
+    for _ in range(200):
+        spin(app, 0.1)
+        foot = w.searchp._foot_item
+        if w.searchp.tree.topLevelItemCount() > 0 and foot is not None and "All results shown" in foot.text(1):
+            break
+    assert w.searchp.tree.topLevelItemCount() > 0
+    assert "without “trak”" in w.searchp.state.text(), w.searchp.state.text()

@@ -63,6 +63,8 @@ class SearchResult:
     candidates: list[Candidate] = field(default_factory=list)
     state: str = ""                 # the client's own state string, e.g. "Completed, TimedOut"
     error: str = ""                 # plain-English reason when the search ended badly, else ""
+    sent: str = ""                  # what actually went to the network (differs from query on a fallback)
+    dropped: str = ""               # the word left out on a fallback search, "" otherwise
 
 
 @dataclass

@@ -40,6 +40,7 @@ def _applog(line: str) -> None:
 
 
 SEARCH_LADDER_S = (4, 10, 22, 40)   # engine searches per query, short to long; each one's rows land when it ends
+SEARCH_FALLBACK_S = (6, 25)         # the one retry without the shakiest word, when nothing at all came back
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
 FIREWALL_ASK = (f"To download from other users, {APP_NAME} needs to accept incoming connections.\n\n"
                 f"Allow it now? Windows will ask you to confirm once. Nothing is shared from your computer "
@@ -152,7 +153,7 @@ class MainWindow(QMainWindow):
             QApplication.instance().setStyleSheet(T.stylesheet(theme))
         if hasattr(self, "home"):
             accent = T.colours(self.svc.settings.theme)["accent"]
-            self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent); self.library.spectrum.set_accent(accent)
+            self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent); self.library.set_accent(accent)
         if hasattr(self, "topbar"):
             self._brand_theme()
 
@@ -474,23 +475,63 @@ class MainWindow(QMainWindow):
             """The engine releases a search's results when that search ends, so one query becomes a ladder of
             engine searches (short to long). Each rung that finishes adds its rows to the list, so the page
             fills top-down while the longer rungs keep collecting. If the engine does hand out live rows for
-            a running search, those are used too."""
+            a running search, those are used too. If nothing at all comes back, one more try without the
+            word most likely to be a typo (and the header says so)."""
             sid = None
             try:
-                rungs = []
-                for i, secs in enumerate(SEARCH_LADDER_S):
-                    r = self.svc.search(q, timeout_s=secs, check_login=(i == 0))
-                    rungs.append({"res": r, "done": False})
-                sid = self.search_id = rungs[0]["res"].search_id
-                started = time.monotonic()
-                merged: dict[str, Candidate] = {}
-                shown = -1
-                delay = 0.4
-                while True:
+                sid = self._ladder(q, SEARCH_LADDER_S, sent=q, dropped="")
+                if sid is None:
+                    return
+                if self._last_count == 0 and self.search_id == sid:
+                    from ..core import fuzzy
+                    dropped = fuzzy.shakiest_word(q, self._known_words())
+                    if dropped:
+                        reduced = " ".join(w for w in q.split() if w.lower().strip("'\"") != dropped)
+                        _applog(f"no results for {q!r}; trying without {dropped!r}: {reduced!r}")
+                        self._ladder(reduced, SEARCH_FALLBACK_S, sent=reduced, dropped=dropped, keep_id=sid)
+            except Exception as e:
+                import traceback
+                _applog("search failed: " + traceback.format_exc())
+                self.signals.results.emit(SearchResult(query=q, search_id=sid, finished=True,
+                                                       error=f"The search stopped: {e}"))
+                raise
+            finally:
+                self.search_running = False
+                self.signals.done.emit("")
+        self.io.start(Task(work, self.signals))
+
+    def _known_words(self) -> set[str]:
+        """Words we've seen in result names this session plus the library's own file names."""
+        from ..core import fuzzy
+        known = set(getattr(self, "_seen_words", set()))
+        try:
+            for j in self.svc.db.jobs(include_hidden=True, limit=2000):
+                known.update(fuzzy.words(j.get("original_name") or ""))
+        except Exception:
+            pass
+        return known
+
+    def _ladder(self, q: str, secs_list, sent: str, dropped: str, keep_id: str | None = None):
+        """Run one ladder of engine searches for q, streaming merged rows. Returns the id the page is keyed on."""
+        from ..core import fuzzy
+        rungs = []
+        for i, secs in enumerate(secs_list):
+            r = self.svc.search(q, timeout_s=secs, check_login=(i == 0 and keep_id is None))
+            rungs.append({"res": r, "done": False})
+        sid = keep_id or rungs[0]["res"].search_id
+        if keep_id is None:
+            self.search_id = sid
+        self._last_count = 0
+        started = time.monotonic()
+        merged: dict[str, Candidate] = {}
+        shown = -1
+        delay = 0.4
+        try:
+            while True:
                     time.sleep(delay)
                     delay = min(1.2, delay * 1.3)
                     if self.search_id != sid:
-                        return                                              # a newer search took over
+                        return None                                         # a newer search took over
                     now = time.monotonic()
                     best_count = (0, 0)
                     for rung in rungs:
@@ -504,28 +545,27 @@ class MainWindow(QMainWindow):
                         if done:
                             rung["done"] = True
                             _applog(f"rung {rung['res'].search_id[:8]} ({len(res.candidates)} rows) done; merged={len(merged)}")
-                            if rung is not rungs[0]:
+                            if rung["res"].search_id != sid:
                                 self.io.start(Task(lambda s=rung["res"].search_id: self.svc.forget_search(s), self.signals))
-                    all_done = all(r["done"] for r in rungs) or now - started > SEARCH_LADDER_S[-1] + 20
+                    all_done = all(r["done"] for r in rungs) or now - started > secs_list[-1] + 20
                     if len(merged) != shown or all_done:
                         shown = len(merged)
                         out = SearchResult(query=q, search_id=sid, finished=all_done, candidates=list(merged.values()))
+                        out.sent, out.dropped = sent, dropped
                         if all_done:
-                            self.search_running = False
+                            self._last_count = len(merged)
+                            # the fallback runs only when this one found nothing; keep "searching" on until then
+                            self.search_running = False if (len(merged) or dropped or len(fuzzy.words(q)) < 2) else True
                         self.signals.results.emit(out)
                     self.signals.progress_search.emit(best_count[0], best_count[1], len(merged) > 0)
                     if all_done:
-                        return
-            except Exception as e:
-                import traceback
-                _applog("search failed: " + traceback.format_exc())
-                self.signals.results.emit(SearchResult(query=q, search_id=sid, finished=True,
-                                                       error=f"The search stopped: {e}"))
-                raise
-            finally:
-                self.search_running = False
-                self.signals.done.emit("")
-        self.io.start(Task(work, self.signals))
+                        words = getattr(self, "_seen_words", set())
+                        for c in merged.values():
+                            words.update(fuzzy.words(c.display_name or ""))
+                        self._seen_words = words
+                        return sid
+        finally:
+            pass
 
     def _on_results(self, res: SearchResult):
         _applog(f"on_results id={str(res.search_id)[:8]} mine={str(self.search_id)[:8]} n={len(res.candidates)} running={self.search_running}")

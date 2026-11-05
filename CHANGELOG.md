@@ -6,8 +6,6 @@ one line changes and this file gets a note.
 
 ## Unreleased
 
-- Library drop-down should open *inline under the clicked row* (slide down) and scroll with the list,
-  rather than as a panel under the whole list.
 - Cap saved spectrograms (e.g. newest 100); for older library tracks, re-analyse on demand from the
   stored path.
 
@@ -19,6 +17,19 @@ one line changes and this file gets a note.
 - macOS build with the bundled engine.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
+
+## 0.4.15 — unreleased (a little give in search; inline library drop-down)
+
+- **Zero results → one retry without the shakiest word.** The network matches every typed word as a
+  plain substring of the filename, so a typo ("dace it out") or a tense ("danced") finds nothing. When a
+  search comes back empty, the app re-runs it once without the word most likely to be the mistake (not a
+  common word, not seen in any result or library name before; shortest wins) and says so in the header:
+  *Nothing matched "dace it out chris gooding" — showing results for "it out chris gooding" (without "dace")*.
+  One extra search, only on a miss.
+- On that fallback, rows whose names contain a near-miss of the dropped word ("Dance" for "dace") are
+  ranked first within the same availability band — fastest sources still bubble to the top.
+- **Library drop-down opens inline, under the clicked row**, full width, sliding open, and scrolls with
+  the list. Click the row again or Close to fold it. Rebuilt fresh each time it opens.
 
 ## 0.4.14 — unreleased (the time-outs, named)
 
