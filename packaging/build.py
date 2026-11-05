@@ -160,7 +160,9 @@ def tidy(root: Path) -> None:
     removed = 0
     for pattern in JUNK:
         for p in list(root.glob(pattern)):
-            if p.is_dir():
+            if p.is_symlink():                                 # macOS: Frameworks/ holds symlinks into Resources/
+                p.unlink(missing_ok=True)
+            elif p.is_dir():
                 shutil.rmtree(p, ignore_errors=True)
             else:
                 p.unlink(missing_ok=True)
@@ -173,9 +175,16 @@ if internal is not None:
     if resources.is_dir():
         tidy(resources)
     # The engine checks that its web-content folder exists even when headless; an empty one satisfies it.
-    eng = next((d for d in (internal / "vendor" / "engine", resources / "vendor" / "engine") if d.is_dir()), internal / "vendor" / "engine")
-    (eng / "wwwroot").mkdir(parents=True, exist_ok=True)
-    (eng / "wwwroot" / "index.html").write_text("<!doctype html><title>headless</title>")
+    for eng in (internal / "vendor" / "engine", resources / "vendor" / "engine"):
+        if not eng.is_dir():
+            continue
+        www = eng / "wwwroot"
+        if www.is_symlink() and not www.exists():
+            www.unlink()                                       # dangling link left by tidy()
+        if www.is_symlink():
+            continue                                           # points at the real one; done below
+        www.mkdir(parents=True, exist_ok=True)
+        (www / "index.html").write_text("<!doctype html><title>headless</title>")
     # A README at the top so a curious user knows what the folders are (Windows folder layout only).
     (out / "README.txt" if sys.platform != "darwin" else Path("dist") / "README.txt").write_text(
         f"{APP_NAME}\n\n"
