@@ -300,8 +300,8 @@ class SettingsDialog(QDialog):
 
 # --------------------------------------------------------------------------- search results page
 class ResultsPage(QWidget):
-    COLS = ["Title", "Artist", "Folder", "User", "Size", "Bitrate", "Length", "Queue", "Speed"]
-    WIDTHS = [260, 160, 160, 110, 70, 90, 60, 70, 80]
+    COLS = ["Title", "Mix", "Artist", "Folder", "User", "Size", "Bitrate", "Length", "Queue", "Speed"]
+    WIDTHS = [220, 120, 150, 150, 100, 70, 90, 60, 70, 80]
 
     def __init__(self, on_pick, on_back):
         super().__init__()
@@ -333,7 +333,7 @@ class ResultsPage(QWidget):
         self.tree.clear()
         for c in sorted(res.candidates, key=_rank):
             it = QTreeWidgetItem([
-                c.title or c.display_name, c.artist, c.folder, c.user, f"{c.size / 1e6:.1f} MB",
+                c.title or c.display_name, c.mix, c.artist, c.folder, c.user, f"{c.size / 1e6:.1f} MB",
                 (f"{c.bitrate_kbps} kbps" + (" VBR" if c.vbr else "")) if c.bitrate_kbps else "?",
                 fmt_time(c.length_s) if c.length_s else "?",
                 "free slot" if c.free_slot else (str(c.queue_length) if c.queue_length is not None else "?"),

@@ -36,7 +36,7 @@ class Candidate:
     display_name: str = ""          # last path component, for the UI
     folder: str = ""                # remote parent folder name, for the UI
     artist: str = ""                # from "Artist - Title.ext" naming; empty when the name doesn't follow it
-    title: str = ""                 # the title part (mix included), or the whole file name without extension
+    title: str = ""                 # the title part without the mix, or the whole file name without extension
     mix: str = ""                   # "Extended Mix", "Dom Dolla Remix"… from trailing (…) / […]; empty if none
     extension: str = ""
     bitrate_kbps: int | None = None # what the peer's client claims; verified later by our analysis
@@ -117,8 +117,8 @@ def split_artist_title(filename: str) -> tuple[str, str]:
 
 
 def parse_track(filename: str) -> tuple[str, str, str]:
-    """(artist, title, mix). `mix` is the trailing "(Extended Mix)" / "[Remix]" part, "" if none;
-    `title` keeps it, so callers can show either."""
+    """(artist, title, mix). `mix` is the trailing "(Extended Mix)" / "[Remix]" part, "" if none, and the
+    title is returned WITHOUT it; "(feat. X)" stays in the title."""
     stem = Path(filename).stem
     stem = stem.replace("_", " ")
     stem = re.sub(r"\s+", " ", stem).strip()
@@ -140,4 +140,4 @@ def parse_track(filename: str) -> tuple[str, str, str]:
         mix = (m.group(1).strip() + (" " + mix if mix else "")).strip()
         title = title[:m.start()].rstrip()
         m = _TRAIL.search(title)
-    return artist, (title + (f" ({mix})" if mix else "")).strip(), mix
+    return artist, title.strip(), mix

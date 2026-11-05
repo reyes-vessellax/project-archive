@@ -47,12 +47,13 @@ Refreshed every 15 seconds and after Settings is saved.
 
 ## Search results: data per row
 
-Columns, in order: Title, Artist, Folder, User, Size, Bitrate, Length, Queue, Speed. All column edges are
+Columns, in order: Title, Mix, Artist, Folder, User, Size, Bitrate, Length, Queue, Speed. All column edges are
 click-and-drag resizable. Rows come fastest-first (free slot, then shortest queue, then upload speed); no
 user sorting or filters. The search button is labelled just **Search**.
 
 ```
-title           "Track (Original Mix)"   from "Artist - Title.ext" naming; whole name if it doesn't follow it
+title           "Track"                  from "Artist - Title (Mix).ext" naming; whole name if it doesn't follow it
+mix             "Original Mix"           trailing (…) or […] part; "(feat. X)" stays in the title
 artist          "Artist"                 empty when the name doesn't follow "Artist - Title"
 display_name    "Artist - Track (Original Mix).mp3"   file name on the peer's machine (tooltip)
 folder          "Compilation Vol 2"                   remote parent folder (often the album/release)
