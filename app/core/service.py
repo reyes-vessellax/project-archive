@@ -439,8 +439,46 @@ class ArchiveService:
             shutil.copyfile(src, dst)
             analysis["spectrogram_path"] = str(dst)
             self.db.save_analysis(job_id, analysis)
+            self._prune_spectrograms(keep_dir)
         except OSError:
             pass
+
+    def _prune_spectrograms(self, keep_dir: Path) -> int:
+        """Keep the newest N pictures; the rest can be redrawn from the library file when opened."""
+        cap = max(10, int(self.settings.keep_spectrograms or 100))
+        pngs = sorted(keep_dir.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
+        removed = 0
+        for p in pngs[cap:]:
+            try:
+                p.unlink(); removed += 1
+            except OSError:
+                pass
+        return removed
+
+    def redraw_spectrogram(self, job_id: str) -> str | None:
+        """Draw the spectrogram again from the library copy (for a track whose picture was pruned).
+        Decode only; no re-grading. Returns the new path, or None if the file is gone."""
+        job = self._require(job_id)
+        a = self.db.analysis(job_id)
+        src = Path(job.get("final_path") or "")
+        if not a or not src.exists():
+            return None
+        from ..media.decode import decode_and_analyze
+        from ..media.spectrogram import render
+        f = a.get("facts", {}) or {}
+        sr = int(f.get("sample_rate_hz") or 44100)
+        keep_dir = self.db.path.parent / "spectrograms"
+        keep_dir.mkdir(parents=True, exist_ok=True)
+        d = decode_and_analyze(src, sr, f.get("duration_s"), self.settings.ffmpeg_path,
+                               timeout=max(120.0, (f.get("duration_s") or 600) * 1.5))
+        try:
+            out = render(d.frames, keep_dir / f"{job_id}.png")
+        finally:
+            d.frames = None
+        a["spectrogram_path"] = str(out)
+        self.db.save_analysis(job_id, a)
+        self._prune_spectrograms(keep_dir)
+        return str(out)
 
     def reject(self, job_id: str) -> None:
         with self._lock:

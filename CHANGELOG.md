@@ -6,8 +6,6 @@ one line changes and this file gets a note.
 
 ## Unreleased
 
-- Cap saved spectrograms (e.g. newest 100); for older library tracks, re-analyse on demand from the
-  stored path.
 
 - Account backend on the website (sign-up, sign-in, license check); the in-app screens already exist.
 - Plan & billing: the account page shows the section; nothing is stored or charged yet.
@@ -17,6 +15,13 @@ one line changes and this file gets a note.
 - macOS build with the bundled engine.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
+
+## 0.4.16 — unreleased (spectrogram cap)
+
+- Library spectrograms on disk are capped at the newest 100 (~0.8 MB each → ~80 MB). Opening an older
+  track in the Library redraws its picture from the library file in the background ("Drawing the
+  spectrogram again…"), which then counts as newest. The grade is not recomputed — only the picture.
+  Cap is `keep_spectrograms` in settings (floor 10).
 
 ## 0.4.15 — unreleased (a little give in search; inline library drop-down)
 

@@ -10,7 +10,7 @@ from pathlib import Path
 # chosen; every visible use of the name reads this constant (window title, dialogs, engine, data folder).
 APP_NAME = "Pied Piper"
 APP_SLUG = "PiedPiper"                    # for file and artifact names that shouldn't carry a space
-APP_VERSION = "0.4.15"                     # keep in step with pyproject.toml; the build names the artifact with it
+APP_VERSION = "0.4.16"                     # keep in step with pyproject.toml; the build names the artifact with it
 PREVIOUS_NAMES = ("DEADWAX", "Project Archive")   # earlier placeholders; existing installs are migrated from them
 
 
@@ -57,7 +57,8 @@ class Settings:
     max_duration_minutes: int = 240
     extensions: list[str] = field(default_factory=lambda: ["mp3", "wav", "flac", "aiff", "aif"])
     ffmpeg_path: str = ""                     # empty = bundled copy, then PATH
-    max_concurrent_analyses: int = 5          # analysis slots; further tracks wait in the queue
+    max_concurrent_analyses: int = 5
+    keep_spectrograms: int = 100              # library spectrograms kept on disk (~0.8 MB each); older ones are redrawn on demand          # analysis slots; further tracks wait in the queue
     setup_done: bool = False                  # first-run setup (library folder + sharing) completed
     theme: str = "light"                      # light | dark
     firewall_notice_shown: bool = False       # legacy flag (0.2/0.3.0-0.3.3); kept so old settings still load

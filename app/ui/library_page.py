@@ -297,8 +297,11 @@ class LibraryPage(QWidget):
         if a.get("spectrogram_path") and Path(a["spectrogram_path"]).exists():
             self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
                                    audio=final if exists else None, duration_s=f.get("duration_s"))
+        elif exists:
+            self.spectrum.clear_view("Drawing the spectrogram again…")
+            self._redraw(job_id)
         else:
-            self.spectrum.clear_view("No spectrogram was kept for this track.")
+            self.spectrum.clear_view("No spectrogram; the file isn't where it was.")
         cut = a.get("cutoff_hz")
         self.p_note.setText(f"Energy reaches about {cut / 1000:.1f} kHz" if cut else "")
         status = a.get("overall_status", "")
@@ -329,6 +332,31 @@ class LibraryPage(QWidget):
             p = Path(it.data(0, Qt.UserRole + 1))
             if p.exists():
                 reveal_in_folder(p)
+
+    def _redraw(self, job_id: str):
+        """The picture was pruned (we keep the newest ~100); decode the library file again, off the UI thread."""
+        from PySide6.QtCore import QThreadPool
+        from .widgets import Signals, Task
+        if not hasattr(self, "_sig"):
+            self._sig = Signals(); self._sig.done.connect(self._redrawn)
+        self._sig_pool = getattr(self, "_sig_pool", QThreadPool())
+
+        def work():
+            try:
+                self.svc.redraw_spectrogram(job_id)
+            finally:
+                self._sig.done.emit(job_id)
+        self._sig_pool.start(Task(work, self._sig))
+
+    def _redrawn(self, job_id: str):
+        if self._open_id != job_id or self.panel is None:
+            return
+        it = self._item_for(job_id)
+        if it is not None:
+            try:
+                self._fill_panel(it)
+            except RuntimeError:
+                pass
 
     def _emit_open(self):
         it = self._selected()
