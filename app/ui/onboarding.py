@@ -229,7 +229,8 @@ class ConnectingPage(QWidget):
         self.title = label("Getting things ready…", "big"); lay.addWidget(self.title)
         self.spinner = label("", "h1"); self.spinner.setStyleSheet("font-size: 28px; color: palette(mid);"); lay.addWidget(self.spinner)
         self.rows = {}
-        for key, text in (("engine", "Starting the engine"), ("network", "Signing in to the network"), ("shares", "Sharing your library")):
+        for key, text in (("engine", "Starting the engine"), ("network", "Signing in to the network"),
+                          ("port", "Asking the router to open your port"), ("shares", "Sharing your library")):
             r = hbox(spacing=12)
             dot = label("●", "tag"); dot.setProperty("tag", ""); txt = label(text, "muted")
             r.addWidget(dot); r.addWidget(txt); r.addStretch(1)
@@ -250,9 +251,17 @@ class ConnectingPage(QWidget):
         for dot, txt in self.rows.values():
             set_tag(dot, ""); txt.setObjectName("muted")
 
-    def mark(self, key: str, state: str):
+    def mark(self, key: str, state: str, note: str = ""):
         dot, txt = self.rows[key]
-        set_tag(dot, {"done": "Good", "busy": "Down", "fail": "Broken"}.get(state, ""))
+        set_tag(dot, {"done": "Good", "busy": "Down", "fail": "Broken", "skip": "Wait"}.get(state, ""))
+        base = txt.property("base") or txt.text()
+        txt.setProperty("base", base)
+        txt.setText(f"{base} — {note}" if note else base)
+        if state == "busy":
+            txt.setObjectName("")
+        else:
+            txt.setObjectName("muted")
+        set_tag(txt, "")
 
     def finish(self):
         self._spin.stop()

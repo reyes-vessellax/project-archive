@@ -78,9 +78,11 @@ class ArchiveService:
         if not self.managed_mode:
             return
         self.backend_state, self.backend_error = "starting", ""
+        self.phase = "engine"
         try:
             had_port = self.settings.listen_port
             self.manager.start()
+            self.phase = "signin"
             if self.settings.listen_port != had_port:              # picked on first start: keep it
                 self.db.save_settings(self.settings.to_dict())
             self.backend_state = "running"
@@ -89,10 +91,13 @@ class ArchiveService:
             self.backend_state, self.backend_error = "failed", str(e)
             self.adapter = None
             return
+        self.phase = "port"
         self.open_port()
+        self.phase = "ready"
 
     port_open: bool = False
     port_note: str = ""
+    phase: str = ""                  # engine | signin | port | ready — what the start-up screen lights up
 
     def open_port(self) -> None:
         """Ask the router to forward the engine's port (UPnP). Best effort; a few seconds; call off the UI thread."""
@@ -105,6 +110,24 @@ class ArchiveService:
             self.port_open, self.port_note = upnp.open_port(port, f"{APP_NAME} downloads")
         except Exception as e:                                  # noqa: BLE001
             self.port_open, self.port_note = False, f"Couldn't talk to the router: {e}"
+
+    def reset_everything(self) -> None:
+        """Start fresh: stop the engine, drop the database, quarantine, engine instance and logs. The Soulseek
+        login in the OS keyring is kept, so no second network account is created. The app must quit after this."""
+        import shutil
+        self.stop_backend()
+        root = self.db.path.parent
+        try:
+            self.db.close()
+        except Exception:
+            pass
+        for p in list(root.iterdir()):
+            if p.name == "app.lock":
+                continue
+            try:
+                shutil.rmtree(p) if p.is_dir() else p.unlink()
+            except OSError:
+                pass
 
     def stop_backend(self) -> None:
         self.manager.stop()
@@ -302,7 +325,7 @@ class ArchiveService:
                 self.db.update_job(job_id, state=J.ERROR, message="Staged file changed or disappeared.")
                 raise ActionBlocked("The staged file changed after it was checked. Re-run the analysis.")
 
-            library = self.settings.downloads_dir()              # <library>/DEADWAX, made on first download
+            library = self.settings.downloads_dir()              # <library>/<app name>, made on first download
             library.mkdir(parents=True, exist_ok=True)
             target = unique_path(library, safe_filename(job["original_name"]))
             self._transition(job, J.PROMOTING)

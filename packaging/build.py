@@ -41,7 +41,7 @@ args = [
     )), []),
 ]
 # Everything we ship that isn't Python lives under _internal/vendor/<thing>/, so the folder reads:
-#   DEADWAX.exe, _internal/{vendor/ffmpeg, vendor/engine, app, PySide6, numpy, python runtime}
+#   <APP_NAME>.exe, _internal/{vendor/ffmpeg, vendor/engine, app, PySide6, numpy, python runtime}
 if Path("vendor/ffmpeg").is_dir():
     args += ["--add-data", f"{os.path.join('vendor', 'ffmpeg')}{os.pathsep}{os.path.join('vendor', 'ffmpeg')}"]
 else:

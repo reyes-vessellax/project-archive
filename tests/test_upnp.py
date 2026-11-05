@@ -21,7 +21,7 @@ def test_add_and_delete_mapping_against_fake_igd():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     gw = upnp.Gateway(control_url=f"http://127.0.0.1:{srv.server_port}/ctl", service_type=upnp.SERVICE_TYPES[0],
                       local_ip="192.168.1.20")
-    assert upnp.add_mapping(gw, 51234, "DEADWAX downloads")
+    assert upnp.add_mapping(gw, 51234, "downloads")
     assert upnp.delete_mapping(gw, 51234)
     srv.shutdown()
     assert "AddPortMapping" in calls[0][0] and "<NewInternalPort>51234</NewInternalPort>" in calls[0][1]

@@ -17,11 +17,11 @@ MONO = "IBM Plex Mono"
 
 PALETTES = {
     "light": dict(bg="#fbfbfa", panel="#ffffff", line="#ebebe7", text="#1b1b1a", muted="#6b6b66", faint="#a4a49e",
-                  accent="#d2721e", soft="#f3f3f0", pass_="#2a8a55", warn="#b5741b", fail="#c43d3d", bar="#e6e6e2",
+                  accent="#0f7b6c", soft="#eef4f2", pass_="#2a8a55", warn="#b5741b", fail="#c43d3d", bar="#e3e9e7",
                   on_text="#fbfbfa", accent_text="#ffffff"),
     "dark": dict(bg="#111111", panel="#171717", line="#262626", text="#f2f2f0", muted="#9c9c97", faint="#66665f",
-                 accent="#f0a24a", soft="#1f1f1f", pass_="#55c98a", warn="#e2a24a", fail="#ef6b6b", bar="#2a2a2a",
-                 on_text="#111111", accent_text="#1a1000"),
+                 accent="#35b8a3", soft="#17201e", pass_="#55c98a", warn="#e2a24a", fail="#ef6b6b", bar="#263330",
+                 on_text="#111111", accent_text="#06201c"),
 }
 
 # Word tags shown on queue rows and checks (design v5 wording).
@@ -59,8 +59,8 @@ QToolTip {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['
 
 /* top bar */
 QWidget#topbar {{ background: {c['bg']}; }}
-QPushButton#brand {{ background: none; border: none; font-family: {display}; font-weight: 800; font-size: 15px; padding: 6px 0; min-height: 0; border-radius: 0; }}
-QPushButton#tab {{ background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 2px; min-height: 0; color: {c['faint']}; font-weight: 600; font-size: 14px; }}
+QLabel#brandname {{ font-family: {display}; font-weight: 800; font-size: 17px; color: {c['accent']}; letter-spacing: -0.3px; }}
+QPushButton#tab {{ background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0 2px 6px 2px; min-height: 40px; color: {c['faint']}; font-weight: 600; font-size: 14px; }}
 QPushButton#tab:hover {{ color: {c['text']}; }}
 QPushButton#tab[active="true"] {{ color: {c['text']}; border-bottom: 2px solid {c['accent']}; }}
 QPushButton#avatar {{ background: {c['accent']}; color: {c['accent_text']}; border: none; border-radius: 16px; padding: 0; min-width: 32px; max-width: 32px; min-height: 32px; max-height: 32px; font-weight: 800; font-size: 12px; }}

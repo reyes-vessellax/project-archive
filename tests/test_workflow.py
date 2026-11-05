@@ -201,3 +201,13 @@ def test_promote_keeps_spectrogram(service, fixtures):
     service.promote(a["id"], override_warning=True)
     after = service.db.analysis(a["id"])["spectrogram_path"]
     assert after != before and Path(after).exists() and not Path(before).exists()
+
+
+@needs_ffmpeg
+def test_reset_everything_wipes_data_but_not_music(service, fixtures):
+    a = service.stage(fixtures["mp3_320"]); service.analyze(a["id"]); service.promote(a["id"], override_warning=True)
+    final = Path(service.db.job(a["id"])["final_path"])
+    root = service.db.path.parent
+    service.reset_everything()
+    assert final.exists()
+    assert not (root / "archive.db").exists()

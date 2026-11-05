@@ -129,6 +129,11 @@ class MainWindow(QMainWindow):
         self.settings.account_changed.connect(self._refresh_account)
         self.apply_theme()
 
+    def _brand_theme(self):
+        from .brand import app_icon
+        self.topbar.brand.set_theme(self.svc.settings.theme)
+        self.setWindowIcon(app_icon(self.svc.settings.theme))
+
     def apply_theme(self):
         theme = self.svc.settings.theme
         if getattr(self, "_applied_theme", None) != theme:
@@ -136,7 +141,9 @@ class MainWindow(QMainWindow):
             QApplication.instance().setStyleSheet(T.stylesheet(theme))
         if hasattr(self, "home"):
             accent = T.colours(self.svc.settings.theme)["accent"]
-            self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent)
+            self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent); self.library.spectrum.set_accent(accent)
+        if hasattr(self, "topbar"):
+            self._brand_theme()
 
     def _enter_app(self):
         self._refresh_account()
@@ -148,6 +155,7 @@ class MainWindow(QMainWindow):
             self.onboarding.setCurrentWidget(self.onboarding.connecting)
             self.root.setCurrentWidget(self.onboarding)
             self._connect_deadline = time.monotonic() + 90
+            self._wait_timer = QTimer(self, interval=700, timeout=self._poll_status); self._wait_timer.start()
         else:
             self.root.setCurrentWidget(self.shell)
             self._maybe_start_tour()
@@ -396,12 +404,28 @@ class MainWindow(QMainWindow):
         self.searchp.set_connected(self._connected)
         if self._waiting_screen():
             c = self.onboarding.connecting
-            if st.available:
-                c.mark("engine", "done"); c.mark("network", "done" if st.logged_in else "busy")
-                c.mark("shares", "done" if (st.logged_in and self.svc.settings.share_folder) else ("" if not self.svc.settings.share_folder else "busy"))
+            phase = getattr(self.svc, "phase", "")
+            if phase in ("signin", "port", "ready") or st.available:
+                c.mark("engine", "done")
+                c.mark("network", "done" if st.logged_in else "busy")
+            if phase == "port":
+                c.mark("port", "busy")
+            elif phase == "ready":
+                port = self.svc.settings.listen_port
+                if not self.svc.settings.upnp:
+                    c.mark("port", "skip", "off in Settings")
+                else:
+                    c.mark("port", "done" if self.svc.port_open else "fail",
+                           f"port {port} open" if self.svc.port_open else "router said no; using the slow route")
+            if st.logged_in:
+                c.mark("shares", "done" if self.svc.settings.share_folder else "skip",
+                       "" if self.svc.settings.share_folder else "nothing shared yet")
             failed = self.svc.backend_state == "failed"
             timed_out = time.monotonic() > getattr(self, "_connect_deadline", 0)
-            if self._connected or failed or timed_out:
+            settled = phase == "ready" or phase == ""                 # don't close the screen mid-port-check
+            if (self._connected and settled) or failed or timed_out:
+                if getattr(self, "_wait_timer", None):
+                    self._wait_timer.stop()
                 c.finish()
                 self.root.setCurrentWidget(self.shell)
                 if self._connected:
@@ -430,13 +454,16 @@ class MainWindow(QMainWindow):
             return
         self.home.q.setText(q); self.searchp.q.setText(q)
         self.pages.setCurrentWidget(self.searchp); self.topbar.set_active("search")
-        self.searchp.show_results(SearchResult(query=q, search_id="", finished=False), searching=True)
+        self.search_id = None                                    # results from the previous search stop landing
+        self.searchp.begin_search(q)
+        self.home.search_btn.setText("Searching…"); self.home.search_btn.setEnabled(False)
         self.search_running = True
 
         def work():
+            sid = None
             try:
                 res = self.svc.search(q)
-                self.search_id = res.search_id
+                sid = self.search_id = res.search_id
                 started = last_growth = time.monotonic()
                 seen = -1
                 delay = 0.3                                   # first results usually land within a second
@@ -455,6 +482,10 @@ class MainWindow(QMainWindow):
                         self.search_running = False
                         self.signals.results.emit(latest)
                         return
+            except Exception:
+                self.signals.results.emit(SearchResult(query=q, search_id=sid, finished=True,
+                                                       error="The search couldn't be sent. Check the connection and try again."))
+                raise
             finally:
                 self.search_running = False
                 self.signals.done.emit("")
@@ -463,6 +494,8 @@ class MainWindow(QMainWindow):
     def _on_results(self, res: SearchResult):
         if res.search_id == self.search_id:
             self.searchp.show_results(res, searching=self.search_running)
+            if not self.search_running:
+                self.home.search_btn.setText("Search"); self.home.search_btn.setEnabled(self._connected)
         self._last_results = res
 
     def _pick_candidate(self, cand: Candidate):

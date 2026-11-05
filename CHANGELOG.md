@@ -15,6 +15,21 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.4.6 — unreleased (Pied Piper placeholder, search feedback, start-up lights)
+
+- Placeholder name is now **Pied Piper** (one constant; DEADWAX and Project Archive installs migrate:
+  data folder, keyring, engine name, and an existing `DEADWAX` downloads folder keeps being used).
+  Teal accent in both themes; an original pipe mark top-left and as the window/taskbar icon.
+- Search feedback: pressing Search clears the old rows at once, the header says *Searching for "…"*,
+  the empty area cycles through moving phrases ("Asking around…", "Knocking on doors…", "Still
+  looking…") and both Search buttons read "Searching…" until it's done. A new search cancels the old
+  one's late results.
+- Start-up screen lights each step as it happens (engine → sign-in → router port → sharing), with a
+  note on the port line saying whether the router opened it.
+- Settings → Advanced → **Start fresh…** wipes this computer's account, queue, history, quarantine and
+  logs (not your music, not the Soulseek login) and closes the app.
+- "Ready" / "Library" tab labels no longer clip their descenders.
+
 ## 0.4.5 — unreleased (more search results)
 
 Aimed at matching what SoulseekQt shows for the same words.

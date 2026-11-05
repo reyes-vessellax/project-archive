@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QCheckBox, QComboBox, QFileDialog, Q
                                QPlainTextEdit, QSpinBox, QStackedWidget, QWidget)
 
 from ..core.account import BIO_MAX, AccountError
+from ..config import APP_NAME
 from ..core.service import ArchiveService
 from .widgets import button, hbox, label, page, rule, scroll, set_active, vbox
 
@@ -134,7 +135,7 @@ class SettingsPage(QWidget):
         row = hbox(spacing=12); row.addWidget(self.library, 1); row.addWidget(button("Choose…", "ghost", lambda: self._choose(self.library)))
         box = vbox(spacing=6); t = label("Your library folder"); t.setStyleSheet("font-weight: 700;")
         box.addWidget(t); box.addLayout(row)
-        from ..config import APP_NAME
+        from ..config import APP_NAME, APP_NAME
         box.addWidget(label(f"Approved downloads go into a {APP_NAME} folder inside it.", "faint"))
         lay.addLayout(box)
         self.share = QCheckBox("Share my library folder with other users")
@@ -196,9 +197,19 @@ class SettingsPage(QWidget):
         row = QHBoxLayout(); row.setSpacing(10)
         row.addWidget(button("Save changes", "primary", self._save_settings))
         row.addWidget(button("Open logs folder", "ghost", self._open_logs)); row.addStretch(1)
+        row.addWidget(button("Start fresh…", "danger", self._start_fresh))
         lay.addLayout(row)
-        lay.addWidget(label("If something goes wrong, the logs folder has what support needs.", "faint"))
+        lay.addWidget(label("If something goes wrong, the logs folder has what support needs. Start fresh wipes this "
+                            "computer's account, queue, history and quarantine (your music is not touched) and closes the app.", "faint", wrap=True))
         return w
+
+    def _start_fresh(self):
+        if QMessageBox.question(self, "Start fresh", f"Wipe {APP_NAME}'s account, queue, history and quarantine on this "
+                                "computer and close the app? Downloaded music stays where it is.") != QMessageBox.Yes:
+            return
+        from PySide6.QtWidgets import QApplication
+        self.svc.reset_everything()
+        QApplication.instance().quit()
 
     def _open_logs(self):
         from PySide6.QtCore import QUrl

@@ -73,6 +73,8 @@ def main() -> int:
     load_fonts()
     global _wlog
     _wlog = _WindowLog(app, data_dir() / "app.log")
+    from .ui.brand import app_icon
+    app.setWindowIcon(app_icon())
     win = MainWindow(ArchiveService())
     win.show()
     return app.exec()

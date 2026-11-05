@@ -82,6 +82,10 @@ jobs:
         run: |
           $v = (python -c "from app.config import APP_VERSION; print(APP_VERSION)")
           "version=$v" >> $env:GITHUB_OUTPUT
+          $s = (python -c "from app.config import APP_SLUG; print(APP_SLUG)")
+          "slug=$s" >> $env:GITHUB_OUTPUT
+          $n = (python -c "from app.config import APP_NAME; print(APP_NAME)")
+          "name=$n" >> $env:GITHUB_OUTPUT
       - name: Smoke test the built app
         shell: pwsh
         run: |
@@ -91,6 +95,6 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "self-test failed with exit code $($p.ExitCode)" }
       - uses: actions/upload-artifact@v4
         with:
-          name: DEADWAX-${{ steps.ver.outputs.version }}-Windows
-          path: dist/DEADWAX/
+          name: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-Windows
+          path: dist/${{ steps.ver.outputs.name }}/
           retention-days: 30

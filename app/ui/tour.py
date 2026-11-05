@@ -42,7 +42,7 @@ def default_steps() -> list[Step]:
         Step("home.review_btn", "Ready for you",
              "Nothing reaches your library on its own. When tracks are checked they wait here for your decision."),
         Step("review.btn_save", "Download or Delete",
-             "On a checked track: Download to Library moves it into your DEADWAX folder. Delete removes it for good. "
+             f"On a checked track: Download to Library moves it into your {APP_NAME} folder. Delete removes it for good. "
              "GOOD gets a plain Download; LOOK asks you to confirm; BROKEN can only be deleted.", page="ready"),
         Step("home.add_btn", "Add your own files",
              "Not everything comes from the network. Use Add files, or drag tracks onto the window, to check files you "

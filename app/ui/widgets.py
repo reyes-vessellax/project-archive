@@ -126,8 +126,9 @@ class TopBar(QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName("topbar")
-        lay = hbox(self, (48, 22, 48, 0), 22)
-        self.brand = button(APP_NAME, "brand", lambda: self.tab_clicked.emit("queue"))
+        lay = hbox(self, (48, 22, 48, 4), 22)
+        from .brand import Brand
+        self.brand = Brand(); self.brand.clicked.connect(lambda: self.tab_clicked.emit("queue"))
         lay.addWidget(self.brand)
         self.tabs: dict[str, QPushButton] = {}
         for key, text in (("queue", "Queue"), ("search", "Search"), ("ready", "Ready"), ("library", "Library")):

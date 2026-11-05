@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHeaderView, QLineEdit, QSizePolicy, QTreeWidget, QTreeWidgetItem,
                                QWidget)
@@ -249,6 +249,10 @@ class SearchPage(QWidget):
         self._ranked: list[Candidate] = []
         self._shown = 0
         self._more_item: QTreeWidgetItem | None = None
+        self._phrases = ("Asking around", "Knocking on doors", "Still looking", "One second", "Checking the far corners",
+                         "Waiting on the slow ones", "Almost there")
+        self._anim_i = 0; self._anim_dots = 0; self._anim_query = ""
+        self._anim = QTimer(self, interval=400, timeout=self._animate)
         self.tree.viewport().installEventFilter(self)
         row = hbox(spacing=12)
         self.btn = button("Check this file", "primary", self._pick); self.btn.setEnabled(False)
@@ -258,7 +262,7 @@ class SearchPage(QWidget):
         lay.addLayout(row)
 
     def set_connected(self, on: bool):
-        self.q.setEnabled(on); self.search_btn.setEnabled(on)
+        self.q.setEnabled(on); self.search_btn.setEnabled(on and not self._anim.isActive())
         self.btn.setEnabled(on and bool(self.tree.selectedItems()))
 
     def set_problem_sources(self, keys: dict[str, str]):
@@ -275,7 +279,32 @@ class SearchPage(QWidget):
         self.empty.setGeometry(self.tree.viewport().rect().adjusted(40, 0, -40, 0))
         self.empty.setVisible(bool(text)); self.empty.raise_()
 
+    def begin_search(self, query: str):
+        """The moment Search is pressed: old rows go, the header names the new query, the text starts moving."""
+        self._ranked = []; self._shown = 0; self._fill(0)
+        self._anim_query = query; self._anim_i = 0; self._anim_dots = 0
+        self.title.setText(f"Searching for “{query}”")
+        self.state.setText("")
+        self.search_btn.setText("Searching…"); self.search_btn.setEnabled(False)
+        self._animate(); self._anim.start()
+
+    def _animate(self):
+        self._anim_dots = (self._anim_dots + 1) % 4
+        if self._anim_dots == 0:
+            self._anim_i = (self._anim_i + 1) % len(self._phrases)
+        text = self._phrases[self._anim_i] + "." * (self._anim_dots or 3)
+        if self.tree.topLevelItemCount() == 0:
+            self._show_empty(f"{text}\nLooking for “{self._anim_query}”")
+        else:
+            self.state.setText(f"fastest first · {text.lower()}")
+
+    def end_search(self):
+        self._anim.stop()
+        self.search_btn.setText("Search"); self.search_btn.setEnabled(self.q.isEnabled())
+
     def show_results(self, res: SearchResult, searching: bool, idle: str = ""):
+        if not searching:
+            self.end_search()
         n = len(res.candidates)
         if idle:
             self.title.setText("Search"); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
@@ -292,7 +321,7 @@ class SearchPage(QWidget):
             if res.error:
                 self._show_empty(res.error)
             elif searching:
-                self._show_empty("Asking around…")
+                pass                                            # the animation owns the empty area while searching
             else:
                 self._show_empty("Nobody online is sharing a match right now.\nTry fewer words, or try again in a minute.")
         else:
