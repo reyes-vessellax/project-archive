@@ -16,6 +16,17 @@ one line changes and this file gets a note.
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 - Library tab as a browsable history (today it opens the library folder).
 
+## 0.3.2 — 2026-11-05 (search speed)
+
+- First results appear in about 0.3 s (was at least 1 s): the first poll is at 300 ms and backs off
+  to 1.5 s; the table redraws only when the number of results changed.
+- A search finishes about 3.5 s after results stop arriving (12 s cap), instead of a fixed 15–20 s
+  of "still collecting". The engine's own search timeout is 8 s (was 15).
+- Results table shows the best 400 rows, inserted in one batch with repaints suspended.
+- One kept-alive connection to the engine per thread.
+- The home queue no longer rebuilds its rows on every download poll when nothing visible changed.
+- Measured with 1,500 results trickling in over 4 s: first rows at 0.31 s, done at 4.4 s, 7 redraws.
+
 ## 0.3.1 — 2026-11-05 (security pass + start-up fix)
 
 ### Start-up
