@@ -27,7 +27,8 @@ from .pages import HomePage, ReviewPage, SearchPage
 from .settings_page import SettingsPage
 from .widgets import AvatarMenu, Signals, Task, TopBar, vbox
 
-SEARCH_WAIT_S = 20            # keep collecting results for this long
+SEARCH_WAIT_S = 12            # hard cap on collecting results
+SEARCH_QUIET_S = 3.5          # stop early once nothing new has arrived for this long
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
 FIREWALL_NOTE = (f"To download from other users, {APP_NAME} accepts incoming connections.\n\n"
                  "If Windows or macOS asks whether to allow this, choose Allow. Nothing is shared from your "
@@ -306,14 +307,23 @@ class MainWindow(QMainWindow):
             try:
                 res = self.svc.search(q)
                 self.search_id = res.search_id
-                started = time.monotonic()
+                started = last_growth = time.monotonic()
+                seen = -1
+                delay = 0.3                                   # first results usually land within a second
                 while True:
-                    time.sleep(1.0)
+                    time.sleep(delay)
+                    delay = min(1.5, delay * 1.6)
                     if self.search_id != res.search_id:
                         return
                     latest = self.svc.search_results(res.search_id); latest.query = q
-                    self.signals.results.emit(latest)
-                    if latest.finished or time.monotonic() - started > SEARCH_WAIT_S:
+                    n = len(latest.candidates)
+                    now = time.monotonic()
+                    if n != seen:
+                        seen, last_growth = n, now
+                        self.signals.results.emit(latest)        # redraw only when something changed
+                    if latest.finished or now - started > SEARCH_WAIT_S or (n and now - last_growth > SEARCH_QUIET_S):
+                        self.search_running = False
+                        self.signals.results.emit(latest)
                         return
             finally:
                 self.search_running = False

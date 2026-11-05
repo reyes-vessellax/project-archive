@@ -12,9 +12,11 @@ Everything slskd returns about remote files is untrusted metadata; our own analy
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
+import threading
 import uuid
 from pathlib import Path
 from urllib import error, parse, request
@@ -55,30 +57,58 @@ class SlskdAdapter(SourceAdapter):
             raise ConnectorError("Plain http to the engine is only allowed on this computer (localhost). Use https for a remote one.")
 
     # HTTP ------------------------------------------------------------------------------
+    # One keep-alive connection per thread: search polls every few hundred ms, and a fresh TCP
+    # handshake per call was a visible share of the latency.
+    _local = threading.local()
+
+    def _conn(self) -> http.client.HTTPConnection:
+        conns = getattr(self._local, "conns", None)
+        if conns is None:
+            conns = self._local.conns = {}
+        c = conns.get(self.base_url)
+        if c is None:
+            u = parse.urlsplit(self.base_url)
+            cls = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
+            c = conns[self.base_url] = cls(u.hostname, u.port, timeout=self.timeout)
+        return c
+
+    def _drop_conn(self) -> None:
+        conns = getattr(self._local, "conns", {})
+        c = conns.pop(self.base_url, None)
+        if c:
+            try:
+                c.close()
+            except Exception:
+                pass
+
     def _call(self, method: str, path: str, body=None, query: dict | None = None):
-        url = self.base_url + API + path
-        if query:
-            url += "?" + parse.urlencode(query)
+        url = API + path + ("?" + parse.urlencode(query) if query else "")
         data = json.dumps(body).encode() if body is not None else None
-        req = request.Request(url, data=data, method=method)
-        req.add_header("Accept", "application/json")
+        headers = {"Accept": "application/json", "Connection": "keep-alive"}
         if data is not None:
-            req.add_header("Content-Type", "application/json")
+            headers["Content-Type"] = "application/json"
         if self.api_key:
-            req.add_header("X-API-Key", self.api_key)
-        try:
-            with request.urlopen(req, timeout=self.timeout) as resp:      # noqa: S310 (URL is user-configured, scheme checked)
+            headers["X-API-Key"] = self.api_key
+        for attempt in (0, 1):                      # one retry if a kept-alive socket went stale
+            conn = self._conn()
+            try:
+                conn.request(method, url, body=data, headers=headers)
+                resp = conn.getresponse()
                 raw = resp.read(MAX_BODY)
-        except error.HTTPError as e:
-            if e.code in (401, 403):
-                raise ConnectorError("The engine rejected the API key.") from e
-            if e.code == 404:
-                raise ConnectorError(f"The engine doesn't know that item ({method} {path}).") from e
-            raise ConnectorError(f"The engine answered with an error ({e.code}).") from e
-        except error.URLError as e:
-            raise ConnectorError("Can't reach the engine. Is it running?") from e
-        except TimeoutError as e:
-            raise ConnectorError("The engine didn't answer in time.") from e
+                status = resp.status
+                break
+            except (http.client.HTTPException, ConnectionError, OSError) as e:
+                self._drop_conn()
+                if attempt == 1 or isinstance(e, (ConnectionRefusedError, TimeoutError)):
+                    if isinstance(e, TimeoutError):
+                        raise ConnectorError("The engine didn't answer in time.") from e
+                    raise ConnectorError("Can't reach the engine. Is it running?") from e
+        if status in (401, 403):
+            raise ConnectorError("The engine rejected the API key.")
+        if status == 404:
+            raise ConnectorError(f"The engine doesn't know that item ({method} {path}).")
+        if status >= 400:
+            raise ConnectorError(f"The engine answered with an error ({status}).")
         if not raw:
             return None
         try:
@@ -100,14 +130,15 @@ class SlskdAdapter(SourceAdapter):
               ("Connected to Soulseek" if logged else "Signing in to Soulseek…")
         return ConnectorStatus(available=True, logged_in=logged, username=user, message=msg)
 
-    def search(self, query: str, timeout_s: float = 15.0) -> SearchResult:
+    def search(self, query: str, timeout_s: float = 8.0) -> SearchResult:
         query = " ".join(query.split())
         if len(query) < 2:
             raise ConnectorError("Type at least two characters to search.")
         sid = str(uuid.uuid4())
         self._call("POST", "/searches", {"id": sid, "searchText": query[:200],
-                                         "searchTimeout": int(timeout_s * 1000), "fileLimit": 10000,
-                                         "filterResponses": True, "responseLimit": 500})
+                                         "searchTimeout": int(timeout_s * 1000), "fileLimit": 4000,
+                                         "filterResponses": True, "responseLimit": 300,
+                                         "minimumResponseFileCount": 1})
         return SearchResult(query=query, search_id=sid, finished=False)
 
     def search_results(self, search_id: str) -> SearchResult:

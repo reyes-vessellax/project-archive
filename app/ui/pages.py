@@ -125,17 +125,24 @@ class HomePage(QWidget):
         self.search_btn.setEnabled(on)
 
     def refresh(self, jobs: list[dict], analyses: dict[str, dict | None]):
+        # Rebuild the row widgets only when something visible changed; refresh() fires every poll.
+        rows = [(j["id"], row_data(j, analyses.get(j["id"]), self.steps)) for j in jobs]
+        key = tuple((jid, d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"]) for jid, d in rows)
+        if key == getattr(self, "_last_key", None):
+            return
+        self._last_key = key
         # queue list
         while self.list.count() > 1:
             item = self.list.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self.empty.setVisible(not jobs)
-        for job in jobs:
-            d = row_data(job, analyses.get(job["id"]), self.steps)
-            row = QueueRow(job["id"], d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"])
+        self.list_host.setUpdatesEnabled(False)
+        for jid, d in rows:
+            row = QueueRow(jid, d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"])
             row.clicked.connect(self.open_job.emit); row.removed.connect(self.remove_job.emit)
             self.list.insertWidget(self.list.count() - 1, row)
+        self.list_host.setUpdatesEnabled(True)
         down = sum(1 for j in jobs if j["state"] == J.QUEUED)
         chk = sum(1 for j in jobs if j["state"] in (J.STAGING, J.ANALYZING))
         self.qnote.setText(f"{down} downloading · {chk} checking" if (down or chk) else "newest first")
@@ -177,6 +184,9 @@ def _bitrate(f: dict) -> str:
 
 
 # ------------------------------------------------------------------ search results
+MAX_ROWS = 400
+
+
 class SearchPage(QWidget):
     search = Signal(str)
     pick = Signal(object)        # Candidate
@@ -226,8 +236,13 @@ class SearchPage(QWidget):
         self.state.setText("fastest first · still collecting…" if searching else "fastest first")
         selected = self.tree.selectedItems()
         keep = selected[0].data(0, Qt.UserRole).key if selected else None
+        ranked = sorted(res.candidates, key=_rank)[:MAX_ROWS]
+        if len(res.candidates) > MAX_ROWS:
+            self.state.setText(self.state.text() + f" · showing the best {MAX_ROWS}")
+        self.tree.setUpdatesEnabled(False)
         self.tree.clear()
-        for i, c in enumerate(sorted(res.candidates, key=_rank)):
+        items = []
+        for i, c in enumerate(ranked):
             it = QTreeWidgetItem([
                 f"{i + 1:02d}", c.title or c.display_name, c.mix, c.artist, c.folder, c.user, f"{c.size / 1e6:.1f} MB",
                 (f"{c.bitrate_kbps}" + ("v" if c.vbr else "")) if c.bitrate_kbps else (c.extension.upper() if c.extension in ("flac", "wav", "aiff", "aif") else "?"),
@@ -237,9 +252,12 @@ class SearchPage(QWidget):
             it.setToolTip(1, c.display_name)
             if c.locked:
                 it.setForeground(1, self.palette().mid())
-            self.tree.addTopLevelItem(it)
-            if c.key == keep:
-                it.setSelected(True)
+            items.append(it)
+        self.tree.addTopLevelItems(items)
+        for it in items:
+            if it.data(0, Qt.UserRole).key == keep:
+                it.setSelected(True); break
+        self.tree.setUpdatesEnabled(True)
 
     def _pick(self):
         items = self.tree.selectedItems()
