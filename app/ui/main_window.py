@@ -61,6 +61,8 @@ class MainWindow(QMainWindow):
         self.signals = Signals()
         self.signals.progress.connect(self._on_progress)
         self.signals.done.connect(lambda _id: self.refresh())
+        self.signals.notice.connect(self._notice)
+        self._acache: dict[str, dict] = {}                   # finished analyses never change; read each once
         self.signals.failed.connect(self._on_failed)
         self.signals.results.connect(self._on_results)
         self.signals.status.connect(self._on_status)
@@ -170,6 +172,11 @@ class MainWindow(QMainWindow):
                 self.selected = next((j["id"] for j in self.svc.jobs() if j["state"] == J.READY), None) or \
                                 (self._jobs[0]["id"] if self._jobs else None)
             self._show_review()
+        elif key == "search":
+            self.pages.setCurrentWidget(self.searchp)          # last results stay as they were
+            if not self.search_id:
+                self.searchp.show_results(SearchResult(query="", search_id="", finished=True), searching=False,
+                                          idle="Type something above and press Enter.")
         elif key == "library":
             self.library.refresh()
             self.pages.setCurrentWidget(self.library)
@@ -239,8 +246,7 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- data -> view
     def refresh(self):
         jobs = self.svc.jobs()
-        analyses = {j["id"]: (self.svc.db.analysis(j["id"]) if j["state"] not in (J.STAGING, J.ANALYZING, J.QUEUED) else None)
-                    for j in jobs}
+        analyses = {j["id"]: self._analysis(j) for j in jobs}
         self._jobs, self._analyses = jobs, analyses
         # sources that already let us down, so the search table can flag them in red
         problems = {}
@@ -251,7 +257,7 @@ class MainWindow(QMainWindow):
             if j["state"] == J.ERROR:
                 problems[key] = "failed before"
             else:
-                a = analyses.get(j["id"]) if j["id"] in analyses else self.svc.db.analysis(j["id"])
+                a = self._analysis(j)
                 if a and a["overall_status"] == "FAIL":
                     problems[key] = "broken file"
         self.searchp.set_problem_sources(problems)
@@ -264,6 +270,16 @@ class MainWindow(QMainWindow):
             self._refresh_review()
         elif self.pages.currentWidget() is self.library:
             self.library.refresh()
+
+    def _analysis(self, job: dict) -> dict | None:
+        if job["state"] in (J.STAGING, J.ANALYZING, J.QUEUED):
+            return None
+        a = self._acache.get(job["id"])
+        if a is None:
+            a = self.svc.db.analysis(job["id"])
+            if a is not None and job["state"] == J.PROMOTED or (a is not None and job["state"] in J.FINAL):
+                self._acache[job["id"]] = a                  # settled: cache; READY rows may be re-checked, so re-read those
+        return a
 
     def _refresh_review(self):
         job = self.svc.db.job(self.selected) if self.selected else None
@@ -288,21 +304,23 @@ class MainWindow(QMainWindow):
         job = self.svc.db.job(job_id)
         if not job:
             return
-        try:
-            if job["state"] == J.READY:
-                name = row_data(job, self._analyses.get(job_id), self.steps)["title"]
-                if QMessageBox.question(self, APP_NAME, f"Delete “{name}” from quarantine? It hasn't been saved to your "
-                                        f"library.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
-                    return
-                self.svc.reject(job_id)
-                self.svc.hide(job_id)
-            else:
-                self.svc.hide(job_id)
-        except ActionBlocked as e:
-            self.statusBar().showMessage(str(e), 6000); return
         if self.selected == job_id:
             self.selected = None
-        self.refresh()
+        if job["state"] in (J.READY, J.ERROR):
+            name = row_data(job, self._analyses.get(job_id), self.steps)["title"]
+            self.statusBar().showMessage(f"Deleted “{name}” from quarantine. It was never saved to your library.", 6000)
+
+            def work():
+                try:
+                    self.svc.reject(job_id)
+                except ActionBlocked:
+                    pass
+                self.svc.hide(job_id)
+                self.signals.done.emit(job_id)
+            self.io.start(Task(work, self.signals))
+        else:
+            self.svc.hide(job_id)
+            self.refresh()
 
     # ---------------------------------------------------------------- engine
     def _start_backend(self):
@@ -409,7 +427,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Still connecting. Search opens as soon as you're signed in.", 5000)
             return
         self.home.q.setText(q); self.searchp.q.setText(q)
-        self.pages.setCurrentWidget(self.searchp); self.topbar.set_active("")
+        self.pages.setCurrentWidget(self.searchp); self.topbar.set_active("search")
         self.searchp.show_results(SearchResult(query=q, search_id="", finished=False), searching=True)
         self.search_running = True
 
@@ -523,20 +541,35 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- decisions
     def _promote(self, job_id: str, override: bool):
-        try:
-            target = self.svc.promote(job_id, override_warning=override)
-            self.statusBar().showMessage(f"Downloaded to {target}", 8000)
-        except ActionBlocked as e:
-            QMessageBox.warning(self, APP_NAME, str(e))
-        self.refresh()
+        """Hash-check + copy happen off the UI thread; the row shows SAVING meanwhile."""
+        self.review.set_busy(True)
+
+        def work():
+            try:
+                target = self.svc.promote(job_id, override_warning=override)
+                self.signals.notice.emit(f"Downloaded to {target}")
+            except ActionBlocked as e:
+                self.signals.notice.emit(str(e))
+            finally:
+                self.signals.done.emit(job_id)
+        self.io.start(Task(work, self.signals))
 
     def _reject(self, job_id: str):
-        try:
-            self.svc.reject(job_id)
-            self.statusBar().showMessage("Deleted from quarantine. Nothing was saved to your computer.", 8000)
-        except ActionBlocked as e:
-            QMessageBox.warning(self, APP_NAME, str(e))
-        self.refresh()
+        self.review.set_busy(True)
+
+        def work():
+            try:
+                self.svc.reject(job_id)
+                self.signals.notice.emit("Deleted from quarantine. Nothing was saved to your computer.")
+            except ActionBlocked as e:
+                self.signals.notice.emit(str(e))
+            finally:
+                self.signals.done.emit(job_id)
+        self.io.start(Task(work, self.signals))
+
+    def _notice(self, message: str):
+        self.review.set_busy(False)
+        self.statusBar().showMessage(message, 8000)
 
     def _cancel(self, job_id: str):
         def work():

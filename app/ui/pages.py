@@ -275,8 +275,10 @@ class SearchPage(QWidget):
         self.empty.setGeometry(self.tree.viewport().rect().adjusted(40, 0, -40, 0))
         self.empty.setVisible(bool(text)); self.empty.raise_()
 
-    def show_results(self, res: SearchResult, searching: bool):
+    def show_results(self, res: SearchResult, searching: bool, idle: str = ""):
         n = len(res.candidates)
+        if idle:
+            self.title.setText("Search"); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
         self.title.setText(f"{n} source{'s' if n != 1 else ''}")
         if res.error:
             self.state.setText("")
@@ -470,6 +472,13 @@ class ReviewPage(QWidget):
         dw = QWidget(); dw.setLayout(det)
         body.addWidget(dw, 3)
         self.show_job(None, None)
+
+    def set_busy(self, on: bool):
+        """While a Download/Delete is being carried out off-thread, the decision buttons can't be pressed twice."""
+        if on:
+            for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_remove):
+                b.setEnabled(False)
+        # when it's over, the next refresh() sets every button from the job's real state
 
     def set_rail(self, jobs: list[dict], analyses: dict[str, dict | None], steps: dict[str, str]):
         while self.rail.count() > 1:

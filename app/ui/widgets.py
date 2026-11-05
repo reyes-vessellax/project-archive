@@ -24,6 +24,7 @@ class Signals(QObject):
     results = Signal(object)             # SearchResult
     status = Signal(object)              # ConnectorStatus
     staged = Signal(str)                 # job_id that finished downloading and needs analysis
+    notice = Signal(str)
 
 
 class Task(QRunnable):
@@ -119,7 +120,7 @@ def page(margins=(48, 28, 48, 40), spacing=24, max_width: int = 1180) -> tuple[Q
 
 # ------------------------------------------------------------------ top bar
 class TopBar(QWidget):
-    tab_clicked = Signal(str)           # "queue" | "ready" | "library"
+    tab_clicked = Signal(str)           # "queue" | "search" | "ready" | "library"
     avatar_clicked = Signal()
 
     def __init__(self):
@@ -129,7 +130,7 @@ class TopBar(QWidget):
         self.brand = button(APP_NAME, "brand", lambda: self.tab_clicked.emit("queue"))
         lay.addWidget(self.brand)
         self.tabs: dict[str, QPushButton] = {}
-        for key, text in (("queue", "Queue"), ("ready", "Ready"), ("library", "Library")):
+        for key, text in (("queue", "Queue"), ("search", "Search"), ("ready", "Ready"), ("library", "Library")):
             b = button(text, "tab", lambda _=False, k=key: self.tab_clicked.emit(k))
             self.tabs[key] = b
             lay.addWidget(b)

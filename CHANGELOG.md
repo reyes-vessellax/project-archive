@@ -15,6 +15,20 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.4.2 — unreleased (no popups, Search tab, library drop-down)
+
+- **Search** tab in the top bar brings back your last results at any time.
+- Library: click a track and a drop-down opens under the list with the spectrogram + player, verdict,
+  facts, the checks, Show in folder and Full details. Click the same row again (or Close) to fold it.
+- Library "Show in folder" works on Windows (Explorer wanted `/select,"path"` as one argument).
+- No more popups in the everyday flow: deleting a checked track from the queue no longer asks first
+  (the status strip says what happened); Download / Delete problems go to the status strip too.
+- Download to Library and Delete run off the UI thread (hash check + copy used to freeze the window
+  for a moment); the buttons grey out until it's done.
+- Faster refreshes: finished analyses are read from the database once and cached.
+- Diagnostics: every top-level window that appears is logged to `app.log` with where it came from, so
+  a stray popup can be named from the log.
+
 ## 0.4.1 — unreleased (one engine, tidy folder, × on the left)
 
 ### Fixed: searches coming back with 0 sources
