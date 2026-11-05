@@ -100,9 +100,9 @@ class ArchiveService:
             if not st.available:
                 st.message = MSG_TROUBLE
             elif not st.logged_in:
-                st.message = "Connected. Signing in to Soulseek…"
+                st.message = "Connecting to Project Archive…"
             else:
-                st.message = "Connected to Soulseek"
+                st.message = "Connected to Project Archive"
             return st
         if not self.settings.own_slskd_configured:
             return ConnectorStatus(available=False, message=MSG_LOCAL)

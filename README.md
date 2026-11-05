@@ -12,7 +12,7 @@ the Soulseek protocol ourselves.
 > The app reports evidence, not proof. A 320 kbps MP3 or a WAV can still come from a low-quality source.
 > It never labels a file "authentic" or "verified lossless". You make the final call.
 
-## Status (v0.1, in progress)
+## Status (v0.2 test build)
 
 | Done | Next |
 |---|---|

@@ -30,8 +30,8 @@ The engine (slskd) is bundled and started silently. The user never sees that nam
 | Shown as | Meaning |
 |---|---|
 | grey dot · `Connecting to the server…` | engine starting (first launch can take ~10 s) |
-| amber dot · `Connected. Signing in to Soulseek…` | engine up, not on the network yet |
-| green dot · `Connected to Soulseek` | search works |
+| amber dot · `Connecting to Project Archive…` | engine up, not on the network yet |
+| green dot · `Connected to Project Archive` | search works (wording is a placeholder until the product name is final) |
 | grey dot · `Having trouble connecting to the server.` + a **Try again** button | engine failed; also one dialog: "Having trouble connecting to the server. [Try again] [Help] [Not now]", Help opens the website FAQ |
 | grey dot · `Local mode: drag tracks in to check them. Soulseek search is off.` | engine not bundled and no own slskd set under Advanced |
 
