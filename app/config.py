@@ -40,6 +40,7 @@ class Settings:
     extensions: list[str] = field(default_factory=lambda: ["mp3", "wav", "flac", "aiff", "aif"])
     ffmpeg_path: str = ""                     # empty = bundled copy, then PATH
     max_concurrent_analyses: int = 5          # analysis slots; further tracks wait in the queue
+    setup_done: bool = False                  # first-run setup (library folder + sharing) completed
     firewall_notice_shown: bool = False       # one-time explanation before the first engine start
     share_folder: str = ""                    # opt-in: a folder to share back on Soulseek (empty = off)
     # Advanced only. By default the app runs its own bundled copy of slskd (the Soulseek engine) with a

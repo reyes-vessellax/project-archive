@@ -141,6 +141,60 @@ class SpectrumView(QLabel):
         p.end()
 
 
+# --------------------------------------------------------------------------- first-run setup
+SHARE_TEXT = ("Share this folder with other Soulseek users. This is how the community works: people who share "
+              "get served first, and accounts that share nothing wait at the back of every queue.")
+
+
+class SetupDialog(QDialog):
+    """Shown once on first launch (the in-app part of sign-up). Asks for the DJ library folder, which is
+    both where approved downloads go and what is shared back to Soulseek."""
+
+    def __init__(self, svc: ArchiveService, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Welcome to {APP_NAME}")
+        self.setModal(True)
+        self.svc = svc
+        s = svc.settings
+        default = s.library_dir if s.setup_done else str(Path.home() / "Music")
+        lay = QVBoxLayout(self)
+        title = QLabel(f"<b style='font-size:18px'>Welcome to {APP_NAME}</b>"); lay.addWidget(title)
+        intro = QLabel("Two quick things and you're set."); intro.setStyleSheet("color: gray;"); lay.addWidget(intro)
+
+        lay.addWidget(QLabel("<b>1. Where is your DJ music library?</b>"))
+        hint = QLabel("Approved downloads go here. Pick the folder your DJ software already uses."); hint.setWordWrap(True)
+        hint.setStyleSheet("color: gray;"); lay.addWidget(hint)
+        self.library = QLineEdit(default)
+        btn = QPushButton("Choose…")
+        btn.clicked.connect(lambda: (d := QFileDialog.getExistingDirectory(self, "DJ music library", self.library.text())) and self.library.setText(d))
+        row = QHBoxLayout(); row.addWidget(self.library); row.addWidget(btn); lay.addLayout(row)
+
+        lay.addWidget(QLabel("<b>2. Share it back</b>"))
+        self.share = QCheckBox(SHARE_TEXT); self.share.setChecked(True if not s.setup_done else bool(s.share_folder))
+        lay.addWidget(self.share)
+
+        bb = QDialogButtonBox(QDialogButtonBox.Ok); bb.button(QDialogButtonBox.Ok).setText("Let's go")
+        bb.accepted.connect(self._save); lay.addWidget(bb)
+        self.resize(560, 300)
+
+    def _save(self):
+        folder = self.library.text().strip()
+        if not folder:
+            QMessageBox.warning(self, APP_NAME, "Please choose a folder.")
+            return
+        try:
+            Path(folder).mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            QMessageBox.warning(self, APP_NAME, f"Can't use that folder: {e}")
+            return
+        s = self.svc.settings
+        s.library_dir = folder
+        s.share_folder = folder if self.share.isChecked() else ""
+        s.setup_done = True
+        self.svc.save_settings(s)
+        self.accept()
+
+
 # --------------------------------------------------------------------------- settings dialog
 class SettingsDialog(QDialog):
     def __init__(self, svc: ArchiveService, parent=None):
@@ -153,6 +207,8 @@ class SettingsDialog(QDialog):
         form.addRow(QLabel("<b>Folders</b>"))
         self.library = self._folder_row(form, "Download to (your library folder)", s.library_dir)
         self.incoming = self._folder_row(form, "Watched Incoming folder", s.incoming_dir, "Off (leave empty)")
+        self.share_lib = QCheckBox("Share my library folder with other Soulseek users (recommended: you get served first)")
+        self.share_lib.setChecked(bool(s.share_folder)); form.addRow(self.share_lib)
         form.addRow(QLabel("<b>Checks</b>"))
         self.mp3 = self._spin(form, "Warn if MP3 below (kbps)", s.mp3_min_kbps, 64, 320)
         self.vbr = self._spin(form, "Warn if VBR average below (kbps)", s.vbr_min_avg_kbps, 64, 320)
@@ -164,7 +220,6 @@ class SettingsDialog(QDialog):
         # Advanced: hidden until opened. Everything in here is for people who know what slskd is.
         self.adv = QGroupBox("Advanced"); self.adv.setCheckable(True); self.adv.setChecked(False)
         adv = QFormLayout(); self.adv_body = QWidget(); self.adv_body.setLayout(adv)
-        self.share = self._folder_row(adv, "Share this folder back to Soulseek (optional)", s.share_folder, "Off")
         self.own_user = QLineEdit(s.soulseek_own_username); self.own_user.setPlaceholderText("Leave empty to use the built-in account")
         adv.addRow("Use my own Soulseek username", self.own_user)
         self.own_pass = QLineEdit(); self.own_pass.setEchoMode(QLineEdit.Password)
@@ -202,7 +257,7 @@ class SettingsDialog(QDialog):
         s = self.svc.settings
         s.library_dir = self.library.text().strip() or s.library_dir
         s.incoming_dir = self.incoming.text().strip()
-        s.share_folder = self.share.text().strip()
+        s.share_folder = s.library_dir if self.share_lib.isChecked() else ""
         s.soulseek_own_username = self.own_user.text().strip()
         if self.own_pass.text():
             self.svc.manager.creds.set("soulseek_own_password", self.own_pass.text())
@@ -317,6 +372,9 @@ class MainWindow(QMainWindow):
 
     # bundled engine ----------------------------------------------------------------------
     def _start_backend(self):
+        if not self.svc.settings.setup_done:
+            SetupDialog(self.svc, self).exec()
+            self.refresh()
         if not self.svc.managed_mode:
             self._poll_status()
             return

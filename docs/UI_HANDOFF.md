@@ -22,6 +22,9 @@ Local files can also be dragged in or picked up from a watched folder; they join
 3. **Review** (right side). Facts, spectrogram, checks, decision buttons for the selected queue item.
    Selecting a queue item switches back to this page; a **Search results** button goes back to the table.
 4. **Settings** dialog.
+5. **First-run setup** (one modal on first launch): "Where is your DJ music library?" folder picker (default
+   `~/Music`) + a checked box "Share this folder with other Soulseek users…". That folder is both where
+   approved downloads go and what is shared. Sharing is needed: peers serve sharers first.
 
 ## Connection status (top bar)
 
@@ -132,12 +135,11 @@ Top-bar status: `connector_status()`.
 
 ## Settings screen fields
 
-Main: Download-to folder (the library), Incoming (watched) folder, MP3 warning level (default 320 kbps),
+Main: Download-to folder (the library), Incoming (watched) folder, "Share my library folder with other Soulseek users" (checkbox), MP3 warning level (default 320 kbps),
 VBR average warning level (default 220 kbps), check this many tracks at once (default 5), keep undecided
 files for (default 24 h), max file size (default 2048 MB), accepted formats (mp3, wav, flac, aiff).
 
-**Advanced** (collapsed by default; nerdy, keep it out of sight): share a folder back to Soulseek
-(optional, off), own Soulseek username + password, "use an slskd I already run" with URL / API key /
+**Advanced** (collapsed by default; nerdy, keep it out of sight): own Soulseek username + password, "use an slskd I already run" with URL / API key /
 downloads folder, FFmpeg location.
 
 ## Rules the design must respect (from the spec)

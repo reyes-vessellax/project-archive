@@ -15,10 +15,11 @@ review before Project Archive ships to anyone outside the team. Keep this curren
 | D6 | The engine listens for incoming peer connections (Soulseek default port 50300). A one-time plain-language note is shown before the first start; the words "slskd" and "port" are not shown. | 9.1 "no inbound listening socket in MVP" |
 | D7 | If the engine can't be reached: silent retry, then one dialog — "Having trouble connecting to the server. [Try again] [Help] [Not now]" — Help opens the FAQ page on the website (`SUPPORT_URL` in the code; page to be created). | 10 "Client unavailable" |
 | D8 | Anything a normal user shouldn't need is under an **Advanced** section in Settings: own slskd instance, own Soulseek login, share-a-folder, FFmpeg path. | 6.1 |
-| D9 | Sharing a folder back to Soulseek is **opt-in and off by default** (many peers refuse transfers to users who share nothing). | 2.3 "no sharing" (now user-controlled) |
+| D9 | First-run setup asks for the DJ library folder and shares it back to Soulseek, **on by default with a one-click opt-out** (the 0.2 test showed every download stuck at "Queued, Remotely" for an account that shares nothing). Can be turned off in Settings. | 2.3 "no sharing" (now user-controlled) |
 | D10 | Up to 5 tracks are checked at once (Settings); the rest wait in the queue. | 9.1 "max concurrent analyses (default 1)" |
 | D11 | Decision buttons are **Download to Library / Download anyway / Delete**. The search-result button is **Check this file**, so it is never confused with the library download. | 3.1 wording box |
 | D12 | Store search (Beatport, Bandcamp, Juno, Traxsource, Discogs) stays in the code, unwired, for a later "find it to buy" feature. | — |
+| D14 | First-run setup (library folder + sharing) is the in-app half of sign-up; the account/sign-up pages come in 0.3. | — |
 | D13 | Paid service: the app will have its own account system and license check on the website. Audio analysis stays fully local; the only thing the app will phone home for is the license. Not built yet. | 1.3 "no account system" (MVP only) |
 
 ## ⚑ Attorney flags (for the EULA and privacy policy)
