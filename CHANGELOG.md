@@ -15,6 +15,19 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.4.8 — unreleased (search diagnostics, locked files, exe icon)
+
+- Search results now include files the peer has **locked** (shared only with their own list), greyed
+  with "Locked" — for "volpat" that was 63 of the 121 files the engine received, so the count now
+  matches other clients. They can't be requested.
+- The engine was receiving results (29 responses for "volpat", 999 for "john summit") that the app
+  showed as none. The whole search path now writes to `app.log` — POST, every poll (count, state),
+  every HTTP status and payload size, and the full traceback if anything fails — and a failed search
+  shows its real reason in the results area instead of a generic line.
+- Task failures (background work) are also written to `app.log`.
+- The exe carries the "pp" icon (taskbar, shortcuts, Explorer); the window registers its own app id
+  so Windows groups it under that icon.
+
 ## 0.4.7 — unreleased
 
 - Mark is now the "pp" monogram tile (top-left and window/taskbar icon), replacing the pipe.

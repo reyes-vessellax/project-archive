@@ -25,7 +25,18 @@ from ..core.safety import clean_text, safe_filename
 from .base import Candidate, ConnectorError, ConnectorStatus, SearchResult, SourceAdapter, Transfer, parse_track
 
 API = "/api/v0"
-MAX_BODY = 32 * 1024 * 1024          # never read more than this from the client
+MAX_BODY = 64 * 1024 * 1024          # never read more than this from the client
+
+
+def _log(line: str) -> None:
+    """Search-path diagnostics into app.log (the data folder). Cheap, append-only, never raises."""
+    try:
+        from datetime import datetime
+        from ..config import data_dir
+        with open(data_dir() / "app.log", "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')} engine: {line}\n")
+    except Exception:
+        pass
 LOOPBACK = {"localhost", "127.0.0.1", "::1", "[::1]"}
 _SPLIT = re.compile(r"[\\/]")
 
@@ -103,6 +114,8 @@ class SlskdAdapter(SourceAdapter):
                     if isinstance(e, TimeoutError):
                         raise ConnectorError("The engine didn't answer in time.") from e
                     raise ConnectorError("Can't reach the engine. Is it running?") from e
+        if "/searches" in path:
+            _log(f"{method} {path} -> {status} {len(raw)} bytes")
         if status in (401, 403):
             raise ConnectorError("The engine rejected the API key.")
         if status == 404:
@@ -135,6 +148,7 @@ class SlskdAdapter(SourceAdapter):
         if len(query) < 2:
             raise ConnectorError("Type at least two characters to search.")
         sid = str(uuid.uuid4())
+        _log(f"search POST {sid[:8]} {query!r}")
         self._call("POST", "/searches", {"id": sid, "searchText": query[:200],
                                          "searchTimeout": int(timeout_s * 1000), "fileLimit": 20000,
                                          "filterResponses": True, "responseLimit": 2000,
@@ -154,7 +168,8 @@ class SlskdAdapter(SourceAdapter):
         cands = []
         for r in rows:
             user = str(r.get("username") or "")
-            for f in r.get("files") or []:
+            files = [(f, False) for f in (r.get("files") or [])] + [(f, True) for f in (r.get("lockedFiles") or [])]
+            for f, locked in files:
                 path = str(f.get("filename") or "")
                 if not user or not path:
                     continue
@@ -172,8 +187,9 @@ class SlskdAdapter(SourceAdapter):
                     length_s=_int(f.get("length")), sample_rate_hz=_int(f.get("sampleRate")),
                     bit_depth=_int(f.get("bitDepth")), free_slot=r.get("hasFreeUploadSlot"),
                     queue_length=_int(r.get("queueLength")), upload_speed=_int(r.get("uploadSpeed")),
-                    locked=bool(f.get("isLocked")),
+                    locked=locked or bool(f.get("isLocked")),
                 ))
+        _log(f"search_results {search_id[:8]} state={state!r} responses={len(rows)} candidates={len(cands)}")
         return SearchResult(query=str(meta.get("searchText") or ""), search_id=search_id,
                             finished=finished, candidates=cands, state=state, error=error)
 

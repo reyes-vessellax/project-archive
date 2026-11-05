@@ -20,6 +20,39 @@ os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
 from app.config import APP_NAME  # noqa: E402
 
+def make_icon(path: Path) -> bool:
+    """Render the app mark into a multi-size .ico (PNG entries) so the exe, taskbar and shortcuts show it."""
+    try:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtCore import QBuffer, QIODevice
+        from PySide6.QtWidgets import QApplication
+        from app.ui import theme as T
+        from app.ui.brand import mark_pixmap
+        app = QApplication.instance() or QApplication([])
+        T.load_fonts()
+        import struct
+        sizes = (16, 24, 32, 48, 64, 128, 256)
+        blobs = []
+        for s in sizes:
+            pm = mark_pixmap(s, "#ffffff", bg=T.colours("light")["accent"])
+            buf = QBuffer(); buf.open(QIODevice.WriteOnly); pm.save(buf, "PNG"); blobs.append(bytes(buf.data()))
+        header = struct.pack("<HHH", 0, 1, len(sizes))
+        offset = 6 + 16 * len(sizes)
+        entries = b""
+        for s, b in zip(sizes, blobs):
+            entries += struct.pack("<BBBBHHII", s % 256, s % 256, 0, 0, 1, 32, len(b), offset)
+            offset += len(b)
+        path.write_bytes(header + entries + b"".join(blobs))
+        return True
+    except Exception as e:                                  # noqa: BLE001
+        print(f"NOTE: couldn't render the icon: {e}", file=sys.stderr)
+        return False
+
+
+ICON = Path("build") / "app.ico"
+ICON.parent.mkdir(exist_ok=True)
+HAVE_ICON = make_icon(ICON)
+
 args = [
     os.path.join("app", "__main__.py"),
     "--name", APP_NAME,
@@ -31,6 +64,7 @@ args = [
     "--workpath", "build",
     "--specpath", ".",
     "--hidden-import", "PySide6.QtMultimedia",
+    *(["--icon", str(ICON)] if HAVE_ICON else []),
     # Qt pieces a Widgets app never loads (QML/Quick, PDF, virtual keyboard, 3D, WebEngine...)
     *sum((["--exclude-module", m] for m in (
         "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtPdf", "PySide6.QtPdfWidgets",

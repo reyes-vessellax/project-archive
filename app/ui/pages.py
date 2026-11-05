@@ -310,7 +310,9 @@ class SearchPage(QWidget):
             self.title.setText("Search"); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
         self.title.setText(f"{n} source{'s' if n != 1 else ''}")
         skipped = sum(1 for c in res.candidates if c.note)
-        tail = f" · {skipped} other format{'s' if skipped != 1 else ''} greyed" if skipped else ""
+        locked = sum(1 for c in res.candidates if c.locked and not c.note)
+        tail = (f" · {skipped} other format{'s' if skipped != 1 else ''} greyed" if skipped else "") + \
+               (f" · {locked} locked" if locked else "")
         if res.error:
             self.state.setText("")
         elif searching:
@@ -361,6 +363,8 @@ class SearchPage(QWidget):
                 if c.note:
                     it.setText(9, c.note)
                     it.setToolTip(9, f"{c.note}: .{c.extension or '(none)'} isn't in your accepted formats (Settings → Checks).")
+                elif c.locked:
+                    it.setToolTip(9, "This user only shares that folder with people on their list. It can't be requested.")
             items.append(it)
         self.tree.addTopLevelItems(items)
         left = len(self._ranked) - self._shown

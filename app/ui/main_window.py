@@ -29,6 +29,16 @@ from .settings_page import SettingsPage
 from .tour import TourOverlay, default_steps
 from .widgets import AvatarMenu, Signals, Task, TopBar, vbox
 
+def _applog(line: str) -> None:
+    try:
+        from datetime import datetime
+        from ..config import data_dir
+        with open(data_dir() / "app.log", "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')} ui: {line}\n")
+    except Exception:
+        pass
+
+
 SEARCH_WAIT_S = 45            # hard cap on collecting results (matches the engine's own search timeout)
 SEARCH_QUIET_S = 10           # once results have started, stop when nothing new arrives for this long
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
@@ -475,6 +485,7 @@ class MainWindow(QMainWindow):
                     latest = self.svc.search_results(res.search_id); latest.query = q
                     n = len(latest.candidates)
                     now = time.monotonic()
+                    _applog(f"search poll {res.search_id[:8]} n={n} state={latest.state!r} finished={latest.finished} t={now - started:.1f}s")
                     if n != seen:
                         seen, last_growth = n, now
                         self.signals.results.emit(latest)        # redraw only when something changed
@@ -482,9 +493,11 @@ class MainWindow(QMainWindow):
                         self.search_running = False
                         self.signals.results.emit(latest)
                         return
-            except Exception:
+            except Exception as e:
+                import traceback
+                _applog("search failed: " + traceback.format_exc())
                 self.signals.results.emit(SearchResult(query=q, search_id=sid, finished=True,
-                                                       error="The search couldn't be sent. Check the connection and try again."))
+                                                       error=f"The search stopped: {e}"))
                 raise
             finally:
                 self.search_running = False
@@ -492,6 +505,7 @@ class MainWindow(QMainWindow):
         self.io.start(Task(work, self.signals))
 
     def _on_results(self, res: SearchResult):
+        _applog(f"on_results id={str(res.search_id)[:8]} mine={str(self.search_id)[:8]} n={len(res.candidates)} running={self.search_running}")
         if res.search_id == self.search_id:
             self.searchp.show_results(res, searching=self.search_running)
             if not self.search_running:

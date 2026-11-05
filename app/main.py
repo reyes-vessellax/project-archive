@@ -57,6 +57,12 @@ def main() -> int:
     from .core.service import ArchiveService
     from .ui.main_window import MainWindow
 
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(f"{APP_NAME}.desktop")
+        except Exception:
+            pass
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     # One copy at a time: two copies would start two engines on the same account.

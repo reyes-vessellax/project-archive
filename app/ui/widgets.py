@@ -17,6 +17,16 @@ from . import theme as T
 
 
 # ------------------------------------------------------------------ worker plumbing
+def _applog(line: str) -> None:
+    try:
+        from datetime import datetime
+        from ..config import data_dir
+        with open(data_dir() / "app.log", "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')} task: {line}\n")
+    except Exception:
+        pass
+
+
 class Signals(QObject):
     progress = Signal(str, str)          # job_id, step
     done = Signal(str)                   # job_id (or "" = just refresh)
@@ -36,10 +46,11 @@ class Task(QRunnable):
         try:
             self.fn()
         except (Rejected, ActionBlocked, ToolMissing, ConnectorError) as e:
+            _applog(f"task failed: {type(e).__name__}: {e}")
             self.signals.failed.emit("", str(e))
         except Exception as e:                                      # keep the app alive, report it
             import traceback
-            traceback.print_exc()
+            _applog("task crashed: " + traceback.format_exc())
             self.signals.failed.emit("", f"Unexpected error: {e}")
 
 
