@@ -71,6 +71,7 @@ class MainWindow(QMainWindow):
         self.signals = Signals()
         self.signals.progress.connect(self._on_progress)
         self.signals.done.connect(lambda _id: self.refresh())
+        self.signals.done.connect(self._search_buttons_settle)
         self.signals.notice.connect(self._notice)
         self._acache: dict[str, dict] = {}                   # finished analyses never change; read each once
         self.signals.failed.connect(self._on_failed)
@@ -492,6 +493,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 import traceback
                 _applog("search failed: " + traceback.format_exc())
+                self.search_running = False                 # before the emit, so the buttons come back
                 self.signals.results.emit(SearchResult(query=q, search_id=sid, finished=True,
                                                        error=f"The search stopped: {e}"))
                 raise
@@ -566,6 +568,12 @@ class MainWindow(QMainWindow):
                         return sid
         finally:
             pass
+
+    def _search_buttons_settle(self, _id: str = ""):
+        """Whatever path a search took to its end, the two Search buttons must read "Search" again."""
+        if not self.search_running:
+            self.home.search_btn.setText("Search"); self.home.search_btn.setEnabled(self._connected)
+            self.searchp.end_search()
 
     def _on_results(self, res: SearchResult):
         _applog(f"on_results id={str(res.search_id)[:8]} mine={str(self.search_id)[:8]} n={len(res.candidates)} running={self.search_running}")
