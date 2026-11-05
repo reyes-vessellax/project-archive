@@ -5,7 +5,8 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHeaderView, QLineEdit, QSizePolicy, QTreeWidget, QTreeWidgetItem,
                                QWidget)
 
@@ -18,6 +19,15 @@ from .widgets import QueueRow, SpectrumView, button, hbox, label, page, rule, sc
 
 
 # ------------------------------------------------------------------ shared: a job -> row data
+def _audio_path(job: dict) -> str | None:
+    """The file to play for a job: the library copy once promoted, else the quarantined copy."""
+    for key in ("final_path", "staged_path"):
+        v = job.get(key)
+        if v and Path(v).exists():
+            return v
+    return None
+
+
 def row_data(job: dict, analysis: dict | None, steps: dict[str, str]) -> dict:
     """What the queue shows for one job: tag word, title, artist, progress, meta, removable."""
     st = job["state"]
@@ -41,7 +51,7 @@ def row_data(job: dict, analysis: dict | None, steps: dict[str, str]) -> dict:
     if st == J.READY and analysis:
         f = analysis["facts"]
         kbps = f"{round(f['bitrate_bps'] / 1000)} kbps" if f.get("bitrate_bps") else (f.get("container") or "").upper()
-        return dict(tag=T.GRADE_WORD[analysis["overall_status"]], title=title, artist=artist, pct=100, meta=kbps, removable=False)
+        return dict(tag=T.GRADE_WORD[analysis["overall_status"]], title=title, artist=artist, pct=100, meta=kbps, removable=True)
     if st == J.PROMOTED:
         return dict(tag="Done", title=title, artist=artist, pct=None, meta="in library", removable=True)
     if st == J.ERROR:
@@ -57,6 +67,7 @@ class HomePage(QWidget):
     search = Signal(str)
     open_job = Signal(str)
     remove_job = Signal(str)
+    clear_finished = Signal()
     review_all = Signal()
     add_files = Signal()
 
@@ -74,7 +85,8 @@ class HomePage(QWidget):
         srow.addWidget(self.q, 1)
         self.search_btn = button("Search", "accent", lambda: self.search.emit(self.q.text()))
         srow.addWidget(self.search_btn)
-        srow.addWidget(button("Add files", "ghost", self.add_files.emit))
+        self.add_btn = button("Add files", "ghost", self.add_files.emit)
+        srow.addWidget(self.add_btn)
         lay.addLayout(srow)
 
         body = hbox(spacing=40)
@@ -82,8 +94,9 @@ class HomePage(QWidget):
 
         # queue column
         qcol = vbox(spacing=6)
-        head = hbox(); head.addWidget(label("Queue", "h2")); head.addStretch(1)
+        head = hbox(spacing=12); head.addWidget(label("Queue", "h2")); head.addStretch(1)
         self.qnote = label("newest first", "faint"); head.addWidget(self.qnote)
+        self.clear_btn = button("Clear finished", "link", self.clear_finished.emit); head.addWidget(self.clear_btn)
         qcol.addLayout(head)
         self.list_host = QWidget(); self.list_host.setObjectName("page")
         self.list = vbox(self.list_host, spacing=0); self.list.addStretch(1)
@@ -148,6 +161,7 @@ class HomePage(QWidget):
         down = sum(1 for j in jobs if j["state"] == J.QUEUED)
         chk = sum(1 for j in jobs if j["state"] in (J.STAGING, J.ANALYZING))
         self.qnote.setText(f"{down} downloading · {chk} checking" if (down or chk) else "newest first")
+        self.clear_btn.setVisible(any(j["state"] in J.FINAL or j["state"] == J.ERROR for j in jobs))
         # counts
         n = {"Good": 0, "Look": 0, "Broken": 0}
         for j in jobs:
@@ -165,7 +179,8 @@ class HomePage(QWidget):
             if a and a.get("spectrogram_path") and Path(a["spectrogram_path"]).exists():
                 f = a["facts"]
                 self.scope_name.setText(row_data(j, a, self.steps)["title"])
-                self.scope.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"))
+                self.scope.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
+                                    audio=_audio_path(j), duration_s=f.get("duration_s"))
                 self.fact_vals["Format"].setText((f.get("container") or "?").upper())
                 self.fact_vals["Bitrate"].setText(_bitrate(f))
                 self.fact_vals["Rate"].setText(f"{f['sample_rate_hz'] / 1000:g} kHz" if f.get("sample_rate_hz") else "?")
@@ -186,7 +201,8 @@ def _bitrate(f: dict) -> str:
 
 
 # ------------------------------------------------------------------ search results
-MAX_ROWS = 400
+MAX_ROWS = 400          # kept for callers; the list now pages
+PAGE_ROWS = 100
 
 
 class SearchPage(QWidget):
@@ -222,8 +238,18 @@ class SearchPage(QWidget):
         for i, w in enumerate(self.WIDTHS):
             self.tree.setColumnWidth(i, w)
         self.tree.itemDoubleClicked.connect(lambda *_: self._pick())
-        self.tree.itemSelectionChanged.connect(lambda: self.btn.setEnabled(bool(self.tree.selectedItems())))
+        self.tree.itemSelectionChanged.connect(self._selection)
+        self.tree.itemClicked.connect(self._clicked)
+        self.tree.verticalScrollBar().valueChanged.connect(self._scrolled)
         lay.addWidget(self.tree, 1)
+        # empty-state message sits where the rows would be, not up by the search bar
+        self.empty = label("", "muted", wrap=True); self.empty.setParent(self.tree.viewport())
+        self.empty.setAlignment(Qt.AlignCenter); self.empty.setStyleSheet("font-size: 15px; background: transparent;")
+        self.empty.hide()
+        self._ranked: list[Candidate] = []
+        self._shown = 0
+        self._more_item: QTreeWidgetItem | None = None
+        self.tree.viewport().installEventFilter(self)
         row = hbox(spacing=12)
         self.btn = button("Check this file", "primary", self._pick); self.btn.setEnabled(False)
         row.addWidget(self.btn)
@@ -239,24 +265,47 @@ class SearchPage(QWidget):
         """remote key -> short reason, for sources that already failed us (download errored, rejected, etc.)."""
         self._problems = keys
 
+    def eventFilter(self, obj, ev):
+        if obj is self.tree.viewport() and ev.type() == QEvent.Resize:
+            self.empty.setGeometry(self.tree.viewport().rect().adjusted(40, 0, -40, 0))
+        return False
+
+    def _show_empty(self, text: str):
+        self.empty.setText(text)
+        self.empty.setGeometry(self.tree.viewport().rect().adjusted(40, 0, -40, 0))
+        self.empty.setVisible(bool(text)); self.empty.raise_()
+
     def show_results(self, res: SearchResult, searching: bool):
         n = len(res.candidates)
         self.title.setText(f"{n} source{'s' if n != 1 else ''}")
         if res.error:
-            self.state.setText(res.error)
+            self.state.setText("")
         elif searching:
             self.state.setText("fastest first · still collecting…")
-        elif n == 0:
-            self.state.setText("Nobody online is sharing a match right now. Try fewer words, or try again in a minute.")
         else:
-            self.state.setText("fastest first")
+            self.state.setText("fastest first" if n else "")
+        if n == 0:
+            if res.error:
+                self._show_empty(res.error)
+            elif searching:
+                self._show_empty("Asking around…")
+            else:
+                self._show_empty("Nobody online is sharing a match right now.\nTry fewer words, or try again in a minute.")
+        else:
+            self._show_empty("")
         selected = self.tree.selectedItems()
-        keep = selected[0].data(0, Qt.UserRole).key if selected else None
-        ranked = sorted(res.candidates, key=_rank)[:MAX_ROWS]
-        if len(res.candidates) > MAX_ROWS:
-            self.state.setText(self.state.text() + f" · showing the best {MAX_ROWS}")
+        keep = selected[0].data(0, Qt.UserRole).key if selected and isinstance(selected[0].data(0, Qt.UserRole), Candidate) else None
+        self._ranked = sorted(res.candidates, key=_rank)
+        # keep whatever the user has already scrolled open, at least one page
+        want = max(PAGE_ROWS, min(self._shown, len(self._ranked)))
+        self._fill(want, keep)
+
+    def _fill(self, count: int, keep=None):
         self.tree.setUpdatesEnabled(False)
         self.tree.clear()
+        self._more_item = None
+        ranked = self._ranked[:count]
+        self._shown = len(ranked)
         items = []
         for i, c in enumerate(ranked):
             it = QTreeWidgetItem([
@@ -268,7 +317,6 @@ class SearchPage(QWidget):
             it.setToolTip(1, c.display_name)
             problem = getattr(self, "_problems", {}).get(c.key)
             if problem:
-                from PySide6.QtGui import QColor
                 red = QColor(T.colours(self._theme())["fail"])
                 for col in range(self.tree.columnCount()):
                     it.setForeground(col, red)
@@ -279,14 +327,46 @@ class SearchPage(QWidget):
                     it.setForeground(col, self.palette().mid())
             items.append(it)
         self.tree.addTopLevelItems(items)
+        left = len(self._ranked) - self._shown
+        if left > 0:
+            more = QTreeWidgetItem([""] * len(self.COLS))
+            more.setText(1, f"Load {min(PAGE_ROWS, left)} more  ({left} further down the list)")
+            more.setData(0, Qt.UserRole, "more")
+            more.setFlags(more.flags() & ~Qt.ItemIsSelectable)
+            more.setForeground(1, QColor(T.colours(self._theme())["accent"]))
+            font = more.font(1); font.setBold(True); more.setFont(1, font)
+            more.setFirstColumnSpanned(True) if hasattr(more, "setFirstColumnSpanned") else None
+            self.tree.addTopLevelItem(more)
+            self._more_item = more
         for it in items:
-            if it.data(0, Qt.UserRole).key == keep:
+            if keep is not None and it.data(0, Qt.UserRole).key == keep:
                 it.setSelected(True); break
         self.tree.setUpdatesEnabled(True)
 
+    def load_more(self):
+        if self._shown < len(self._ranked):
+            selected = self.tree.selectedItems()
+            keep = selected[0].data(0, Qt.UserRole).key if selected and isinstance(selected[0].data(0, Qt.UserRole), Candidate) else None
+            at = self.tree.verticalScrollBar().value()
+            self._fill(self._shown + PAGE_ROWS, keep)
+            self.tree.verticalScrollBar().setValue(at)
+
+    def _clicked(self, item, _col):
+        if item is self._more_item:
+            self.load_more()
+
+    def _scrolled(self, value: int):
+        bar = self.tree.verticalScrollBar()
+        if self._more_item is not None and bar.maximum() > 0 and value >= bar.maximum():
+            self.load_more()
+
+    def _selection(self):
+        items = self.tree.selectedItems()
+        self.btn.setEnabled(bool(items) and isinstance(items[0].data(0, Qt.UserRole), Candidate))
+
     def _pick(self):
         items = self.tree.selectedItems()
-        if items:
+        if items and isinstance(items[0].data(0, Qt.UserRole), Candidate):
             self.pick.emit(items[0].data(0, Qt.UserRole))
 
 
@@ -314,6 +394,8 @@ class ReviewPage(QWidget):
     cancel = Signal(str)
     rerun = Signal(str)
     open_folder = Signal(str)
+    reveal = Signal(str)
+    remove_job = Signal(str)
     select = Signal(str)
 
     def __init__(self, svc: ArchiveService):
@@ -370,18 +452,21 @@ class ReviewPage(QWidget):
         det.addWidget(self.checks_host)
         det.addStretch(1)
 
-        actions = hbox(spacing=10)
+        self.actions_host = QWidget(); actions = hbox(self.actions_host, spacing=10)
         self.btn_save = button("Download to Library", "primary", lambda: self.promote.emit(self.job_id, False))
         self.btn_anyway = button("Download anyway", "primary", lambda: self.promote.emit(self.job_id, True))
         self.btn_delete = button("Delete", "danger", lambda: self.reject.emit(self.job_id))
         self.btn_cancel = button("Cancel download", "ghost", lambda: self.cancel.emit(self.job_id))
         self.btn_rerun = button("Re-check", "ghost", lambda: self.rerun.emit(self.job_id))
         self.btn_open = button("Open folder", "ghost", lambda: self.open_folder.emit(self.job_id))
-        for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel):
+        self.btn_reveal = button("Show in folder", "ghost", lambda: self.reveal.emit(self.job_id))
+        self.btn_remove = button("Remove from list", "ghost", lambda: self.remove_job.emit(self.job_id))
+        self.btn_remove.setToolTip("Takes it off the queue. Downloaded files stay in your library.")
+        for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel, self.btn_remove):
             actions.addWidget(b)
         actions.addStretch(1)
-        actions.addWidget(self.btn_rerun); actions.addWidget(self.btn_open)
-        det.addLayout(actions)
+        actions.addWidget(self.btn_rerun); actions.addWidget(self.btn_reveal); actions.addWidget(self.btn_open)
+        det.addWidget(self.actions_host)
         dw = QWidget(); dw.setLayout(det)
         body.addWidget(dw, 3)
         self.show_job(None, None)
@@ -391,15 +476,19 @@ class ReviewPage(QWidget):
             item = self.rail.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        shown = [j for j in jobs if j["state"] not in J.FINAL or j["id"] == self.job_id]
+        shown = jobs
         self.rail_count.setText(str(sum(1 for j in shown if j["state"] == J.READY)))
         for j in shown:
             d = row_data(j, analyses.get(j["id"]), steps)
             w = QWidget(); w.setObjectName("row"); w.setCursor(Qt.PointingHandCursor); w.setProperty("tag", d["tag"])
-            hl = hbox(w, (10, 9, 10, 9), 12)
+            hl = hbox(w, (10, 9, 6, 9), 12)
             t = label(d["tag"].upper(), "tag", d["tag"]); t.setFixedWidth(56)
             n = label(d["title"]); n.setStyleSheet("font-weight: 600;"); n.setToolTip(d["title"])
+            n.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)      # long titles clip instead of pushing × off the rail
             hl.addWidget(t); hl.addWidget(n, 1)
+            if d["removable"]:
+                x = button("×", "x", lambda _=False, jid=j["id"]: self.remove_job.emit(jid)); x.setToolTip("Remove from the list")
+                hl.addWidget(x)
             for x in (t, n):
                 x.setAttribute(Qt.WA_TransparentForMouseEvents)
             w.mouseReleaseEvent = lambda e, jid=j["id"]: self.select.emit(jid)
@@ -408,7 +497,7 @@ class ReviewPage(QWidget):
 
     def show_job(self, job: dict | None, a: dict | None, steps: dict[str, str] | None = None):
         self.job_id = job["id"] if job else None
-        for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel, self.btn_rerun, self.btn_open):
+        for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel, self.btn_rerun, self.btn_open, self.btn_reveal, self.btn_remove):
             b.setVisible(bool(job))
         while self.checks.count():
             item = self.checks.takeAt(0)
@@ -448,7 +537,8 @@ class ReviewPage(QWidget):
             dec_ok = a.get("decode_ok") and next((c for c in a["checks"] if c["id"] == "decode"), {}).get("status") != "FAIL"
             self.facts["Plays"].setText("–" if played is None else ("All the way" if dec_ok else f"Stops at {fmt_time(played)}"))
             if a.get("spectrogram_path") and Path(a["spectrogram_path"]).exists():
-                self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"))
+                self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
+                                       audio=_audio_path(job), duration_s=f.get("duration_s"))
             else:
                 self.spectrum.clear_view("Spectrogram unavailable." if job["state"] not in J.FINAL else "Staged copy removed.")
             cut = a.get("cutoff_hz")
@@ -474,9 +564,14 @@ class ReviewPage(QWidget):
         self.btn_save.setVisible(ready and status == "PASS")
         self.btn_anyway.setVisible(ready and status == "WARN")
         self.btn_cancel.setVisible(job["state"] == J.QUEUED)
-        self.btn_delete.setVisible(job["state"] != J.QUEUED); self.btn_delete.setEnabled(job["state"] in (J.READY, J.ERROR))
+        finished = job["state"] in J.FINAL
+        self.btn_delete.setVisible(job["state"] != J.QUEUED and not finished); self.btn_delete.setEnabled(job["state"] in (J.READY, J.ERROR))
+        self.btn_remove.setVisible(finished)
         self.btn_rerun.setEnabled(job["state"] in (J.READY, J.ERROR) and bool(job["staged_path"]))
-        self.btn_open.setText("Show in library" if job["state"] == J.PROMOTED else "Open folder")
+        done = job["state"] == J.PROMOTED and bool(job.get("final_path")) and Path(job["final_path"]).exists()
+        self.btn_reveal.setVisible(done)
+        self.btn_open.setVisible(not done)
+        self.btn_open.setText("Open folder")
         target = Path(job["final_path"]).parent if job["state"] == J.PROMOTED and job.get("final_path") else \
             (Path(job["staged_path"]).parent if job.get("staged_path") else None)
         self.btn_open.setEnabled(bool(target and target.exists()))

@@ -14,7 +14,30 @@ one line changes and this file gets a note.
 - macOS build with the bundled engine.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
-- Library tab as a browsable history (today it opens the library folder).
+
+## 0.4.0 — unreleased (tour, library, playback)
+
+- Build artifacts carry the version: `DEADWAX-0.4.0-Windows`.
+- First-run tour after sign-up: dimmed overlay, a spotlight on one control at a time, Back / Next,
+  and a small always-visible "Skip tour" in the bottom-right. Click inside the spotlight to try the
+  control. Replay any time from the avatar menu ("Take the tour").
+- Library tab is now a page: every downloaded track with Title / Artist / Mix / Format / Bitrate /
+  Length / Checked / Added / File, a search box that filters as you type, **Show in folder** (selects
+  the file in Explorer / Finder), Details (opens the track's review page), and Open downloads folder.
+  Files moved or deleted outside the app are shown greyed.
+- The spectrogram is kept after a download, so Library and Details still show it.
+- Queue housekeeping: **Clear finished** (removes every downloaded / deleted / cancelled / errored
+  entry from the list in one go), × on every finished row in the Ready rail, and "Remove from list"
+  on a finished track's review page. Downloaded files always stay in the library.
+- Clicking a queue row opens that exact track in the review page (it always did; the rail now
+  highlights it, and long titles no longer push the × off the edge).
+- **Play** button and playhead on the spectrogram (Home "Last checked" and the review page): press
+  play, the track plays and a white playhead crawls across the picture in time; click anywhere on the
+  picture to jump there; space pauses. Works on quarantined and downloaded tracks.
+- Search results page: "Nobody online is sharing a match" now appears in the results area itself,
+  not in the small line under the search box; the same spot shows the plain-English reason when a
+  search fails. Results page 100 at a time: scroll to the bottom (or click the "Load 100 more" row)
+  to reveal the next page, keeping your scroll position.
 
 ## 0.3.5 — 2026-11-05 (downloads folder)
 

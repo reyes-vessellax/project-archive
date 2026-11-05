@@ -300,8 +300,23 @@ class ArchiveService:
             self.db.update_job(job_id, state=J.PROMOTED, final_path=str(target),
                                disposition="promoted_override" if status == WARN else "promoted")
             self.db.event(job_id, "promoted", str(target))
+            self._keep_spectrogram(job_id, analysis)        # the library page keeps showing it after staging is gone
             shutil.rmtree(staged.parent, ignore_errors=True)
             return target
+
+    def _keep_spectrogram(self, job_id: str, analysis: dict) -> None:
+        src = analysis.get("spectrogram_path")
+        if not src or not Path(src).exists():
+            return
+        keep_dir = self.db.path.parent / "spectrograms"
+        try:
+            keep_dir.mkdir(parents=True, exist_ok=True)
+            dst = keep_dir / f"{job_id}.png"
+            shutil.copyfile(src, dst)
+            analysis["spectrogram_path"] = str(dst)
+            self.db.save_analysis(job_id, analysis)
+        except OSError:
+            pass
 
     def reject(self, job_id: str) -> None:
         with self._lock:
@@ -389,6 +404,14 @@ class ArchiveService:
         if job["state"] == J.ERROR:
             self._remove_staging(job)                       # an errored track's staged copy goes too
         self.db.update_job(job_id, hidden=1)
+
+    def hide_finished(self) -> int:
+        """Remove every finished entry (downloaded, deleted, cancelled, expired, errored) from the queue panel."""
+        n = 0
+        for job in self.db.jobs(include_hidden=False):
+            if job["state"] in J.FINAL or job["state"] == J.ERROR:
+                self.hide(job["id"]); n += 1
+        return n
 
     # helpers --------------------------------------------------------------------------
     def jobs(self) -> list[dict]:

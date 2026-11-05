@@ -23,8 +23,10 @@ from ..core.service import ActionBlocked, ArchiveService
 from ..media.tools import ToolMissing, find_tool
 from . import theme as T
 from .onboarding import Onboarding
-from .pages import HomePage, ReviewPage, SearchPage
+from .pages import HomePage, ReviewPage, SearchPage, row_data
+from .library_page import LibraryPage, reveal_in_folder
 from .settings_page import SettingsPage
+from .tour import TourOverlay, default_steps
 from .widgets import AvatarMenu, Signals, Task, TopBar, vbox
 
 SEARCH_WAIT_S = 15            # hard cap on collecting results (matches the engine's own search timeout)
@@ -104,9 +106,13 @@ class MainWindow(QMainWindow):
         sl.addWidget(self.topbar)
         self.pages = QStackedWidget(); sl.addWidget(self.pages, 1)
         self.home = HomePage(self.svc); self.searchp = SearchPage(self.svc); self.review = ReviewPage(self.svc)
-        self.settings = SettingsPage(self.svc)
-        for p in (self.home, self.searchp, self.review, self.settings):
+        self.settings = SettingsPage(self.svc); self.library = LibraryPage(self.svc)
+        for p in (self.home, self.searchp, self.review, self.settings, self.library):
             self.pages.addWidget(p)
+        self.library.open_job.connect(self._open_job)
+        self.home.clear_finished.connect(self._clear_finished)
+        self.review.remove_job.connect(self._remove_entry)
+        self.review.reveal.connect(self._reveal)
         self.root.addWidget(shell); self.shell = shell
 
         self.home.search.connect(self._search); self.searchp.search.connect(self._search)
@@ -142,6 +148,7 @@ class MainWindow(QMainWindow):
             self._connect_deadline = time.monotonic() + 90
         else:
             self.root.setCurrentWidget(self.shell)
+            self._maybe_start_tour()
         if not self._backend_started:
             self._backend_started = True
             QTimer.singleShot(0, self._start_backend)
@@ -159,15 +166,13 @@ class MainWindow(QMainWindow):
         if key == "queue":
             self.pages.setCurrentWidget(self.home)
         elif key == "ready":
-            if not self.selected:
-                self.selected = next((j["id"] for j in self.svc.jobs() if j["state"] == J.READY), None)
+            if not self.selected or not self.svc.db.job(self.selected):
+                self.selected = next((j["id"] for j in self.svc.jobs() if j["state"] == J.READY), None) or \
+                                (self._jobs[0]["id"] if self._jobs else None)
             self._show_review()
         elif key == "library":
-            lib = self.svc.settings.downloads_dir()
-            if not lib.exists():                                  # nothing downloaded yet: show the library itself
-                lib = Path(self.svc.settings.library_dir)
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(lib)))
-            self.topbar.set_active("queue" if self.pages.currentWidget() is self.home else "ready")
+            self.library.refresh()
+            self.pages.setCurrentWidget(self.library)
 
     def _menu(self):
         menu = AvatarMenu(self)                           # built on click, destroyed on close
@@ -180,11 +185,43 @@ class MainWindow(QMainWindow):
             self.pages.setCurrentWidget(self.settings); self.topbar.set_active("")
         elif key == "help":
             QDesktopServices.openUrl(QUrl(SUPPORT_URL))
+        elif key == "tour":
+            self._start_tour()
         elif key == "whatsnew":
             QMessageBox.information(self, APP_NAME, "0.3: new look, light and dark; sign-up and your account page; "
                                     "search results with Title, Mix and Artist; fastest sources first.")
         elif key == "signout":
             self._sign_out()
+
+    # ---------------------------------------------------------------- tour
+    def _start_tour(self):
+        if getattr(self, "_tour", None):
+            return
+        self._tab("queue")
+        self._tour = TourOverlay(self, default_steps(), self._tour_navigate)
+        self._tour.finished.connect(self._tour_finished)
+
+    def _tour_navigate(self, page: str):
+        if page == "ready":
+            if not self.selected:
+                self.selected = next((j["id"] for j in self._jobs if j["state"] == J.READY), None) or \
+                                (self._jobs[0]["id"] if self._jobs else None)
+            self._show_review(); self.topbar.set_active("ready")
+        elif page == "settings":
+            self.pages.setCurrentWidget(self.settings); self.topbar.set_active("")
+        else:
+            self._tab("queue")
+
+    def _tour_finished(self, completed: bool):
+        self._tour = None
+        s = self.svc.settings; s.tour_done = True; self.svc.save_settings(s)
+        self._tab("queue")
+        self.statusBar().showMessage("You can replay the tour any time from your avatar menu." if not completed else
+                                     "Tour finished. Happy digging.", 6000)
+
+    def _maybe_start_tour(self):
+        if not self.svc.settings.tour_done and self.root.currentWidget() is self.shell:
+            QTimer.singleShot(400, self._start_tour)
 
     def _sign_out(self):
         self.onboarding.setCurrentWidget(self.onboarding.signin if self.svc.accounts.load() else self.onboarding.signup)
@@ -225,6 +262,8 @@ class MainWindow(QMainWindow):
         self.topbar.set_counts(active, ready)
         if self.pages.currentWidget() is self.review:
             self._refresh_review()
+        elif self.pages.currentWidget() is self.library:
+            self.library.refresh()
 
     def _refresh_review(self):
         job = self.svc.db.job(self.selected) if self.selected else None
@@ -232,11 +271,35 @@ class MainWindow(QMainWindow):
         self.review.set_rail(self._jobs, self._analyses, self.steps)
         self.review.show_job(job, a, self.steps)
 
+    def _clear_finished(self):
+        n = self.svc.hide_finished()
+        if self.selected and not self.svc.db.job(self.selected) or (self.selected and self.svc.db.job(self.selected).get("hidden")):
+            self.selected = None
+        self.refresh()
+        self.statusBar().showMessage(f"Cleared {n} finished track{'s' if n != 1 else ''} from the list.", 4000)
+
+    def _reveal(self, job_id: str):
+        job = self.svc.db.job(job_id)
+        if job and job.get("final_path") and Path(job["final_path"]).exists():
+            reveal_in_folder(Path(job["final_path"]))
+
     def _remove_entry(self, job_id: str):
+        """× on a queue row. Finished entries just leave the list; a checked track is deleted from quarantine."""
+        job = self.svc.db.job(job_id)
+        if not job:
+            return
         try:
-            self.svc.hide(job_id)
+            if job["state"] == J.READY:
+                name = row_data(job, self._analyses.get(job_id), self.steps)["title"]
+                if QMessageBox.question(self, APP_NAME, f"Delete “{name}” from quarantine? It hasn't been saved to your "
+                                        f"library.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                    return
+                self.svc.reject(job_id)
+                self.svc.hide(job_id)
+            else:
+                self.svc.hide(job_id)
         except ActionBlocked as e:
-            QMessageBox.warning(self, APP_NAME, str(e)); return
+            self.statusBar().showMessage(str(e), 6000); return
         if self.selected == job_id:
             self.selected = None
         self.refresh()
@@ -323,6 +386,7 @@ class MainWindow(QMainWindow):
                 self.root.setCurrentWidget(self.shell)
                 if self._connected:
                     self.io.start(Task(self.svc.engine_housekeeping, self.signals))   # clear leftovers from last run
+                self._maybe_start_tour()
                 if failed:
                     self._connection_trouble()
                 elif timed_out and not self._connected:

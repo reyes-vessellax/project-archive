@@ -118,6 +118,8 @@ QPushButton#danger:hover {{ border-color: {c['fail']}; }}
 QPushButton#link {{ background: none; border: none; color: {c['text']}; font-weight: 600; font-size: 13px; min-height: 0; padding: 4px 0; text-align: left; }}
 QPushButton#link:hover {{ color: {c['muted']}; }}
 QPushButton#small {{ min-height: 30px; padding: 0 12px; font-size: 12px; border-radius: 15px; background: {c['text']}; color: {c['on_text']}; border: none; }}
+QPushButton#play {{ background: {c['accent']}; color: {c['accent_text']}; border: none; border-radius: 13px; font-size: 10px; padding: 0; min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; }}
+QPushButton#play:hover {{ background: {c['text']}; color: {c['bg']}; }}
 QPushButton#x {{ min-height: 0; padding: 0; border: none; background: none; color: {c['faint']}; font-size: 15px; font-weight: 500; min-width: 18px; max-width: 18px; max-height: 18px; }}
 QPushButton#x:hover {{ color: {c['fail']}; }}
 QPushButton#navitem {{ background: none; border: none; border-radius: 8px; text-align: left; padding: 9px 12px; min-height: 0; color: {c['muted']}; font-weight: 600; font-size: 14px; }}

@@ -30,6 +30,7 @@ args = [
     "--distpath", "dist",
     "--workpath", "build",
     "--specpath", ".",
+    "--hidden-import", "PySide6.QtMultimedia",
 ]
 if Path("vendor/ffmpeg").is_dir():
     args += ["--add-data", f"{os.path.join('vendor', 'ffmpeg')}{os.pathsep}ffmpeg"]

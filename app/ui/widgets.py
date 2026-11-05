@@ -1,8 +1,10 @@
 """Reusable pieces of the v5 interface. No file or engine work happens here."""
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QPoint, QRunnable, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from pathlib import Path
+
+from PySide6.QtCore import QUrl, QObject, QPoint, QRunnable, Qt, Signal
+from PySide6.QtGui import QPen, QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QVBoxLayout, QWidget)
 
@@ -180,7 +182,8 @@ class AvatarMenu(QFrame):
         lay.addWidget(rule())
         self.appearance = None
         for key, text in (("account", "Account & profile"), ("settings", "Settings"), ("appearance", "Appearance"),
-                          (None, None), ("help", "Help & FAQ"), ("whatsnew", "What's new"), (None, None), ("signout", "Sign out")):
+                          (None, None), ("help", "Help & FAQ"), ("tour", "Take the tour"), ("whatsnew", "What's new"),
+                          (None, None), ("signout", "Sign out")):
             if key is None:
                 lay.addWidget(rule()); continue
             b = button(text, "menuitem", lambda _=False, k=key: (self.close(), self.picked.emit(k)))
@@ -228,16 +231,17 @@ class QueueRow(QWidget):
         lay.addWidget(self.bar)
         self.meta = label(meta, "mono"); self.meta.setFixedWidth(120); self.meta.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lay.addWidget(self.meta)
-        self.x = button("×", "x", lambda: self.removed.emit(self.job_id)); self.x.setToolTip("Remove from the list")
+        self.x = button("×", "x", lambda: self.removed.emit(self.job_id))
+        self.x.setToolTip("Remove from the list" if tag in ("Done", "Gone", "Error") else "Delete this track from quarantine")
         self.x.setVisible(removable)
         lay.addWidget(self.x)
         for w in (self.tag, self.title, self.artist, self.meta, self.bar):
             w.setAttribute(Qt.WA_TransparentForMouseEvents)
 
-    def mouseReleaseEvent(self, e):
-        if e.button() == Qt.LeftButton:
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton and not self.x.geometry().contains(e.pos()):
             self.clicked.emit(self.job_id)
-        super().mouseReleaseEvent(e)
+        super().mousePressEvent(e)
 
     def set_selected(self, on: bool) -> None:
         self.setProperty("selected", "true" if on else "false")
@@ -246,8 +250,11 @@ class QueueRow(QWidget):
 
 # ------------------------------------------------------------------ spectrogram
 class SpectrumView(QLabel):
-    """The PNG from the analysis with a kHz axis and the cutoff line, drawn in the theme's accent."""
+    """The PNG from the analysis with a kHz axis and the cutoff line, drawn in the theme's accent.
+    When given the audio file, a small play button appears: press it and a playhead crawls across the
+    spectrogram while the track plays. Click anywhere on the picture to jump there."""
     AXIS = 44
+    BAR = 34                      # bottom strip: play control + time
 
     def __init__(self, min_height: int = 180):
         super().__init__()
@@ -257,33 +264,137 @@ class SpectrumView(QLabel):
         self._nyq = 22050
         self._cutoff = None
         self._accent = "#d2721e"
+        self._audio: str | None = None
+        self._duration_ms = 0
+        self._player = None
+        self._out = None
+        self.play_btn = QPushButton("▶", self); self.play_btn.setObjectName("play"); self.play_btn.setCursor(Qt.PointingHandCursor)
+        self.play_btn.setFixedSize(26, 26); self.play_btn.clicked.connect(self.toggle); self.play_btn.hide()
+        self.play_btn.setToolTip("Play (space)")
         self.clear_view("")
 
+    # ---------------------------------------------------------------- content
     def set_accent(self, colour: str) -> None:
         self._accent = colour
         self.update()
 
     def clear_view(self, text: str):
-        self._pix = None
+        self.stop()
+        self._pix = None; self._audio = None
         self.setText(text)
         self.setObjectName("faint")
+        self.play_btn.hide()
         self.update()
 
-    def show_png(self, path: str, sample_rate: int, cutoff_hz: float | None):
+    def show_png(self, path: str, sample_rate: int, cutoff_hz: float | None, audio: str | None = None,
+                 duration_s: float | None = None):
         pix = QPixmap(path)
         if pix.isNull():
             self.clear_view("Spectrogram unavailable.")
             return
+        if audio != self._audio:
+            self.stop()
         self._pix, self._nyq, self._cutoff = pix, (sample_rate or 44100) / 2, cutoff_hz
+        self._audio = audio if audio and Path(audio).exists() else None
+        self._duration_ms = int((duration_s or 0) * 1000)
         self.setText("")
+        self.play_btn.setVisible(self._audio is not None)
+        self._place_button()
         self.update()
 
+    # ---------------------------------------------------------------- playback
+    def _ensure_player(self) -> bool:
+        if self._player is not None:
+            return True
+        try:
+            from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+            self._out = QAudioOutput(self)
+            self._player = QMediaPlayer(self)
+            self._player.setAudioOutput(self._out)
+            self._player.positionChanged.connect(lambda _: self.update())
+            self._player.durationChanged.connect(self._got_duration)
+            self._player.playbackStateChanged.connect(self._state_changed)
+            self._player.errorOccurred.connect(lambda *_: self._state_changed())
+            return True
+        except Exception:
+            self._player = None
+            return False
+
+    def _got_duration(self, ms: int):
+        if ms > 0:
+            self._duration_ms = ms
+        self.update()
+
+    def _state_changed(self, *_):
+        playing = self.is_playing()
+        self.play_btn.setText("❚❚" if playing else "▶")
+        self.play_btn.setToolTip("Pause (space)" if playing else "Play (space)")
+        self.update()
+
+    def is_playing(self) -> bool:
+        if self._player is None:
+            return False
+        from PySide6.QtMultimedia import QMediaPlayer
+        return self._player.playbackState() == QMediaPlayer.PlayingState
+
+    def toggle(self):
+        if not self._audio or not self._ensure_player():
+            return
+        if self.is_playing():
+            self._player.pause(); return
+        if self._player.source().toLocalFile() != self._audio:
+            self._player.setSource(QUrl.fromLocalFile(self._audio))
+        self._player.play()
+
+    def stop(self):
+        if self._player is not None:
+            self._player.stop()
+            self._player.setSource(QUrl())
+        self.update()
+
+    def position_ms(self) -> int:
+        return self._player.position() if self._player is not None else 0
+
+    def seek_fraction(self, f: float):
+        if not self._audio or not self._ensure_player() or self._duration_ms <= 0:
+            return
+        if self._player.source().toLocalFile() != self._audio:
+            self._player.setSource(QUrl.fromLocalFile(self._audio))
+        self._player.setPosition(int(max(0.0, min(1.0, f)) * self._duration_ms))
+        if not self.is_playing():
+            self._player.play()
+
+    # ---------------------------------------------------------------- geometry
+    def _image_rect(self):
+        return self.rect().adjusted(self.AXIS, 2, -2, -self.BAR)
+
+    def _place_button(self):
+        self.play_btn.move(self.AXIS, self.height() - self.BAR + (self.BAR - self.play_btn.height()) // 2 + 3)
+        self.play_btn.raise_()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._place_button()
+
+    def mousePressEvent(self, e):
+        r = self._image_rect()
+        if self._pix is not None and self._audio and r.contains(e.pos()) and r.width() > 0:
+            self.seek_fraction((e.pos().x() - r.left()) / r.width())
+            return
+        super().mousePressEvent(e)
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Space and self._audio:
+            self.toggle(); return
+        super().keyPressEvent(e)
+
+    # ---------------------------------------------------------------- painting
     def paintEvent(self, e):
         if self._pix is None:
             return super().paintEvent(e)
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        r = self.rect().adjusted(self.AXIS, 2, -2, -16)
+        r = self._image_rect()
         p.drawPixmap(r, self._pix)
         faint = self.palette().text().color(); faint.setAlpha(140)
         p.setPen(faint)
@@ -298,7 +409,25 @@ class SpectrumView(QLabel):
             p.setPen(QColor("#ffffff"))
             p.fillRect(r.right() - 112, y - 18, 108, 16, QColor(0, 0, 0, 120))
             p.drawText(r.right() - 108, y - 6, f"cutoff {self._cutoff / 1000:.1f} kHz")
+        # playhead
+        pos = self.position_ms()
+        if self._audio and self._duration_ms > 0 and (pos > 0 or self.is_playing()):
+            x = r.left() + int(r.width() * min(1.0, pos / self._duration_ms))
+            pen = QPen(QColor("#ffffff")); pen.setWidth(2); p.setPen(pen)
+            p.drawLine(x, r.top(), x, r.bottom())
+            p.setBrush(QColor("#ffffff")); p.setPen(Qt.NoPen)
+            p.drawPolygon([QPoint(x - 5, r.top()), QPoint(x + 5, r.top()), QPoint(x, r.top() + 7)])
         p.setPen(faint)
-        p.drawText(r.left(), self.height() - 3, "0:00")
-        p.drawText(r.right() - 36, self.height() - 3, "time →")
+        base = self.height() - self.BAR // 2 + 7
+        time_x = r.left() + (self.play_btn.width() + 10 if self.play_btn.isVisible() else 0)
+        if self._audio and self._duration_ms > 0:
+            p.drawText(time_x, base, f"{_mmss(pos)} / {_mmss(self._duration_ms)}")
+        else:
+            p.drawText(time_x, base, "0:00")
+        p.drawText(r.right() - 36, base, "time →")
         p.end()
+
+
+def _mmss(ms: int) -> str:
+    s = max(0, int(ms // 1000))
+    return f"{s // 60}:{s % 60:02d}"

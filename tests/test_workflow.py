@@ -182,3 +182,22 @@ def test_library_named_after_app_is_not_nested(service, tmp_path):
     from app.config import APP_NAME
     s = service.settings; s.library_dir = str(tmp_path / APP_NAME); service.save_settings(s)
     assert service.settings.downloads_dir() == tmp_path / APP_NAME
+
+
+@needs_ffmpeg
+def test_clear_finished_hides_only_finished(service, fixtures):
+    a = service.stage(fixtures["mp3_320"]); service.analyze(a["id"]); service.promote(a["id"])
+    b = service.stage(fixtures["mp3_320"]); service.analyze(b["id"])                 # still waiting for a decision
+    assert service.hide_finished() == 1
+    ids = {j["id"] for j in service.jobs()}
+    assert b["id"] in ids and a["id"] not in ids
+    assert service.db.job(a["id"])["state"] == J.PROMOTED                            # history intact; library page still lists it
+
+
+@needs_ffmpeg
+def test_promote_keeps_spectrogram(service, fixtures):
+    a = service.stage(fixtures["mp3_320"]); service.analyze(a["id"])
+    before = service.db.analysis(a["id"])["spectrogram_path"]
+    service.promote(a["id"], override_warning=True)
+    after = service.db.analysis(a["id"])["spectrogram_path"]
+    assert after != before and Path(after).exists() and not Path(before).exists()

@@ -9,6 +9,7 @@ from pathlib import Path
 # The product name, in ONE place. "DEADWAX" is a placeholder until the real name is chosen; every
 # visible use of the name reads this constant (window title, dialogs, bundled engine, data folder).
 APP_NAME = "DEADWAX"
+APP_VERSION = "0.4.0"                     # keep in step with pyproject.toml; the build names the artifact with it
 PREVIOUS_NAMES = ("Project Archive",)      # earlier placeholder; existing installs are migrated from it
 
 
@@ -60,6 +61,7 @@ class Settings:
     theme: str = "light"                      # light | dark
     firewall_notice_shown: bool = False       # legacy flag (0.2/0.3.0-0.3.3); kept so old settings still load
     firewall_done_for: str = ""               # engine path we last confirmed a firewall rule for (or the user declined)
+    tour_done: bool = False                   # first-launch walkthrough finished or skipped
     share_folder: str = ""                    # opt-in: a folder to share back on Soulseek (empty = off)
     # Advanced only. By default the app runs its own bundled copy of slskd (the Soulseek engine) with a
     # generated API key and a generated Soulseek login; the user never sees any of it.

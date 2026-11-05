@@ -21,6 +21,7 @@ def self_test() -> int:
                 raise RuntimeError(f"{tool} didn't run")
             say(f"{tool} -> {exe}")
         import app.ui.main_window  # noqa: F401  (imports Qt and the whole UI)
+        say("audio playback: " + _audio_probe(exe_ffmpeg=find_tool("ffmpeg")))
         # The bundled Soulseek engine: generate a throwaway config, start it, make sure the API answers, stop it.
         import tempfile
         from pathlib import Path
@@ -56,6 +57,34 @@ def self_test() -> int:
     say("self-test ok")
     log.close()
     return 0
+
+
+def _audio_probe(exe_ffmpeg: str) -> str:
+    """Can the bundled Qt play a file? Non-fatal: build machines usually have no sound device, but the
+    media backend must at least load and report, never crash."""
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    try:
+        from PySide6.QtCore import QEventLoop, QTimer, QUrl
+        from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance() or QApplication([])
+        dev = QMediaDevices.defaultAudioOutput()
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "probe.mp3"
+            subprocess.run([exe_ffmpeg, "-v", "error", "-f", "lavfi", "-i", "sine=f=440:d=3", "-c:a", "libmp3lame",
+                            "-b:a", "128k", str(f)], check=True, timeout=60)
+            out = QAudioOutput(); player = QMediaPlayer(); player.setAudioOutput(out)
+            player.setSource(QUrl.fromLocalFile(str(f))); player.play()
+            loop = QEventLoop(); QTimer.singleShot(1500, loop.quit); loop.exec()
+            pos, err = player.position(), player.errorString()
+            player.stop()
+        return f"device={'none' if dev.isNull() else dev.description()!r} position_after_1.5s={pos}ms error={err!r}"
+    except Exception as e:                                  # noqa: BLE001
+        return f"backend unavailable: {e}"
 
 
 if __name__ == "__main__":

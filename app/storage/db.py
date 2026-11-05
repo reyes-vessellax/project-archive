@@ -57,6 +57,7 @@ def now() -> str:
 
 class Database:
     def __init__(self, path: Path):
+        self.path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._con = sqlite3.connect(str(path), check_same_thread=False)

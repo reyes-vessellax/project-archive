@@ -76,6 +76,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
           python packaging/build.py
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (python -c "from app.config import APP_VERSION; print(APP_VERSION)")
+          "version=$v" >> $env:GITHUB_OUTPUT
       - name: Smoke test the built app
         shell: pwsh
         run: |
@@ -85,6 +91,6 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "self-test failed with exit code $($p.ExitCode)" }
       - uses: actions/upload-artifact@v4
         with:
-          name: DEADWAX-Windows
+          name: DEADWAX-${{ steps.ver.outputs.version }}-Windows
           path: dist/DEADWAX/
           retention-days: 30
