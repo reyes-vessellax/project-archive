@@ -25,6 +25,18 @@ accounts that search that often, and the engine was carrying every past search's
 - A new query first removes the previous query's searches from the engine, finished or not.
 - Per-rung timing (rows, users, seconds to finish) goes to `app.log` so slow sessions can be read.
 
+## 0.5.8 — unreleased (no more jumping lists)
+
+- The "elements skip" after an action: three lists were rebuilt from scratch on every poll tick and
+  reset their scroll to the top — the Ready rail (every 1–2 s, whether or not anything changed), the
+  queue list, and the Library (which also re-opened its drop-down with the slide animation and scrolled
+  the clicked row to the top). Now: the rail rebuilds only when its rows actually change (a selection
+  change just moves the highlight), every rebuild keeps the scroll position, the Library keeps its
+  position and re-mounts the open panel without animating, and opening a panel no longer scrolls the
+  list — it only brings the panel into view if it's off-screen.
+- 0.5.7 search numbers logged in `docs/SEARCH_TEST_CASES.md`: every "none found" name now returns
+  thousands of rows in 6–8 s.
+
 ## 0.5.7 — unreleased
 
 - Tighter timings: a search can be stopped from 3 s (was 4) after 2.5 s of quiet (was 3), so popular

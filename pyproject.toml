@@ -1,6 +1,6 @@
 [project]
 name = "project-archive"
-version = "0.5.7"
+version = "0.5.8"
 description = "DJ audio preflight: stage a track, inspect its real format and spectrum, then keep or reject it."
 requires-python = ">=3.12"
 dependencies = ["PySide6==6.12.0", "numpy>=2.1", "keyring>=25"]

@@ -15,7 +15,7 @@ from ..core import jobs as J
 from ..core.rules import fmt_time
 from ..core.service import ArchiveService
 from . import theme as T
-from .widgets import smooth, QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
+from .widgets import keep_scroll, smooth, QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
 
 
 # ------------------------------------------------------------------ shared: a job -> row data
@@ -100,7 +100,7 @@ class HomePage(QWidget):
         qcol.addLayout(head)
         self.list_host = QWidget(); self.list_host.setObjectName("page")
         self.list = vbox(self.list_host, spacing=0); self.list.addStretch(1)
-        qcol.addWidget(scroll(self.list_host), 1)
+        self.list_scroll = scroll(self.list_host); qcol.addWidget(self.list_scroll, 1)
         self.empty = label("Nothing in the queue. Search above, or drop tracks onto the window.", "faint", wrap=True)
         qcol.addWidget(self.empty)
         qw = QWidget(); qw.setLayout(qcol); qw.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -149,20 +149,22 @@ class HomePage(QWidget):
         prev_tags = getattr(self, "_prev_tags", {})
         changed = {jid for jid, d in rows if jid in prev_tags and prev_tags[jid] != d["tag"]}
         self._prev_tags = {jid: d["tag"] for jid, d in rows}
-        # queue list
-        while self.list.count() > 1:
-            item = self.list.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self.empty.setVisible(not jobs)
-        self.list_host.setUpdatesEnabled(False)
-        for jid, d in rows:
-            row = QueueRow(jid, d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"])
-            row.clicked.connect(self.open_job.emit); row.removed.connect(self.remove_job.emit)
-            self.list.insertWidget(self.list.count() - 1, row)
-            if jid in changed:
-                row.flash()                                   # the blip: this track just moved on
-        self.list_host.setUpdatesEnabled(True)
+        # queue list (rebuilt in place; the scroll position stays where the user left it)
+        def rebuild():
+            while self.list.count() > 1:
+                item = self.list.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            self.empty.setVisible(not jobs)
+            self.list_host.setUpdatesEnabled(False)
+            for jid, d in rows:
+                row = QueueRow(jid, d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"])
+                row.clicked.connect(self.open_job.emit); row.removed.connect(self.remove_job.emit)
+                self.list.insertWidget(self.list.count() - 1, row)
+                if jid in changed:
+                    row.flash()                               # the blip: this track just moved on
+            self.list_host.setUpdatesEnabled(True)
+        keep_scroll(self.list_scroll, rebuild)
         down = sum(1 for j in jobs if j["state"] == J.QUEUED)
         chk = sum(1 for j in jobs if j["state"] in (J.STAGING, J.ANALYZING))
         self.qnote.setText(f"{down} downloading · {chk} checking" if (down or chk) else "newest first")
@@ -504,7 +506,7 @@ class ReviewPage(QWidget):
         rail.addLayout(rh); rail.addSpacing(8)
         self.rail_host = QWidget(); self.rail_host.setObjectName("page")
         self.rail = vbox(self.rail_host, spacing=2); self.rail.addStretch(1)
-        rail.addWidget(scroll(self.rail_host), 1)
+        self.rail_scroll = scroll(self.rail_host); rail.addWidget(self.rail_scroll, 1)
         rail.addWidget(label("↑↓ move · ⏎ download · ⌫ delete", "mono"))
         rw = QWidget(); rw.setLayout(rail); rw.setMinimumWidth(240); rw.setMaximumWidth(300)
         body.addWidget(rw, 1)
@@ -585,12 +587,27 @@ class ReviewPage(QWidget):
         self.btn_delete.setEnabled(not on and self.btn_delete.property("can") is True)
 
     def set_rail(self, jobs: list[dict], analyses: dict[str, dict | None], steps: dict[str, str]):
+        rows = [(j["id"], row_data(j, analyses.get(j["id"]), steps)) for j in jobs]
+        key = tuple((jid, d["tag"], d["title"], d["removable"]) for jid, d in rows)
+        self.rail_count.setText(str(sum(1 for j in jobs if j["state"] == J.READY)))
+        if key == getattr(self, "_rail_key", None):
+            # nothing structural changed: just move the highlight (no rebuild, no scroll jump)
+            for i in range(self.rail.count()):
+                w = self.rail.itemAt(i).widget()
+                if w is not None and w.property("job_id"):
+                    want = "true" if w.property("job_id") == self.job_id else "false"
+                    if w.property("selected") != want:
+                        w.setProperty("selected", want); T.repolish(w)
+            return
+        self._rail_key = key
+        keep_scroll(self.rail_scroll, lambda: self._build_rail(jobs, analyses, steps))
+
+    def _build_rail(self, jobs, analyses, steps):
         while self.rail.count() > 1:
             item = self.rail.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         shown = jobs
-        self.rail_count.setText(str(sum(1 for j in shown if j["state"] == J.READY)))
         for j in shown:
             d = row_data(j, analyses.get(j["id"]), steps)
             w = QWidget(); w.setObjectName("row"); w.setCursor(Qt.PointingHandCursor); w.setProperty("tag", d["tag"])
@@ -607,6 +624,7 @@ class ReviewPage(QWidget):
             for lbl in (t, n):
                 lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
             w.mouseReleaseEvent = lambda e, jid=j["id"]: self.select.emit(jid)
+            w.setProperty("job_id", j["id"])
             w.setProperty("selected", "true" if j["id"] == self.job_id else "false")
             self.rail.insertWidget(self.rail.count() - 1, w)
 

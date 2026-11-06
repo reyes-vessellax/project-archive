@@ -158,6 +158,15 @@ def smooth(area) -> None:
         SmoothWheel(area)
 
 
+def keep_scroll(area, rebuild) -> None:
+    """Rebuild the contents of a scroll area / view without the scroll position jumping to the top."""
+    bar = area.verticalScrollBar()
+    value = bar.value()
+    rebuild()
+    bar.setValue(value)
+    QTimer.singleShot(0, lambda: bar.setValue(value))          # again after the layout has settled
+
+
 def scroll(inner: QWidget) -> QScrollArea:
     s = QScrollArea()
     s.setWidgetResizable(True)

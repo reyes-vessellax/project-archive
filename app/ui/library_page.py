@@ -94,6 +94,7 @@ class LibraryPage(QWidget):
     def _filter(self, text: str):
         words = [w for w in text.lower().split() if w]
         keep = self._open_id
+        scroll_at = self.tree.verticalScrollBar().value()
         self.tree.blockSignals(True)                         # rebuilding isn't a selection change
         self._park_panel()                                   # clear() would delete it with the rows
         self.tree.setSortingEnabled(False)
@@ -135,6 +136,8 @@ class LibraryPage(QWidget):
             self._collapse()
         elif keep and reselected:
             self._mount_panel(self._item_for(keep), animate=False)
+        self.tree.verticalScrollBar().setValue(scroll_at)
+        QTimer.singleShot(0, lambda v=scroll_at: self.tree.verticalScrollBar().setValue(v))
         total = len(self._rows)
         self.sub.setText(f"{shown} of {total} tracks" if words else f"{total} track{'s' if total != 1 else ''}")
         self.empty.setVisible(total == 0)
@@ -243,7 +246,6 @@ class LibraryPage(QWidget):
         self.tree.setItemWidget(child, 0, self.panel)       # parented into the tree first, shown after
         self.panel.show()
         it.setExpanded(True)
-        self.tree.scrollToItem(it, QTreeWidget.PositionAtTop)
         if animate:
             self._anim.start()
         else:
@@ -270,8 +272,8 @@ class LibraryPage(QWidget):
             self.tree.doItemsLayout()
         if nh >= self._grow_target:
             self._anim.stop()
-            if self._child is not None and self._child.parent() is not None:
-                self.tree.scrollToItem(self._child.parent(), QTreeWidget.PositionAtTop)
+            if self._child is not None:
+                self.tree.scrollToItem(self._child, QTreeWidget.EnsureVisible)   # bring the panel into view; no jump to top
 
     def _collapse(self):
         self._park_panel()
