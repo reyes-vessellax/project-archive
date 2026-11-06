@@ -25,6 +25,14 @@ accounts that search that often, and the engine was carrying every past search's
 - A new query first removes the previous query's searches from the engine, finished or not.
 - Per-rung timing (rows, users, seconds to finish) goes to `app.log` so slow sessions can be read.
 
+## 0.5.5 — unreleased (search slowing down over a session)
+
+- Searches got slow by the third or fourth query of a session: the ladder sent four network searches
+  per query and the network throttles accounts that search that often. Now two per query (5 s and
+  40 s), spaced 1.5 s apart, and the previous query's searches are removed from the engine before a new
+  one starts. The typo fallback is one search.
+- Each query's timing goes to `app.log`: rows and users per rung and seconds to first rows.
+
 ## 0.5.4 — unreleased
 
 - macOS builds for **both chips**: `-macOS-AppleSilicon` and `-macOS-Intel` dmgs ("this application is
