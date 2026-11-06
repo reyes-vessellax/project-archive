@@ -16,6 +16,11 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.5.4 — unreleased
+
+- macOS builds for **both chips**: `-macOS-AppleSilicon` and `-macOS-Intel` dmgs ("this application is
+  not supported on this Mac" was the Apple Silicon build on an Intel machine).
+
 ## 0.5.3 — unreleased
 
 - macOS ships as a **.dmg** (open, drag to Applications) instead of a zip; Archive Utility refused the

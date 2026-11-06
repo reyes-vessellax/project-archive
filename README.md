@@ -47,11 +47,11 @@ Everything runs on the user's machine. No uploads, no servers, no telemetry.
 | | Status |
 |---|---|
 | Windows 10/11 (x64) | Test builds on every push; unsigned for now (*More info → Run anyway* once) |
-| macOS (Apple Silicon) | Test builds on every push; ad-hoc signed, not yet notarized (*right-click → Open* once) |
+| macOS (Apple Silicon and Intel) | Test builds on every push, one dmg per chip; ad-hoc signed, not yet notarized (*right-click → Open* once) |
 | Linux | Builds from source; no packaged app yet |
 
 Builds are published as artifacts on **Actions → Test and build → latest green run**:
-`PiedPiper-<version>-Windows` (zip of the app folder) and `PiedPiper-<version>-macOS` (a `.dmg`: open it, drag the app to Applications).
+`PiedPiper-<version>-Windows` (zip of the app folder) and `PiedPiper-<version>-macOS-AppleSilicon` / `-Intel` (a `.dmg`: open it, drag the app to Applications).
 
 ## Architecture (one paragraph)
 

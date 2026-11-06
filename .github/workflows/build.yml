@@ -101,18 +101,30 @@ jobs:
 
   macos-app:
     needs: test
-    runs-on: macos-latest          # Apple Silicon runner; the app is arm64
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest   # Apple Silicon
+            arch: AppleSilicon
+            ffmpeg_arch: arm64
+            slskd_arch: osx-arm64
+          - runner: macos-13       # Intel
+            arch: Intel
+            ffmpeg_arch: amd64
+            slskd_arch: osx-x64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Fetch FFmpeg to bundle (static arm64)
+      - name: Fetch FFmpeg to bundle (static, ${{ matrix.arch }})
         run: |
           set -e
           mkdir -p vendor/ffmpeg dl && cd dl
-          curl -fsSL -o ffmpeg.zip  "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip"
-          curl -fsSL -o ffprobe.zip "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffprobe.zip"
+          curl -fsSL -o ffmpeg.zip  "https://ffmpeg.martin-riedl.de/redirect/latest/macos/${{ matrix.ffmpeg_arch }}/release/ffmpeg.zip"
+          curl -fsSL -o ffprobe.zip "https://ffmpeg.martin-riedl.de/redirect/latest/macos/${{ matrix.ffmpeg_arch }}/release/ffprobe.zip"
           unzip -o -q ffmpeg.zip && unzip -o -q ffprobe.zip
           cp ffmpeg ffprobe ../vendor/ffmpeg/ && chmod +x ../vendor/ffmpeg/ffmpeg ../vendor/ffmpeg/ffprobe
           ../vendor/ffmpeg/ffmpeg -version | head -1
@@ -123,7 +135,7 @@ jobs:
         run: |
           set -e
           mkdir -p vendor/slskd
-          curl -fsSL -o slskd.zip "https://github.com/slskd/slskd/releases/download/${SLSKD_VERSION}/slskd-${SLSKD_VERSION}-osx-arm64.zip"
+          curl -fsSL -o slskd.zip "https://github.com/slskd/slskd/releases/download/${SLSKD_VERSION}/slskd-${SLSKD_VERSION}-${{ matrix.slskd_arch }}.zip"
           unzip -o -q slskd.zip -d vendor/slskd
           test -f vendor/slskd/slskd || { echo "slskd binary not found"; ls -R vendor/slskd; exit 1; }
           name=$(python -c "from app.config import APP_NAME; print(APP_NAME)")
@@ -133,7 +145,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
           python packaging/build.py
-      - name: Sign ad hoc (lets Apple Silicon run it; first open is right-click → Open)
+      - name: Sign ad hoc (lets macOS run it; first open is right-click → Open)
         run: |
           name=$(python -c "from app.config import APP_NAME; print(APP_NAME)")
           codesign --force --deep --sign - "dist/$name.app"
@@ -144,15 +156,6 @@ jobs:
           echo "version=$(python -c 'from app.config import APP_VERSION; print(APP_VERSION)')" >> $GITHUB_OUTPUT
           echo "slug=$(python -c 'from app.config import APP_SLUG; print(APP_SLUG)')" >> $GITHUB_OUTPUT
           echo "name=$(python -c 'from app.config import APP_NAME; print(APP_NAME)')" >> $GITHUB_OUTPUT
-      - name: Smoke test the built app
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          set -e
-          name="${{ steps.ver.outputs.name }}"
-          "dist/$name.app/Contents/MacOS/$name" --self-test || code=$?
-          cat self-test.log 2>/dev/null || cat "dist/$name.app/Contents/MacOS/self-test.log" 2>/dev/null || true
-          exit ${code:-0}
       - name: Make the disk image (drag to Applications)
         run: |
           set -e
@@ -160,25 +163,25 @@ jobs:
           rm -rf dmg-stage && mkdir dmg-stage
           cp -R "dist/$name.app" dmg-stage/
           ln -s /Applications dmg-stage/Applications
-          hdiutil create -volname "$name" -srcfolder dmg-stage -ov -format UDZO "$slug-$ver-macOS.dmg"
-          ls -la "$slug-$ver-macOS.dmg"
+          hdiutil create -volname "$name" -srcfolder dmg-stage -ov -format UDZO "$slug-$ver-macOS-${{ matrix.arch }}.dmg"
+          ls -la "$slug-$ver-macOS-${{ matrix.arch }}.dmg"
       - name: Prove the image mounts and the app inside runs
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           set -e
           name="${{ steps.ver.outputs.name }}"; slug="${{ steps.ver.outputs.slug }}"; ver="${{ steps.ver.outputs.version }}"
-          mnt=$(hdiutil attach -nobrowse -readonly "$slug-$ver-macOS.dmg" | grep -o '/Volumes/.*' | tail -1)
+          mnt=$(hdiutil attach -nobrowse -readonly "$slug-$ver-macOS-${{ matrix.arch }}.dmg" | grep -o '/Volumes/.*' | tail -1)
           echo "mounted at $mnt"; ls "$mnt"
-          # copy out like a user dragging to Applications, then run the self-test from the copy
           rm -rf appcopy && mkdir appcopy && cp -R "$mnt/$name.app" appcopy/
           hdiutil detach "$mnt"
           codesign --verify --deep --strict "appcopy/$name.app" && echo "copy still signed"
+          file "appcopy/$name.app/Contents/MacOS/$name"
           "appcopy/$name.app/Contents/MacOS/$name" --self-test || code=$?
           cat "appcopy/$name.app/Contents/MacOS/self-test.log" 2>/dev/null || cat self-test.log 2>/dev/null || true
           exit ${code:-0}
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS
-          path: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS.dmg
+          name: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS-${{ matrix.arch }}
+          path: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS-${{ matrix.arch }}.dmg
           retention-days: 30
