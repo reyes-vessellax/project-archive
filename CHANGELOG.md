@@ -25,6 +25,23 @@ accounts that search that often, and the engine was carrying every past search's
 - A new query first removes the previous query's searches from the engine, finished or not.
 - Per-rung timing (rows, users, seconds to finish) goes to `app.log` so slow sessions can be read.
 
+## 0.5.6 — unreleased (one search per query; the slowdown, explained)
+
+The 0.5.3 log showed it plainly: after ~16 network searches in three minutes, five queries in a row came
+back empty; after seven quiet minutes the same query returned 1,427 rows. The network rate-limits
+accounts that search often, and our ladder (4, then 2 searches per query) was tripping it.
+- **One network search per query**, like every other client. The engine only releases a search's rows
+  once it has ended, so we watch its live counts ("29 users · 121 files so far") and **stop it ourselves
+  when results dry up** (never before 4 s; after 3 s with nothing new, or under 3 % growth on a big
+  result; deadline 40 s for rare names). The engine keeps everything received up to the stop.
+- **Search budget**: at most a short burst, then about one search per 8 s on average. Faster than that
+  and the page says "Pacing… next search in N s" instead of the network silently going dark.
+- Punctuation at the ends of search words is dropped ("ulo s." → "ulo s"; "a.m." kept).
+- **Benchmark mode** for the 500-name list: `"Pied Piper.exe" --bench docs\search_bench_list.txt
+  --limit 60` writes `bench.csv` (time to first rows, users/files at 5 s and at the end, pickable /
+  locked / other-format / ad-bot) with proper pacing. `docs/SEARCH_TEST_CASES.md` tracks the cases.
+- Per-search timing lines in `app.log` (stopped at / done at, users, rows).
+
 ## 0.5.5 — unreleased (search slowing down over a session)
 
 - Searches got slow by the third or fourth query of a session: the ladder sent four network searches

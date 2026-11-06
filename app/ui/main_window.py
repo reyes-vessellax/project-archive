@@ -39,12 +39,17 @@ def _applog(line: str) -> None:
         pass
 
 
-# Engine searches per query, short to long; each one's rows land when it ends. Two, not four: the network
-# throttles accounts that search too often, and a session of 8-10 queries at four searches each was enough
-# to start losing results. Rungs are spaced by SEARCH_GAP_S for the same reason.
-SEARCH_LADDER_S = (5, 40)
+# One network search per query (the network throttles accounts that send more; four per query made a
+# session go dark by the third query). We stop it ourselves when results dry up. Deadlines in seconds.
+SEARCH_LADDER_S = (40,)             # deadline for a normal search
 SEARCH_FALLBACK_S = (25,)           # the one retry without the shakiest word, when nothing at all came back
-SEARCH_GAP_S = 1.5
+SEARCH_MIN_S = 4.0                  # never stop before this: the first wave is still arriving
+SEARCH_QUIET_S = 3.0                # stop once nothing new has arrived for this long (after SEARCH_MIN_S)
+# Client-side budget so we never trip the network's own throttle: a small burst, then roughly one
+# network search every SEARCH_REFILL_S on average. Over the line, the server simply stops answering for
+# minutes, which looks like "no results" to the user; under it, every search comes back.
+SEARCH_BURST = 3
+SEARCH_REFILL_S = 8.0
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
 FIREWALL_ASK = (f"To download from other users, {APP_NAME} needs to accept incoming connections.\n\n"
                 f"Allow it now? Windows will ask you to confirm once. Nothing is shared from your computer "
@@ -523,66 +528,88 @@ class MainWindow(QMainWindow):
             pass
         return known
 
+    def _take_search_token(self) -> None:
+        """Token bucket for network searches; blocks (off the UI thread) until one is available."""
+        now = time.monotonic()
+        tokens, last = getattr(self, "_bucket", (SEARCH_BURST, now))
+        tokens = min(SEARCH_BURST, tokens + (now - last) / SEARCH_REFILL_S)
+        if tokens < 1:
+            wait = (1 - tokens) * SEARCH_REFILL_S
+            self.signals.notice.emit(f"Pacing… the network limits how often we can ask. Next search in {wait:.0f} s.")
+            _applog(f"search budget: waiting {wait:.1f}s")
+            time.sleep(wait)
+            now = time.monotonic(); tokens = 1
+        self._bucket = (tokens - 1, now)
+
     def _ladder(self, q: str, secs_list, sent: str, dropped: str, keep_id: str | None = None):
-        """Run one ladder of engine searches for q, streaming merged rows. Returns the id the page is keyed on."""
+        """ONE network search per query (what the other clients do, and all the network tolerates), stopped
+        by us the moment it's ripe: the engine only hands out a search's rows once it has ended, so we watch
+        its live counts and end it when they stop growing (or at the deadline), then read everything it got.
+        Returns the id the page is keyed on. secs_list[-1] is the deadline."""
         from ..core import fuzzy
-        rungs = []
-        for i, secs in enumerate(secs_list):
-            if i:
-                time.sleep(SEARCH_GAP_S)
-            r = self.svc.search(q, timeout_s=secs, check_login=(i == 0 and keep_id is None))
-            rungs.append({"res": r, "done": False})
-            self._active_rungs = getattr(self, "_active_rungs", []) + [r.search_id]
-        t_sent = time.monotonic()
-        sid = keep_id or rungs[0]["res"].search_id
+        deadline = float(secs_list[-1])
+        self._take_search_token()
+        res = self.svc.search(q, timeout_s=deadline + 10, check_login=(keep_id is None))
+        sid_engine = res.search_id
+        sid = keep_id or sid_engine
         if keep_id is None:
             self.search_id = sid
         self._last_count = 0
-        started = time.monotonic()
-        merged: dict[str, Candidate] = {}
-        shown = -1
-        delay = 0.4
-        try:
-            while True:
-                    time.sleep(delay)
-                    delay = min(1.2, delay * 1.3)
-                    if self.search_id != sid:
-                        return None                                         # a newer search took over
-                    now = time.monotonic()
-                    best_count = (0, 0)
-                    for rung in rungs:
-                        if rung["done"]:
-                            continue
-                        res = self.svc.search_results(rung["res"].search_id)
-                        for c in res.candidates:
-                            merged.setdefault(c.key, c)
-                        done, n_resp, n_files, err = self.svc.search_status(rung["res"].search_id)
-                        best_count = max(best_count, (n_resp, n_files))
-                        if done:
-                            rung["done"] = True
-                            _applog(f"rung {rung['res'].search_id[:8]} {q!r} ({len(res.candidates)} rows, {n_resp} users) done at "
-                                    f"{time.monotonic() - t_sent:.1f}s; merged={len(merged)}")
-                            if rung["res"].search_id != sid:
-                                self.io.start(Task(lambda s=rung["res"].search_id: self.svc.forget_search(s), self.signals))
-                    all_done = all(r["done"] for r in rungs) or now - started > secs_list[-1] + 20
-                    if len(merged) != shown or all_done:
-                        shown = len(merged)
-                        out = SearchResult(query=q, search_id=sid, finished=all_done, candidates=list(merged.values()))
-                        out.sent, out.dropped = sent, dropped
-                        if all_done:
-                            self._last_count = len(merged)
-                            # the fallback runs only when this one found nothing; keep "searching" on until then
-                            self.search_running = False if (len(merged) or dropped or len(fuzzy.words(q)) < 2) else True
-                        self.signals.results.emit(out)
-                    self.signals.progress_search.emit(best_count[0], best_count[1], len(merged) > 0)
-                    if all_done:
-                        words = getattr(self, "_seen_words", set())
-                        for c in merged.values():
-                            words.update(fuzzy.words(c.display_name or ""))
-                        self._seen_words = words
-                        return sid
-        finally:
-            pass
+        t0 = time.monotonic()
+        history: list[tuple[float, int]] = []                  # (elapsed, files) samples
+        stopped = False
+        delay = 0.35
+        while True:
+            time.sleep(delay)
+            delay = min(0.8, delay * 1.25)
+            if self.search_id != sid:
+                self.svc.stop_search(sid_engine)
+                return None                                     # a newer search took over
+            done, n_users, n_files, err = self.svc.search_status(sid_engine)
+            el = time.monotonic() - t0
+            history.append((el, n_files))
+            self.signals.progress_search.emit(n_users, n_files, False)
+            if not done and not stopped and self._ripe(history, el, deadline):
+                self.svc.stop_search(sid_engine); stopped = True
+                _applog(f"search {sid_engine[:8]} {q!r} stopped at {el:.1f}s with {n_users} users / {n_files} files")
+                continue
+            if done or el > deadline + 25:
+                final = self.svc.search_results(sid_engine); final.query = q
+                final.search_id = sid; final.finished = True
+                final.sent, final.dropped = sent, dropped
+                if err:
+                    final.error = err
+                n = len(final.candidates)
+                _applog(f"search {sid_engine[:8]} {q!r} done at {el:.1f}s: {n} rows from {n_users} users")
+                self._last_count = n
+                self.search_running = False if (n or dropped or len(fuzzy.words(q)) < 2) else True
+                self.signals.results.emit(final)
+                words = getattr(self, "_seen_words", set())
+                for c in final.candidates:
+                    words.update(fuzzy.words(c.display_name or ""))
+                self._seen_words = words
+                if sid_engine != sid:
+                    self.io.start(Task(lambda s=sid_engine: self.svc.forget_search(s), self.signals))
+                return sid
+
+    @staticmethod
+    def _ripe(history, el: float, deadline: float) -> bool:
+        """Stop when the flow of results has dried up — not before SEARCH_MIN_S, never after the deadline.
+        A plateau is: nothing new for SEARCH_QUIET_S, or growth under 3% over the last SEARCH_QUIET_S once
+        we already hold a good number of files."""
+        if el >= deadline:
+            return True
+        if el < SEARCH_MIN_S:
+            return False
+        files_now = history[-1][1]
+        if files_now == 0:
+            return False                                        # rare query: give the far corners time
+        past = [f for (t, f) in history if t <= el - SEARCH_QUIET_S]
+        if not past:
+            return False
+        then = past[-1]
+        grew = files_now - then
+        return grew == 0 or (files_now >= 200 and grew < files_now * 0.03)
 
     def _search_buttons_settle(self, _id: str = ""):
         """Whatever path a search took to its end, the two Search buttons must read "Search" again."""

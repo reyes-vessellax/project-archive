@@ -101,6 +101,9 @@ class SourceAdapter:
     def forget_search(self, search_id: str) -> None:
         """Drop a finished search from the engine."""
 
+    def stop_search(self, search_id: str) -> None:
+        """End a running search, keeping what it has so far."""
+
     def search_status(self, search_id: str) -> tuple[bool, int, int, str]:
         """(finished, responses_so_far, files_so_far, error) without fetching the results themselves."""
         r = self.search_results(search_id)

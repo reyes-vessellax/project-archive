@@ -45,6 +45,19 @@ RETRY_WAIT_S = (15, 45)
 _BOT_USER = re.compile(r"(https?:|www\.|\.(com|net|org|io|co|xyz|site|store|shop|biz|info|me|tv|cc)(/|$))", re.I)
 
 
+def clean_query(q: str) -> str:
+    """Words go to the network as substrings to match against filenames, so a stray trailing dot or comma
+    ("ulo s.", "weber,") makes a word that almost no filename contains. Strip punctuation from the ends of
+    words; keep it inside ("a.m.", "drum&bass", "7'")."""
+    out = []
+    for w in q.split():
+        core = w.strip(",;:!?\"'()[]{}")
+        if core.endswith(".") and core.count(".") == 1:        # "s." -> "s", but "a.m." stays
+            core = core[:-1]
+        out.append(core or w)
+    return " ".join(out)
+
+
 def looks_like_ad_bot(user: str) -> bool:
     """Accounts named after a web shop (e.g. "https://www.rawzik.com") answer every search with their
     catalogue and never deliver; every request to one times out. Grey them out up front."""
@@ -183,10 +196,16 @@ class ArchiveService:
         self._searches_started = getattr(self, "_searches_started", 0) + 1
         if check_login and self.managed_mode and not self.adapter_logged_in():
             raise ActionBlocked("Still signing in. Search opens as soon as you're connected.")
-        return adapter.search(query, timeout_s=timeout_s)
+        return adapter.search(clean_query(query), timeout_s=timeout_s)
 
     def search_status(self, search_id: str) -> tuple[bool, int, int, str]:
         return self._adapter_or_block().search_status(search_id)
+
+    def stop_search(self, search_id: str) -> None:
+        try:
+            self._adapter_or_block().stop_search(search_id)
+        except Exception:
+            pass
 
     def forget_search(self, search_id: str) -> None:
         try:

@@ -170,6 +170,12 @@ class SlskdAdapter(SourceAdapter):
     def forget_search(self, search_id: str) -> None:
         self._call("DELETE", f"/searches/{search_id}")
 
+    def stop_search(self, search_id: str) -> None:
+        """End a running search now. The engine keeps every response it has received and marks the search
+        'Completed, Cancelled'; the responses become readable at once."""
+        self._stopped = getattr(self, "_stopped", set()); self._stopped.add(search_id)
+        self._call("PUT", f"/searches/{search_id}")
+
     def search_results(self, search_id: str) -> SearchResult:
         # includeResponses=true carries whatever the engine has in memory; the separate /responses
         # endpoint only answers once the search has finished. Use the first, fall back to the second.
@@ -179,7 +185,7 @@ class SlskdAdapter(SourceAdapter):
         error = ""
         if "Errored" in state:
             error = "The search couldn't run. You may have lost the connection; it reconnects on its own."
-        elif "Cancelled" in state:
+        elif "Cancelled" in state and search_id not in getattr(self, "_stopped", set()):
             error = "The search was cancelled."
         rows = meta.get("responses") or []
         if not rows and finished:

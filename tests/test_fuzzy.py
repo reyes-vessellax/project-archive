@@ -18,3 +18,11 @@ def test_shakiest_word_prefers_unknown_short_words():
 def test_closeness_ranks_near_misses_first():
     assert closeness("Chris Gooding - Dance It Out.mp3", "dace") == 0
     assert closeness("Chris Gooding - Get Naked.mp3", "dace") == 1
+
+
+def test_clean_query_strips_edge_punctuation_only():
+    from app.core.service import clean_query
+    assert clean_query("ulo s.") == "ulo s"
+    assert clean_query("weber, norman") == "weber norman"
+    assert clean_query("a.m. drum&bass 7'") == "a.m. drum&bass 7"
+    assert clean_query("(remix)") == "remix"

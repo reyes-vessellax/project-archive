@@ -108,6 +108,18 @@ class FakeSlskd:
                     return self._send(201)
                 self._send(404)
 
+            def do_PUT(self):
+                if not self._auth():
+                    return
+                parts = [unquote(p) for p in urlsplit(self.path).path.split("/") if p]
+                if parts[2:3] == ["searches"] and len(parts) == 4:
+                    s = server.searches.get(parts[3])
+                    if not s:
+                        return self._send(404)
+                    s["ends_at"] = 0; s["meta"]["state"] = "Completed, Cancelled"
+                    return self._send(200, server._meta(parts[3]))
+                self._send(404)
+
             def do_DELETE(self):
                 if not self._auth():
                     return
