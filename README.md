@@ -88,5 +88,6 @@ python -m app                # run from source (needs FFmpeg on PATH)
 python packaging/build.py    # local packaged build
 ```
 
+New here? Start with [`docs/HANDOFF.md`](docs/HANDOFF.md) (what must not change, where things are, how to build and ship).
 Decisions and open legal flags: [`docs/DECISIONS_AND_FLAGS.md`](docs/DECISIONS_AND_FLAGS.md).
 Change history: [`CHANGELOG.md`](CHANGELOG.md).
