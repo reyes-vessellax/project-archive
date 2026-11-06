@@ -168,7 +168,7 @@ jobs:
         run: |
           set -e
           name="${{ steps.ver.outputs.name }}"; slug="${{ steps.ver.outputs.slug }}"; ver="${{ steps.ver.outputs.version }}"
-          mnt=$(hdiutil attach -nobrowse -readonly "$slug-$ver-macOS.dmg" | tail -1 | awk '{print $NF}')
+          mnt=$(hdiutil attach -nobrowse -readonly "$slug-$ver-macOS.dmg" | grep -o '/Volumes/.*' | tail -1)
           echo "mounted at $mnt"; ls "$mnt"
           # copy out like a user dragging to Applications, then run the self-test from the copy
           rm -rf appcopy && mkdir appcopy && cp -R "$mnt/$name.app" appcopy/
