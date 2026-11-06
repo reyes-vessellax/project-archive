@@ -1,119 +1,92 @@
-# DEADWAX (working name; was Project Archive)
+# Pied Piper
 
-A Soulseek client built for DJs. Search Soulseek, pick a result, and the file lands in a quarantine folder
-where it is checked first: true format, bitrate, whether it plays all the way through, and a spectrogram
-that exposes fake 320s. Then you decide: **Download to Library** or **Delete**. Nothing reaches your
-library until you say so. Everything runs locally on your own computer: no uploads, no servers.
+*The Google of music.* (Working name. We'll change it. Probably.)
 
-Under the hood the Soulseek side is handled by [slskd](https://github.com/slskd/slskd), bundled inside the app
-and run as a hidden background process. Project Archive drives it through its local API. We do not implement
-the Soulseek protocol ourselves.
+Pied Piper is a desktop platform that lets DJs discover, acquire, and validate music across a
+decentralized peer-to-peer ecosystem — with a trust layer in front of the library so nothing lands
+in your crates until it's been checked. Think of it as **audio pre-flight**: every file passes through
+quarantine, gets a full-spectrum analysis, and earns a verdict before you decide whether it ships.
 
-> The app reports evidence, not proof. A 320 kbps MP3 or a WAV can still come from a low-quality source.
-> It never labels a file "authentic" or "verified lossless". You make the final call.
+> We surface evidence, not promises. A file is never labeled "authentic" or "verified lossless" —
+> the verdict is **Good**, **Have a look**, or **Broken**, with the receipts. You make the call.
 
-## Status (v0.3 test build)
+## What it does today (v0.5)
 
-| Done | Next |
+**Discover.** One search fans out across the network in waves, so results populate top-down while the
+long tail keeps arriving — consistently matching or beating the incumbent clients on result counts.
+Sources are ranked by availability and speed, locked and off-format files are shown but greyed,
+advertising bots are detected and sunk, and a search that comes back empty quietly retries without
+the word most likely to be a typo (and says so).
+
+**Acquire.** Pick a result and it streams into a sandboxed quarantine — never your library. Downloads
+that stall are retried automatically; the review page shows live progress; a failed one can be
+re-requested with one click.
+
+**Validate.** Each file is decoded end to end and graded: true container and codec vs. the extension,
+bitrate (CBR/VBR), sample rate, bit depth, channels, play-through integrity, and a spectrogram with a
+frequency-cutoff detector that exposes up-sampled fakes. Five checks run in parallel; the rest queue.
+
+**Decide.** Good / Have a look / Broken. **Download to Library** moves the file (hash-verified, never
+overwrites) into a dedicated folder inside your existing library; **Delete** removes it for good.
+
+**Library.** Every track you've kept, with its facts, a filter-as-you-type search, an inline drop-down
+with the spectrogram and a built-in player (playhead crawls across the spectrum), and *Show in folder*.
+
+**Zero-config networking.** The transport engine is bundled and invisible: a per-user identity and
+API key are provisioned silently, the router is asked to open a port automatically, firewall prompts
+carry the app's name, and stray engine processes from earlier sessions are reclaimed on start.
+
+**Polish.** Light and dark themes (Sora + IBM Plex Mono), a first-run tour, smooth momentum scrolling,
+a start-up screen that lights each step as it completes, local accounts with sign-up / sign-in, and a
+Settings → Advanced escape hatch (logs, port status, start fresh).
+
+Everything runs on the user's machine. No uploads, no servers, no telemetry.
+
+## Platforms
+
+| | Status |
 |---|---|
-| Real format detection, bitrate (CBR/VBR), sample rate, bit depth, channels | Chris's front-end design |
-| Full play-through test with claimed-vs-actual length check | Windows testing (Chris) |
-| Spectrogram + frequency-cutoff warning | History / search filters |
-| PASS / WARN / FAIL with plain-English reasons | App icon, signing (later) |
-| Quarantine, Download to Library (hash-verified, never overwrites), Delete | |
-| Watched Incoming folder, auto-cleanup, crash recovery, settings | |
-| Soulseek search + download into quarantine through slskd | |
-| Parallel checking (5 at a time by default), the rest queue up | |
-| Bundled Soulseek engine with generated account + API key, Advanced settings | |
-| New look (design v5): light and dark, sign-up, account page, settings | |
-| 64 automated tests on synthetic audio and a fake slskd | |
+| Windows 10/11 (x64) | Test builds on every push; unsigned for now (*More info → Run anyway* once) |
+| macOS (Apple Silicon) | Test builds on every push; ad-hoc signed, not yet notarized (*right-click → Open* once) |
+| Linux | Builds from source; no packaged app yet |
 
-Store search (Beatport, Bandcamp, Juno, Traxsource, Discogs) is kept in the code for a later feature
-but is not on a button right now.
+Builds are published as artifacts on **Actions → Test and build → latest green run**:
+`PiedPiper-<version>-Windows` and `PiedPiper-<version>-macOS`.
 
-## Get the Windows app (no setup)
+## Architecture (one paragraph)
 
-1. On GitHub, open **Actions -> Test and build -> latest green run**.
-2. Download **DEADWAX-Windows**, unzip it, run `DEADWAX.exe`.
-3. First launch shows "Windows protected your PC" because the app isn't signed yet:
-   click **More info -> Run anyway**.
-
-FFmpeg is bundled inside; nothing else to install.
-
-## Run from source (macOS or Windows)
-
-Needs Python 3.12+ and FFmpeg (`brew install ffmpeg` on Mac; on Windows put `ffmpeg.exe`/`ffprobe.exe`
-in `vendor/ffmpeg/` or on your PATH).
-
-```bash
-python -m venv ~/.venvs/project-archive          # outside the repo if its path contains ':'
-~/.venvs/project-archive/bin/pip install -r requirements.txt pytest   # Windows: ...\Scripts\pip
-~/.venvs/project-archive/bin/python -m app        # run the app
-~/.venvs/project-archive/bin/python -m pytest     # run the tests
-```
-
-Build a standalone app: `pip install pyinstaller`, copy FFmpeg into `vendor/ffmpeg/`, then
-`python packaging/build.py` -> `dist/`.
-
-## Soulseek: nothing to set up
-
-The Windows build includes the Soulseek engine. On first launch the app creates its own Soulseek account
-and connection settings in the background; you never enter a Soulseek login. The first time, your
-firewall may ask to allow incoming connections: choose Allow.
-
-Running from source: put an slskd build in `vendor/slskd/` (see `.github/workflows/build.yml` for the
-exact download) and the same happens. Without it the app runs in local mode: drag and drop and the
-watched folder still work, Soulseek search is off.
-
-**Advanced** (Settings -> Advanced), for people who already run slskd or have a Soulseek account they
-want to keep: point the app at your own slskd (URL, API key, downloads folder), use your own Soulseek
-username and password, or share a folder back to Soulseek (off by default).
-
-## How it works
-
-**Search Soulseek** -> results list what other users' clients report (file, folder, user, size, claimed
-bitrate, queue) -> **Check this file** -> slskd downloads it and we immediately move it into a private
-quarantine folder -> checked (up to 5 tracks at once; more wait in the queue) -> you choose **Download to
-Library** (PASS), **Download anyway** (WARN, explicit), or **Delete**. FAIL can only be deleted. Delete
-removes the quarantined copy, so nothing is left on your computer. Download to Library moves it into the
-folder you chose in Settings.
-
-Local files you drag in are copied into quarantine; your original is never modified or deleted.
-
-| Check | Method |
-|---|---|
-| Actual format | FFprobe + file signature, compared with the extension |
-| Bitrate | FFprobe; CBR/VBR from the LAME/Xing header |
-| Plays through | Full FFmpeg decode; actual length compared with the length the file claims |
-| Frequency cutoff | Averaged FFT spectrum; warns when energy stops well short of what the format implies |
-| Fingerprint | SHA-256, re-verified after copying into the library |
-
-## Layout
+Python 3.13 + PySide6 front end; a service layer owning a SQLite state machine
+(DISCOVERED → QUEUED → STAGING → ANALYZING → READY_FOR_REVIEW → PROMOTED / REJECTED); a media layer on
+bundled FFmpeg/FFprobe and NumPy for decoding, spectral analysis, and rendering; and a pluggable
+**source adapter** contract behind which the bundled P2P engine (and, later, store integrations) live.
+Credentials sit in the OS keyring. The engine is driven over a loopback-only API with a per-user key.
 
 ```
-app/core      workflow: service (search/download/stage/analyze/promote/reject), rules, jobs, safety, analyzer
-app/adapters  source connector contract + the slskd adapter (Soulseek through a local client)
-app/media     ffprobe/ffmpeg wrappers, streaming decode + spectrum, PNG spectrogram
-app/storage   SQLite job history (metadata only, never audio)
-app/ui        PySide6: theme (palettes + stylesheet), onboarding, pages, settings, main window; bundled fonts (OFL)
-docs/         UI_HANDOFF.md (data + actions for front-end design), DECISIONS_AND_FLAGS.md (spec changes, attorney flags)
-tests/        synthetic fixtures generated at test time (no copyrighted audio)
+app/
+  adapters/    source adapter contract + the bundled engine adapter
+  core/        service, analyzer, rules, account, credentials, firewall, UPnP, process lifetime
+  media/       decode, probe, spectrogram
+  storage/     SQLite schema + migrations
+  ui/          theme, widgets, pages, onboarding, tour, library, settings
+packaging/     PyInstaller build, icon generation, folder tidy
+tests/         100+ tests on synthetic audio and a behaviourally faithful fake engine
 ```
 
-## Data locations
+## Roadmap to 1.0
 
-- Database + quarantine + engine: `~/Library/Application Support/DEADWAX` (Mac),
-  `%APPDATA%\DEADWAX` (Windows). An older `Project Archive` folder is renamed on first start.
-- Library (default): `~/Music/Project Archive Library`, changeable in Settings
+See [`docs/ROADMAP_1.0.md`](docs/ROADMAP_1.0.md). Headlines: already-have-it detection, standing
+searches with a notification bell and auto-validation, auto-update, live network status, BPM and key
+detection (validated against the user's own tagged library), source reputation, silent pre-checks,
+hosted accounts, one-click diagnostic reports, installers, signing and notarization.
 
-## Out of scope (see the spec)
+## Developing
 
-No Soulseek protocol implementation of our own, no automated mass searching or scraping, no hosting or
-sharing of music, no uploads. Project Archive only asks a client you installed and logged in yourself to
-run the searches and downloads you click on. Users are responsible for having the right to obtain and
-keep each file.
+```
+pip install -r requirements.txt pytest
+python -m pytest -q          # ~100 tests, ~50 s
+python -m app                # run from source (needs FFmpeg on PATH)
+python packaging/build.py    # local packaged build
+```
 
-## Licensing note
-
-The Windows build bundles an FFmpeg GPL build from BtbN/FFmpeg-Builds and slskd (AGPL-3.0), license texts
-included in the bundle. Fine for private use between us; see docs/DECISIONS_AND_FLAGS.md before distributing.
+Decisions and open legal flags: [`docs/DECISIONS_AND_FLAGS.md`](docs/DECISIONS_AND_FLAGS.md).
+Change history: [`CHANGELOG.md`](CHANGELOG.md).
