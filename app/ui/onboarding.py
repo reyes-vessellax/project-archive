@@ -211,7 +211,7 @@ class ReadyPage(QWidget):
         lay.addWidget(label("Search for a track, pick a source, and it lands in quarantine where it's checked before "
                             "anything reaches your library. If your firewall asks to allow incoming connections, choose "
                             "Allow — that's how other users send you files.", "muted", wrap=True))
-        lay.addWidget(button("Open Archive", "primary", self.done.emit))
+        lay.addWidget(button(f"Open {APP_NAME}", "primary", self.done.emit))
         lay.addStretch(1)
 
 
@@ -232,7 +232,7 @@ class ConnectingPage(QWidget):
         for key, text in (("engine", "Starting the engine"), ("network", "Signing in to the network"),
                           ("port", "Asking the router to open your port"), ("shares", "Sharing your library")):
             r = hbox(spacing=12)
-            dot = label("●", "tag"); dot.setProperty("tag", ""); txt = label(text, "muted")
+            dot = label("○", "steplight"); dot.setProperty("tag", ""); dot.setFixedWidth(26); txt = label(text, "muted")
             r.addWidget(dot); r.addWidget(txt); r.addStretch(1)
             lay.addLayout(r); self.rows[key] = (dot, txt)
         self.note = label("This takes a few seconds the first time. If your firewall asks to allow incoming connections, "
@@ -253,6 +253,7 @@ class ConnectingPage(QWidget):
 
     def mark(self, key: str, state: str, note: str = ""):
         dot, txt = self.rows[key]
+        dot.setText({"done": "✓", "busy": "●", "fail": "✕", "skip": "–"}.get(state, "○"))
         set_tag(dot, {"done": "Good", "busy": "Down", "fail": "Broken", "skip": "Wait"}.get(state, ""))
         base = txt.property("base") or txt.text()
         txt.setProperty("base", base)

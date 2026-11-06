@@ -64,9 +64,32 @@ def make_icon(path: Path) -> bool:
         return False
 
 
-ICON = Path("build") / "app.ico"
+def make_icns(path: Path) -> bool:
+    """macOS wants .icns: render the mark at the standard sizes into an .iconset and let iconutil pack it."""
+    try:
+        import subprocess
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        from app.ui import theme as T
+        from app.ui.brand import mark_pixmap
+        app = QApplication.instance() or QApplication([])
+        T.load_fonts()
+        iconset = path.with_suffix(".iconset")
+        iconset.mkdir(parents=True, exist_ok=True)
+        for s in (16, 32, 128, 256, 512):
+            mark_pixmap(s, "#ffffff", bg=T.colours("light")["accent"]).save(str(iconset / f"icon_{s}x{s}.png"), "PNG")
+            mark_pixmap(s, "#ffffff", bg=T.colours("light")["accent"], dpr=2.0).save(str(iconset / f"icon_{s}x{s}@2x.png"), "PNG")
+        subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(path)], check=True)
+        print(f"icon: wrote {path} ({path.stat().st_size} bytes)")
+        return True
+    except Exception as e:                                  # noqa: BLE001
+        print(f"NOTE: couldn't render the .icns: {e}", file=sys.stderr)
+        return False
+
+
+ICON = Path("build") / ("app.icns" if sys.platform == "darwin" else "app.ico")
 ICON.parent.mkdir(exist_ok=True)
-HAVE_ICON = make_icon(ICON)
+HAVE_ICON = make_icns(ICON) if sys.platform == "darwin" else make_icon(ICON)
 
 args = [
     os.path.join("app", "__main__.py"),
@@ -109,11 +132,17 @@ import shutil  # noqa: E402
 
 out = Path("dist") / (APP_NAME + (".app" if sys.platform == "darwin" else ""))
 internal = next((p for p in (out / "_internal", out / "Contents" / "Frameworks") if p.is_dir()), None)
+resources = out / "Contents" / "Resources"                 # macOS: data files live here (Frameworks symlinks to them)
 
 # Files PyInstaller pulls in that the app never uses. Glob patterns, relative to _internal/.
 JUNK = [
     "*.dist-info", "setuptools", "pkg_resources", "_distutils_hack",
     "PySide6/translations", "PySide6/qml", "PySide6/Qt6Qml*.dll", "PySide6/Qt6Quick*.dll", "PySide6/Qt6Pdf*.dll",
+    # macOS frameworks of the same modules
+    "PySide6/Qt/lib/QtQml*.framework", "PySide6/Qt/lib/QtQuick*.framework", "PySide6/Qt/lib/QtPdf*.framework",
+    "PySide6/Qt/lib/QtVirtualKeyboard.framework", "PySide6/Qt/lib/QtSvg*.framework", "PySide6/Qt/lib/QtWebEngine*.framework",
+    "PySide6/Qt/lib/QtDesigner*.framework", "PySide6/Qt/lib/QtQuick3D*.framework", "PySide6/Qt/translations",
+    "PySide6/Qt/qml", "PySide6/Qt/plugins/platforminputcontexts", "PySide6/Qt/plugins/virtualkeyboard",
     "PySide6/Qt6VirtualKeyboard.dll", "PySide6/Qt6Svg*.dll",
     "PySide6/plugins/platforminputcontexts", "PySide6/plugins/generic", "PySide6/plugins/iconengines",
     "PySide6/plugins/imageformats/qpdf.dll", "PySide6/plugins/imageformats/qtga.dll",
@@ -131,7 +160,9 @@ def tidy(root: Path) -> None:
     removed = 0
     for pattern in JUNK:
         for p in list(root.glob(pattern)):
-            if p.is_dir():
+            if p.is_symlink():                                 # macOS: Frameworks/ holds symlinks into Resources/
+                p.unlink(missing_ok=True)
+            elif p.is_dir():
                 shutil.rmtree(p, ignore_errors=True)
             else:
                 p.unlink(missing_ok=True)
@@ -141,11 +172,28 @@ def tidy(root: Path) -> None:
 
 if internal is not None:
     tidy(internal)
+    if resources.is_dir():
+        tidy(resources)
+    if sys.platform == "darwin":
+        # tidy() may leave links whose target is gone (Frameworks <-> Resources mirror each other); codesign
+        # refuses a bundle with a dangling link
+        dangling = [p for p in out.rglob("*") if p.is_symlink() and not p.exists()]
+        for p in dangling:
+            p.unlink()
+        print(f"tidy: removed {len(dangling)} dangling link(s)")
     # The engine checks that its web-content folder exists even when headless; an empty one satisfies it.
-    (internal / "vendor" / "engine" / "wwwroot").mkdir(parents=True, exist_ok=True)
-    (internal / "vendor" / "engine" / "wwwroot" / "index.html").write_text("<!doctype html><title>headless</title>")
-    # A README at the top so a curious user knows what the folders are.
-    (out / "README.txt").write_text(
+    for eng in (internal / "vendor" / "engine", resources / "vendor" / "engine"):
+        if not eng.is_dir():
+            continue
+        www = eng / "wwwroot"
+        if www.is_symlink() and not www.exists():
+            www.unlink()                                       # dangling link left by tidy()
+        if www.is_symlink():
+            continue                                           # points at the real one; done below
+        www.mkdir(parents=True, exist_ok=True)
+        (www / "index.html").write_text("<!doctype html><title>headless</title>")
+    # A README at the top so a curious user knows what the folders are (Windows folder layout only).
+    (out / "README.txt" if sys.platform != "darwin" else Path("dist") / "README.txt").write_text(
         f"{APP_NAME}\n\n"
         f"{APP_NAME}.exe        the app\n"
         "_internal/          everything the app needs to run; nothing in here needs touching\n"

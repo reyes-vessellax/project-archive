@@ -211,3 +211,19 @@ def test_reset_everything_wipes_data_but_not_music(service, fixtures):
     service.reset_everything()
     assert final.exists()
     assert not (root / "archive.db").exists()
+
+
+@needs_ffmpeg
+def test_spectrograms_are_capped_and_redrawn_on_demand(service, fixtures):
+    service.settings.keep_spectrograms = 10                  # floor is 10
+    ids = []
+    for i in range(12):
+        j = service.stage(fixtures["mp3_320"]); service.analyze(j["id"]); service.promote(j["id"], override_warning=True)
+        ids.append(j["id"])
+    keep_dir = service.db.path.parent / "spectrograms"
+    assert len(list(keep_dir.glob("*.png"))) == 10
+    oldest = ids[0]
+    assert not Path(service.db.analysis(oldest)["spectrogram_path"]).exists()
+    out = service.redraw_spectrogram(oldest)
+    assert out and Path(out).exists() and service.db.analysis(oldest)["spectrogram_path"] == out
+    assert len(list(keep_dir.glob("*.png"))) == 10          # the cap holds after a redraw too

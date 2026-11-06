@@ -201,6 +201,52 @@ def test_failed_download_becomes_error(connected, slskd):
     connected.reject(job["id"])                               # user can clear it from the queue
 
 
+def test_timed_out_download_is_retried_then_succeeds(connected, slskd, monkeypatch):
+    from app.core import service as S
+    monkeypatch.setattr(S, "RETRY_WAIT_S", (0, 0, 0))                 # no waiting in tests
+    slskd.timeout_next_downloads = 2                                  # first two attempts die, third works
+    cand = next(c for c in search_all(connected, "real track").candidates)
+    job = connected.request_download(cand)
+    connected.poll_downloads()                                        # attempt 1 -> TimedOut -> re-requested (wait is 0)
+    j = connected.db.job(job["id"]); assert j["state"] == J.QUEUED and j["retries"] == 1 and j["transfer_id"]
+    connected.poll_downloads()                                        # attempt 2 -> TimedOut -> re-requested
+    assert connected.db.job(job["id"])["retries"] == 2
+    ready = []
+    for _ in range(10):
+        ready += connected.poll_downloads()
+        if ready:
+            break
+    assert ready and connected.db.job(job["id"])["state"] == J.STAGING
+
+
+def test_timed_out_download_gives_up_after_max_retries(connected, slskd, monkeypatch):
+    from app.core import service as S
+    monkeypatch.setattr(S, "RETRY_WAIT_S", (0, 0, 0))
+    slskd.timeout_next_downloads = 10
+    cand = next(c for c in search_all(connected, "real track").candidates)
+    job = connected.request_download(cand)
+    for _ in range(12):
+        connected.poll_downloads()
+    j = connected.db.job(job["id"])
+    assert j["state"] == J.ERROR and "TimedOut" in j["message"] and j["retries"] == S.MAX_DOWNLOAD_RETRIES
+
+
+def test_retry_download_button_re_requests(connected, slskd):
+    slskd.fail_next_download = True
+    cand = next(c for c in search_all(connected, "real track").candidates)
+    job = connected.request_download(cand)
+    connected.poll_downloads()
+    assert connected.db.job(job["id"])["state"] == J.ERROR
+    j = connected.retry_download(job["id"])
+    assert j["state"] == J.QUEUED and j["transfer_id"]
+    ready = []
+    for _ in range(10):
+        ready += connected.poll_downloads()
+        if ready:
+            break
+    assert ready
+
+
 def test_same_file_not_queued_twice(connected):
     cand = next(c for c in search_all(connected, "real track").candidates)
     connected.request_download(cand)
@@ -384,3 +430,16 @@ def test_decode_closes_pipes_and_frees_frames(fixtures):
     if before is not None:
         after = len(os.listdir("/proc/self/fd"))
         assert after <= before + 2, (before, after)                   # no handle growth across six decodes
+
+
+def test_ad_bot_sources_are_greyed_and_blocked(connected, slskd, fixtures):
+    from app.core.service import looks_like_ad_bot
+    assert looks_like_ad_bot("https://www.rawzik.com") and looks_like_ad_bot("beatshop.store") and looks_like_ad_bot("www.mp3deals.net")
+    assert not looks_like_ad_bot("dweebus") and not looks_like_ad_bot("shrimp_associate") and not looks_like_ad_bot("dj.mike")
+    slskd.library[r"@@shop\RAWZIK - 2026\Artist - Real Track [rawzik.com].mp3"] = fixtures["mp3_320"]
+    slskd.user_for = {r"@@shop\RAWZIK - 2026\Artist - Real Track [rawzik.com].mp3": "https://www.rawzik.com"}
+    res = search_all(connected, "real track")
+    bot = [c for c in res.candidates if c.user == "https://www.rawzik.com"]
+    assert bot and all(c.note == "Ad bot" for c in bot)
+    with pytest.raises(ActionBlocked):
+        connected.request_download(bot[0])

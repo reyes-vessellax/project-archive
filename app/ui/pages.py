@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QFrame, QGridLayout, QHeaderView, QLineEdit, QSizePolicy, QTreeWidget, QTreeWidgetItem,
+from PySide6.QtWidgets import (QProgressBar, QFrame, QGridLayout, QHeaderView, QLineEdit, QSizePolicy, QTreeWidget, QTreeWidgetItem,
                                QWidget)
 
 from ..adapters.base import Candidate, SearchResult
@@ -15,7 +15,7 @@ from ..core import jobs as J
 from ..core.rules import fmt_time
 from ..core.service import ArchiveService
 from . import theme as T
-from .widgets import QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
+from .widgets import keep_scroll, smooth, QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
 
 
 # ------------------------------------------------------------------ shared: a job -> row data
@@ -100,7 +100,7 @@ class HomePage(QWidget):
         qcol.addLayout(head)
         self.list_host = QWidget(); self.list_host.setObjectName("page")
         self.list = vbox(self.list_host, spacing=0); self.list.addStretch(1)
-        qcol.addWidget(scroll(self.list_host), 1)
+        self.list_scroll = scroll(self.list_host); qcol.addWidget(self.list_scroll, 1)
         self.empty = label("Nothing in the queue. Search above, or drop tracks onto the window.", "faint", wrap=True)
         qcol.addWidget(self.empty)
         qw = QWidget(); qw.setLayout(qcol); qw.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -146,18 +146,25 @@ class HomePage(QWidget):
         if key == getattr(self, "_last_key", None):
             return
         self._last_key = key
-        # queue list
-        while self.list.count() > 1:
-            item = self.list.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self.empty.setVisible(not jobs)
-        self.list_host.setUpdatesEnabled(False)
-        for jid, d in rows:
-            row = QueueRow(jid, d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"])
-            row.clicked.connect(self.open_job.emit); row.removed.connect(self.remove_job.emit)
-            self.list.insertWidget(self.list.count() - 1, row)
-        self.list_host.setUpdatesEnabled(True)
+        prev_tags = getattr(self, "_prev_tags", {})
+        changed = {jid for jid, d in rows if jid in prev_tags and prev_tags[jid] != d["tag"]}
+        self._prev_tags = {jid: d["tag"] for jid, d in rows}
+        # queue list (rebuilt in place; the scroll position stays where the user left it)
+        def rebuild():
+            while self.list.count() > 1:
+                item = self.list.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            self.empty.setVisible(not jobs)
+            self.list_host.setUpdatesEnabled(False)
+            for jid, d in rows:
+                row = QueueRow(jid, d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"])
+                row.clicked.connect(self.open_job.emit); row.removed.connect(self.remove_job.emit)
+                self.list.insertWidget(self.list.count() - 1, row)
+                if jid in changed:
+                    row.flash()                               # the blip: this track just moved on
+            self.list_host.setUpdatesEnabled(True)
+        keep_scroll(self.list_scroll, rebuild)
         down = sum(1 for j in jobs if j["state"] == J.QUEUED)
         chk = sum(1 for j in jobs if j["state"] in (J.STAGING, J.ANALYZING))
         self.qnote.setText(f"{down} downloading · {chk} checking" if (down or chk) else "newest first")
@@ -241,6 +248,7 @@ class SearchPage(QWidget):
         self.tree.itemSelectionChanged.connect(self._selection)
         self.tree.itemClicked.connect(self._clicked)
         self.tree.verticalScrollBar().valueChanged.connect(self._scrolled)
+        smooth(self.tree)
         lay.addWidget(self.tree, 1)
         # empty-state message sits where the rows would be, not up by the search bar
         self.empty = label("", "muted", wrap=True); self.empty.setParent(self.tree.viewport())
@@ -283,7 +291,7 @@ class SearchPage(QWidget):
     def begin_search(self, query: str):
         """The moment Search is pressed: old rows go, the header names the new query, the text starts moving."""
         self._ranked = []; self._shown = 0
-        self._anim_query = query; self._anim_i = 0; self._anim_dots = 0; self._prog = (0, 0, False)
+        self._anim_query = query; self._anim_i = 0; self._anim_dots = 0; self._prog = (0, 0, False); self._dropped = ""
         self._fill(0)
         self.title.setText(f"Searching for “{query}”")
         self.state.setText("")
@@ -314,6 +322,8 @@ class SearchPage(QWidget):
         found = f"{r} user{'s' if r != 1 else ''} · {f} file{'s' if f != 1 else ''} so far" if r else ""
         if not self._ranked:
             self._show_empty(f"{text}\nLooking for “{self._anim_query}”" + (f"\n{found}" if found else ""))
+        elif getattr(self, "_dropped", ""):
+            pass                                                # the fallback banner stays put
         else:
             self.state.setText(f"fastest first · {text.lower()}")
         self._set_foot("." * (self._anim_dots or 3))
@@ -330,10 +340,11 @@ class SearchPage(QWidget):
         if idle:
             self.title.setText("Search"); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
         self.title.setText(f"{n} result{'s' if n != 1 else ''}")
-        skipped = sum(1 for c in res.candidates if c.note)
+        skipped = sum(1 for c in res.candidates if c.note == "Extension mismatch")
+        bots = sum(1 for c in res.candidates if c.note == "Ad bot")
         locked = sum(1 for c in res.candidates if c.locked and not c.note)
         tail = (f" · {skipped} other format{'s' if skipped != 1 else ''} greyed" if skipped else "") + \
-               (f" · {locked} locked" if locked else "")
+               (f" · {locked} locked" if locked else "") + (f" · {bots} ad bot{'s' if bots != 1 else ''}" if bots else "")
         if res.error:
             self.state.setText("")
         elif searching:
@@ -351,7 +362,11 @@ class SearchPage(QWidget):
             self._show_empty("")
         selected = self.tree.selectedItems()
         keep = selected[0].data(0, Qt.UserRole).key if selected and isinstance(selected[0].data(0, Qt.UserRole), Candidate) else None
-        self._ranked = sorted(res.candidates, key=_rank)
+        self._dropped = res.dropped
+        self._ranked = sorted(res.candidates, key=lambda c: _rank(c, res.dropped))
+        if res.dropped:
+            self.state.setText(f'Nothing matched “{res.query}” — showing results for “{res.sent}” (without “{res.dropped}”)'
+                               + (" · still collecting…" if searching else ""))
         # keep whatever the user has already scrolled open, at least one page
         want = max(PAGE_ROWS, min(self._shown, len(self._ranked)))
         self._fill(want, keep)
@@ -381,7 +396,10 @@ class SearchPage(QWidget):
             elif c.locked or c.note:
                 for col in range(self.tree.columnCount()):
                     it.setForeground(col, self.palette().mid())
-                if c.note:
+                if c.note == "Ad bot":
+                    it.setText(9, c.note)
+                    it.setToolTip(9, "This account is a web shop's advertising bot. It answers every search and never sends a file.")
+                elif c.note:
                     it.setText(9, c.note)
                     it.setToolTip(9, f"{c.note}: .{c.extension or '(none)'} isn't in your accepted formats (Settings → Checks).")
                 elif c.locked:
@@ -453,8 +471,10 @@ def _speed(c: Candidate) -> str:
     return rate or "?"
 
 
-def _rank(c: Candidate):
+def _rank(c: Candidate, dropped: str = ""):
+    from ..core.fuzzy import closeness
     return (1 if (c.locked or c.note) else 0, 0 if c.free_slot else 1,
+            closeness(c.display_name or "", dropped) if dropped else 0,     # fallback: near-misses of the typo first
             c.queue_length if c.queue_length is not None else 1_000_000,
             -(c.upload_speed or 0), -(c.bitrate_kbps or 0))
 
@@ -468,6 +488,7 @@ class ReviewPage(QWidget):
     open_folder = Signal(str)
     reveal = Signal(str)
     remove_job = Signal(str)
+    retry = Signal(str)
     select = Signal(str)
 
     def __init__(self, svc: ArchiveService):
@@ -485,7 +506,7 @@ class ReviewPage(QWidget):
         rail.addLayout(rh); rail.addSpacing(8)
         self.rail_host = QWidget(); self.rail_host.setObjectName("page")
         self.rail = vbox(self.rail_host, spacing=2); self.rail.addStretch(1)
-        rail.addWidget(scroll(self.rail_host), 1)
+        self.rail_scroll = scroll(self.rail_host); rail.addWidget(self.rail_scroll, 1)
         rail.addWidget(label("↑↓ move · ⏎ download · ⌫ delete", "mono"))
         rw = QWidget(); rw.setLayout(rail); rw.setMinimumWidth(240); rw.setMaximumWidth(300)
         body.addWidget(rw, 1)
@@ -514,6 +535,14 @@ class ReviewPage(QWidget):
         det.addLayout(facts)
         det.addWidget(rule())
 
+        # download progress (only while the track is still coming in)
+        self.dl_host = QWidget(); dl = vbox(self.dl_host, spacing=6)
+        dh = hbox(); self.dl_title = label("Downloading", "h2"); dh.addWidget(self.dl_title); dh.addStretch(1)
+        self.dl_pct = label("", "monotext"); dh.addWidget(self.dl_pct); dl.addLayout(dh)
+        self.dl_bar = QProgressBar(self.dl_host); self.dl_bar.setTextVisible(False); self.dl_bar.setRange(0, 100); self.dl_bar.setFixedHeight(6)
+        self.dl_bar.setProperty("tag", "Down"); dl.addWidget(self.dl_bar)
+        self.dl_note = label("", "muted"); dl.addWidget(self.dl_note)
+        det.addWidget(self.dl_host); self.dl_host.hide()
         sh = hbox(); sh.addWidget(label("Spectrogram", "h2")); sh.addStretch(1)
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
         det.addLayout(sh)
@@ -530,11 +559,14 @@ class ReviewPage(QWidget):
         self.btn_delete = button("Delete", "danger", lambda: self.reject.emit(self.job_id))
         self.btn_cancel = button("Cancel download", "ghost", lambda: self.cancel.emit(self.job_id))
         self.btn_rerun = button("Re-check", "ghost", lambda: self.rerun.emit(self.job_id))
+        self.btn_retry = button("Retry download", "primary", lambda: self.retry.emit(self.job_id))
+        self.btn_retry.setToolTip("Ask the same source for the file again")
         self.btn_open = button("Open folder", "ghost", lambda: self.open_folder.emit(self.job_id))
         self.btn_reveal = button("Show in folder", "ghost", lambda: self.reveal.emit(self.job_id))
         self.btn_remove = button("Remove from list", "ghost", lambda: self.remove_job.emit(self.job_id))
         self.btn_remove.setToolTip("Takes it off the queue. Downloaded files stay in your library.")
-        for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel, self.btn_remove):
+        self._dots = QTimer(self, interval=450, timeout=self._tick_dots); self._dot_n = 0
+        for b in (self.btn_save, self.btn_anyway, self.btn_retry, self.btn_delete, self.btn_cancel, self.btn_remove):
             actions.addWidget(b)
         actions.addStretch(1)
         actions.addWidget(self.btn_rerun); actions.addWidget(self.btn_reveal); actions.addWidget(self.btn_open)
@@ -543,20 +575,39 @@ class ReviewPage(QWidget):
         body.addWidget(dw, 3)
         self.show_job(None, None)
 
+    def _tick_dots(self):
+        self._dot_n = (self._dot_n + 1) % 4
+        base = self.verdict_sub.text().rstrip(".")
+        self.verdict_sub.setText(base + "." * (self._dot_n or 3))
+
     def set_busy(self, on: bool):
         """While a Download/Delete is being carried out off-thread, the decision buttons can't be pressed twice."""
-        if on:
-            for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_remove):
-                b.setEnabled(False)
-        # when it's over, the next refresh() sets every button from the job's real state
+        for b in (self.btn_save, self.btn_anyway, self.btn_remove, self.btn_retry):
+            b.setEnabled(not on)
+        self.btn_delete.setEnabled(not on and self.btn_delete.property("can") is True)
 
     def set_rail(self, jobs: list[dict], analyses: dict[str, dict | None], steps: dict[str, str]):
+        rows = [(j["id"], row_data(j, analyses.get(j["id"]), steps)) for j in jobs]
+        key = tuple((jid, d["tag"], d["title"], d["removable"]) for jid, d in rows)
+        self.rail_count.setText(str(sum(1 for j in jobs if j["state"] == J.READY)))
+        if key == getattr(self, "_rail_key", None):
+            # nothing structural changed: just move the highlight (no rebuild, no scroll jump)
+            for i in range(self.rail.count()):
+                w = self.rail.itemAt(i).widget()
+                if w is not None and w.property("job_id"):
+                    want = "true" if w.property("job_id") == self.job_id else "false"
+                    if w.property("selected") != want:
+                        w.setProperty("selected", want); T.repolish(w)
+            return
+        self._rail_key = key
+        keep_scroll(self.rail_scroll, lambda: self._build_rail(jobs, analyses, steps))
+
+    def _build_rail(self, jobs, analyses, steps):
         while self.rail.count() > 1:
             item = self.rail.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         shown = jobs
-        self.rail_count.setText(str(sum(1 for j in shown if j["state"] == J.READY)))
         for j in shown:
             d = row_data(j, analyses.get(j["id"]), steps)
             w = QWidget(); w.setObjectName("row"); w.setCursor(Qt.PointingHandCursor); w.setProperty("tag", d["tag"])
@@ -573,13 +624,16 @@ class ReviewPage(QWidget):
             for lbl in (t, n):
                 lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
             w.mouseReleaseEvent = lambda e, jid=j["id"]: self.select.emit(jid)
+            w.setProperty("job_id", j["id"])
             w.setProperty("selected", "true" if j["id"] == self.job_id else "false")
             self.rail.insertWidget(self.rail.count() - 1, w)
 
     def show_job(self, job: dict | None, a: dict | None, steps: dict[str, str] | None = None):
         self.job_id = job["id"] if job else None
-        for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel, self.btn_rerun, self.btn_open, self.btn_reveal, self.btn_remove):
+        for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel, self.btn_rerun, self.btn_open, self.btn_reveal, self.btn_remove, self.btn_retry):
             b.setVisible(bool(job))
+        self.dl_host.setVisible(bool(job) and job["state"] == J.QUEUED)
+        self._dots.stop()
         while self.checks.count():
             item = self.checks.takeAt(0)
             if item.widget():
@@ -595,6 +649,17 @@ class ReviewPage(QWidget):
         self.source.setText(f"{(a or {}).get('facts', {}).get('tags', {}).get('album') or ''}  ·  {src}".strip(" ·").upper())
         self.h1.setText(d["title"]); self.artist.setText(d["artist"])
         busy = job["state"] in (J.STAGING, J.ANALYZING, J.QUEUED)
+        if job["state"] == J.QUEUED:
+            pct = float(job.get("progress") or 0)
+            self.dl_bar.setValue(int(pct)); self.dl_pct.setText(f"{pct:.0f}%")
+            msg = job.get("message") or ""
+            self.dl_title.setText("Downloading" if pct > 0 else "Waiting for the source")
+            self.dl_note.setText({"Queued, Remotely": "In line at the source — it starts when they have a free slot.",
+                                  "Queued, Locally": "Queued here; starts in a moment.",
+                                  "Requested": "Asking the source…", "InProgress": "Receiving the file…",
+                                  "Initializing": "Starting up the transfer…"}.get(msg, msg))
+        if job["state"] in (J.STAGING, J.ANALYZING):
+            self._dots.start()                                 # the verdict sub-line keeps moving while we check
         status = a["overall_status"] if a and not busy else None
         if status:
             set_tag(self.verdict, T.GRADE_WORD[status]); self.verdict.setText(T.GRADE_LONG[status])
@@ -644,10 +709,18 @@ class ReviewPage(QWidget):
         ready = job["state"] == J.READY and bool(a)
         self.btn_save.setVisible(ready and status == "PASS")
         self.btn_anyway.setVisible(ready and status == "WARN")
+        for b in (self.btn_save, self.btn_anyway, self.btn_remove, self.btn_retry):
+            b.setEnabled(True)                                 # a previous Download/Delete may have greyed them
         self.btn_cancel.setVisible(job["state"] == J.QUEUED)
         finished = job["state"] in J.FINAL
-        self.btn_delete.setVisible(job["state"] != J.QUEUED and not finished); self.btn_delete.setEnabled(job["state"] in (J.READY, J.ERROR))
+        self.btn_delete.setVisible(job["state"] != J.QUEUED and not finished)
+        self.btn_delete.setProperty("can", job["state"] in (J.READY, J.ERROR)); self.btn_delete.setEnabled(job["state"] in (J.READY, J.ERROR))
         self.btn_remove.setVisible(finished)
+        dl_failed = job["state"] == J.ERROR and bool(job.get("remote_user")) and not job.get("staged_path")
+        self.btn_retry.setVisible(dl_failed)
+        self.btn_rerun.setVisible(not dl_failed and job["state"] != J.QUEUED)
+        self.btn_rerun.setText("Re-checking…" if job["state"] in (J.STAGING, J.ANALYZING) else "Re-check")
+        self.btn_rerun.setEnabled(job["state"] not in (J.STAGING, J.ANALYZING))
         self.btn_rerun.setEnabled(job["state"] in (J.READY, J.ERROR) and bool(job["staged_path"]))
         done = job["state"] == J.PROMOTED and bool(job.get("final_path")) and Path(job["final_path"]).exists()
         self.btn_reveal.setVisible(done)

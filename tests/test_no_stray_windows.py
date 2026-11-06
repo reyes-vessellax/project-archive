@@ -54,3 +54,34 @@ def test_nothing_strays_to_top_level(connected, fixtures):
     app.removeEventFilter(watch)
     w.close()
     assert strays == [], strays
+
+
+@needs_ffmpeg
+def test_download_button_works_for_the_next_track_too(connected, fixtures):
+    """0.4.2–0.4.12: after the first Download to Library, every later track's Download button stayed greyed."""
+    from PySide6.QtWidgets import QApplication
+    from app.ui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    s = connected.settings; s.setup_done = True; s.tour_done = True; connected.save_settings(s)
+    connected.accounts.sign_up("T", "t@example.com", "correct-horse-battery")
+    w = MainWindow(connected); w.resize(1200, 800); w.show()
+
+    def spin(sec):
+        end = time.monotonic() + sec
+        while time.monotonic() < end:
+            app.processEvents(); time.sleep(0.01)
+    a = connected.stage(fixtures["mp3_320"]); connected.analyze(a["id"])
+    b = connected.stage(fixtures["mp3_320"]); connected.analyze(b["id"])
+    w.refresh(); w._open_job(a["id"]); spin(0.2)
+    btn = w.review.btn_save if w.review.btn_save.isVisible() else w.review.btn_anyway
+    assert btn.isEnabled()
+    btn.click()                                               # Download to Library, off-thread
+    for _ in range(100):
+        spin(0.1)
+        if connected.db.job(a["id"])["state"] == "PROMOTED":
+            break
+    spin(0.3)
+    w._open_job(b["id"]); spin(0.2)
+    btn2 = w.review.btn_save if w.review.btn_save.isVisible() else w.review.btn_anyway
+    assert btn2.isVisible() and btn2.isEnabled(), "second track's Download button must be usable"
+    w.close()

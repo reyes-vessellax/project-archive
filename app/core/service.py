@@ -11,6 +11,7 @@ Two ways a track enters quarantine:
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import threading
 import uuid
@@ -36,6 +37,35 @@ MSG_TROUBLE = "Having trouble connecting to the server."
 
 class ActionBlocked(RuntimeError):
     """A user action isn't allowed right now. The message is shown to the user."""
+
+
+MAX_DOWNLOAD_RETRIES = 2            # the engine already makes 3 attempts of its own per request
+RETRY_WAIT_S = (15, 45)
+
+_BOT_USER = re.compile(r"(https?:|www\.|\.(com|net|org|io|co|xyz|site|store|shop|biz|info|me|tv|cc)(/|$))", re.I)
+
+
+def clean_query(q: str) -> str:
+    """Words go to the network as substrings to match against filenames, so a stray trailing dot or comma
+    ("ulo s.", "weber,") makes a word that almost no filename contains. Strip punctuation from the ends of
+    words; keep it inside ("a.m.", "drum&bass", "7'")."""
+    out = []
+    for w in q.split():
+        core = w.strip(",;:!?\"'()[]{}")
+        if core.endswith(".") and core.count(".") == 1:        # "s." -> "s", but "a.m." stays
+            core = core[:-1]
+        out.append(core or w)
+    return " ".join(out)
+
+
+def looks_like_ad_bot(user: str) -> bool:
+    """Accounts named after a web shop (e.g. "https://www.rawzik.com") answer every search with their
+    catalogue and never deliver; every request to one times out. Grey them out up front."""
+    return bool(user) and bool(_BOT_USER.search(user.strip()))
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class ArchiveService:
@@ -110,6 +140,12 @@ class ArchiveService:
             self.port_open, self.port_note = upnp.open_port(port, f"{APP_NAME} downloads")
         except Exception as e:                                  # noqa: BLE001
             self.port_open, self.port_note = False, f"Couldn't talk to the router: {e}"
+        try:
+            from datetime import datetime as _dt
+            with open(self.db.path.parent / "app.log", "a", encoding="utf-8") as f:
+                f.write(f"{_dt.now().isoformat(timespec='seconds')} port: {self.port_note}\n")
+        except OSError:
+            pass
 
     def reset_everything(self) -> None:
         """Start fresh: stop the engine, drop the database, quarantine, engine instance and logs. The Soulseek
@@ -158,14 +194,18 @@ class ArchiveService:
     def search(self, query: str, timeout_s: float = 45.0, check_login: bool = True) -> SearchResult:
         adapter = self._adapter_or_block()
         self._searches_started = getattr(self, "_searches_started", 0) + 1
-        if self._searches_started % 5 == 0:
-            self.engine_housekeeping()                       # old searches hold their results in the engine
         if check_login and self.managed_mode and not self.adapter_logged_in():
             raise ActionBlocked("Still signing in. Search opens as soon as you're connected.")
-        return adapter.search(query, timeout_s=timeout_s)
+        return adapter.search(clean_query(query), timeout_s=timeout_s)
 
     def search_status(self, search_id: str) -> tuple[bool, int, int, str]:
         return self._adapter_or_block().search_status(search_id)
+
+    def stop_search(self, search_id: str) -> None:
+        try:
+            self._adapter_or_block().stop_search(search_id)
+        except Exception:
+            pass
 
     def forget_search(self, search_id: str) -> None:
         try:
@@ -183,7 +223,9 @@ class ArchiveService:
         exts = {e.lower().lstrip(".") for e in self.settings.extensions}
         res = self._adapter_or_block().search_results(search_id)
         for c in res.candidates:                           # shown greyed rather than hidden, so counts match other clients
-            if c.extension not in exts:
+            if looks_like_ad_bot(c.user):
+                c.note = "Ad bot"                           # answers every search with a shop's catalogue, never sends a byte
+            elif c.extension not in exts:
                 c.note = "Extension mismatch"
         return res
 
@@ -199,6 +241,8 @@ class ArchiveService:
                 raise ActionBlocked(f"That file is {cand.size / 1e6:.0f} MB, over the {s.max_file_mb} MB limit in Settings.")
             if cand.extension.lower() not in {e.lower().lstrip(".") for e in s.extensions}:
                 raise ActionBlocked(f".{cand.extension or '(none)'} files aren't accepted.")
+            if looks_like_ad_bot(cand.user):
+                raise ActionBlocked("That source is a shop's advertising account; it never sends files.")
             job_id = str(uuid.uuid4())
             expires = (datetime.now(timezone.utc) + timedelta(hours=s.retention_hours)).isoformat(timespec="seconds")
             self.db.insert_job(id=job_id, source_kind=cand.source_kind, source_path=None, original_name=name,
@@ -237,11 +281,54 @@ class ArchiveService:
                     self.db.update_job(job["id"], state=J.ERROR, message=f"Couldn't move the download into quarantine: {e}")
                 self.adapter.forget(t)                       # the engine has nothing more to do with it
             elif t.failed:
-                self.db.update_job(job["id"], state=J.ERROR, message=f"Download failed: {t.state}")
                 self.adapter.forget(t)
+                tries = int(job.get("retries") or 0)
+                if "TimedOut" in (t.state or "") and tries < MAX_DOWNLOAD_RETRIES:
+                    # the peer never got the transfer going; usually transient, so try again after a pause
+                    wait = RETRY_WAIT_S[min(tries, len(RETRY_WAIT_S) - 1)]
+                    retry_at = (datetime.now(timezone.utc) + timedelta(seconds=wait)).isoformat(timespec="seconds")
+                    self.db.update_job(job["id"], transfer_id=None, retries=tries + 1, retry_at=retry_at, progress=0.0,
+                                       message=f"No answer from the source. Retrying in {wait} s ({tries + 1} of {MAX_DOWNLOAD_RETRIES})…")
+                    self.db.event(job["id"], "retry_scheduled", t.state or "")
+                else:
+                    self.db.update_job(job["id"], state=J.ERROR, message=f"Download failed: {t.state}")
             else:
                 self.db.update_job(job["id"], progress=t.percent, message=t.state)
+        # jobs waiting to be re-requested
+        for job in self.db.jobs(states=(J.QUEUED,)):
+            if job.get("transfer_id") or not job.get("retry_at"):
+                continue
+            if job["retry_at"] <= now_iso():
+                self._rerequest(job)
         return ready
+
+    def _rerequest(self, job: dict) -> None:
+        cand = Candidate(source_kind=job["source_kind"], user=job["remote_user"], remote_path=job["remote_path"],
+                         size=job["remote_size"] or 0, display_name=job["original_name"])
+        try:
+            t = self.adapter.request_download(cand)
+            self.db.update_job(job["id"], transfer_id=t.transfer_id, retry_at=None, message=t.state or "Requested again")
+            self.db.event(job["id"], "requested_again", str(job.get("retries") or 0))
+        except ConnectorError as e:
+            self.db.update_job(job["id"], state=J.ERROR, message=f"Download request failed: {e}")
+
+    def retry_download(self, job_id: str) -> dict:
+        """Ask the same source again, right now (the review page's Retry download)."""
+        job = self.db.job(job_id)
+        if not job or not job.get("remote_user"):
+            raise ActionBlocked("This track didn't come from the network, so there is nothing to retry.")
+        if self.adapter is None:
+            raise ActionBlocked("Not connected yet.")
+        if job.get("transfer_id"):
+            try:
+                self.adapter.forget(Transfer(transfer_id=job["transfer_id"], user=job["remote_user"],
+                                             remote_path=job["remote_path"], size=job["remote_size"] or 0, state=""))
+            except ConnectorError:
+                pass
+        self.db.update_job(job_id, state=J.QUEUED, transfer_id=None, retry_at=None, progress=0.0, hidden=0,
+                           retries=int(job.get("retries") or 0), message="Asking the source again…")
+        self._rerequest(self.db.job(job_id))
+        return self.db.job(job_id)
 
     def cancel(self, job_id: str) -> None:
         with self._lock:
@@ -369,8 +456,46 @@ class ArchiveService:
             shutil.copyfile(src, dst)
             analysis["spectrogram_path"] = str(dst)
             self.db.save_analysis(job_id, analysis)
+            self._prune_spectrograms(keep_dir)
         except OSError:
             pass
+
+    def _prune_spectrograms(self, keep_dir: Path) -> int:
+        """Keep the newest N pictures; the rest can be redrawn from the library file when opened."""
+        cap = max(10, int(self.settings.keep_spectrograms or 100))
+        pngs = sorted(keep_dir.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
+        removed = 0
+        for p in pngs[cap:]:
+            try:
+                p.unlink(); removed += 1
+            except OSError:
+                pass
+        return removed
+
+    def redraw_spectrogram(self, job_id: str) -> str | None:
+        """Draw the spectrogram again from the library copy (for a track whose picture was pruned).
+        Decode only; no re-grading. Returns the new path, or None if the file is gone."""
+        job = self._require(job_id)
+        a = self.db.analysis(job_id)
+        src = Path(job.get("final_path") or "")
+        if not a or not src.exists():
+            return None
+        from ..media.decode import decode_and_analyze
+        from ..media.spectrogram import render
+        f = a.get("facts", {}) or {}
+        sr = int(f.get("sample_rate_hz") or 44100)
+        keep_dir = self.db.path.parent / "spectrograms"
+        keep_dir.mkdir(parents=True, exist_ok=True)
+        d = decode_and_analyze(src, sr, f.get("duration_s"), self.settings.ffmpeg_path,
+                               timeout=max(120.0, (f.get("duration_s") or 600) * 1.5))
+        try:
+            out = render(d.frames, keep_dir / f"{job_id}.png")
+        finally:
+            d.frames = None
+        a["spectrogram_path"] = str(out)
+        self.db.save_analysis(job_id, a)
+        self._prune_spectrograms(keep_dir)
+        return str(out)
 
     def reject(self, job_id: str) -> None:
         with self._lock:

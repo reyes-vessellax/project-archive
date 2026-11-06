@@ -63,6 +63,8 @@ class SearchResult:
     candidates: list[Candidate] = field(default_factory=list)
     state: str = ""                 # the client's own state string, e.g. "Completed, TimedOut"
     error: str = ""                 # plain-English reason when the search ended badly, else ""
+    sent: str = ""                  # what actually went to the network (differs from query on a fallback)
+    dropped: str = ""               # the word left out on a fallback search, "" otherwise
 
 
 @dataclass
@@ -98,6 +100,9 @@ class SourceAdapter:
 
     def forget_search(self, search_id: str) -> None:
         """Drop a finished search from the engine."""
+
+    def stop_search(self, search_id: str) -> None:
+        """End a running search, keeping what it has so far."""
 
     def search_status(self, search_id: str) -> tuple[bool, int, int, str]:
         """(finished, responses_so_far, files_so_far, error) without fetching the results themselves."""

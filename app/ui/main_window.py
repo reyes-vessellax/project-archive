@@ -39,7 +39,17 @@ def _applog(line: str) -> None:
         pass
 
 
-SEARCH_LADDER_S = (4, 10, 22, 40)   # engine searches per query, short to long; each one's rows land when it ends
+# One network search per query (the network throttles accounts that send more; four per query made a
+# session go dark by the third query). We stop it ourselves when results dry up. Deadlines in seconds.
+SEARCH_LADDER_S = (40,)             # deadline for a normal search
+SEARCH_FALLBACK_S = (25,)           # the one retry without the shakiest word, when nothing at all came back
+SEARCH_MIN_S = 3.0                  # never stop before this: the first wave is still arriving
+SEARCH_QUIET_S = 2.5                # stop once nothing new has arrived for this long (after SEARCH_MIN_S)
+# Client-side budget so we never trip the network's own throttle: a small burst, then roughly one
+# network search every SEARCH_REFILL_S on average. Over the line, the server simply stops answering for
+# minutes, which looks like "no results" to the user; under it, every search comes back.
+SEARCH_BURST = 4
+SEARCH_REFILL_S = 6.0
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
 FIREWALL_ASK = (f"To download from other users, {APP_NAME} needs to accept incoming connections.\n\n"
                 f"Allow it now? Windows will ask you to confirm once. Nothing is shared from your computer "
@@ -70,6 +80,7 @@ class MainWindow(QMainWindow):
         self.signals = Signals()
         self.signals.progress.connect(self._on_progress)
         self.signals.done.connect(lambda _id: self.refresh())
+        self.signals.done.connect(self._search_buttons_settle)
         self.signals.notice.connect(self._notice)
         self._acache: dict[str, dict] = {}                   # finished analyses never change; read each once
         self.signals.failed.connect(self._on_failed)
@@ -133,7 +144,8 @@ class MainWindow(QMainWindow):
         self.searchp.pick.connect(self._pick_candidate)
         self.review.select.connect(self._open_job)
         self.review.promote.connect(self._promote); self.review.reject.connect(self._reject)
-        self.review.cancel.connect(self._cancel); self.review.rerun.connect(self._start_analysis)
+        self.review.cancel.connect(self._cancel); self.review.rerun.connect(self._recheck)
+        self.review.retry.connect(self._retry_download)
         self.review.open_folder.connect(self._open_folder)
         self.settings.saved.connect(self._settings_saved); self.settings.sign_out.connect(self._sign_out)
         self.settings.account_changed.connect(self._refresh_account)
@@ -151,7 +163,7 @@ class MainWindow(QMainWindow):
             QApplication.instance().setStyleSheet(T.stylesheet(theme))
         if hasattr(self, "home"):
             accent = T.colours(self.svc.settings.theme)["accent"]
-            self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent); self.library.spectrum.set_accent(accent)
+            self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent); self.library.set_accent(accent)
         if hasattr(self, "topbar"):
             self._brand_theme()
 
@@ -473,51 +485,30 @@ class MainWindow(QMainWindow):
             """The engine releases a search's results when that search ends, so one query becomes a ladder of
             engine searches (short to long). Each rung that finishes adds its rows to the list, so the page
             fills top-down while the longer rungs keep collecting. If the engine does hand out live rows for
-            a running search, those are used too."""
+            a running search, those are used too. If nothing at all comes back, one more try without the
+            word most likely to be a typo (and the header says so)."""
             sid = None
             try:
-                rungs = []
-                for i, secs in enumerate(SEARCH_LADDER_S):
-                    r = self.svc.search(q, timeout_s=secs, check_login=(i == 0))
-                    rungs.append({"res": r, "done": False})
-                sid = self.search_id = rungs[0]["res"].search_id
-                started = time.monotonic()
-                merged: dict[str, Candidate] = {}
-                shown = -1
-                delay = 0.4
-                while True:
-                    time.sleep(delay)
-                    delay = min(1.2, delay * 1.3)
-                    if self.search_id != sid:
-                        return                                              # a newer search took over
-                    now = time.monotonic()
-                    best_count = (0, 0)
-                    for rung in rungs:
-                        if rung["done"]:
-                            continue
-                        res = self.svc.search_results(rung["res"].search_id)
-                        for c in res.candidates:
-                            merged.setdefault(c.key, c)
-                        done, n_resp, n_files, err = self.svc.search_status(rung["res"].search_id)
-                        best_count = max(best_count, (n_resp, n_files))
-                        if done:
-                            rung["done"] = True
-                            _applog(f"rung {rung['res'].search_id[:8]} ({len(res.candidates)} rows) done; merged={len(merged)}")
-                            if rung is not rungs[0]:
-                                self.io.start(Task(lambda s=rung["res"].search_id: self.svc.forget_search(s), self.signals))
-                    all_done = all(r["done"] for r in rungs) or now - started > SEARCH_LADDER_S[-1] + 20
-                    if len(merged) != shown or all_done:
-                        shown = len(merged)
-                        out = SearchResult(query=q, search_id=sid, finished=all_done, candidates=list(merged.values()))
-                        if all_done:
-                            self.search_running = False
-                        self.signals.results.emit(out)
-                    self.signals.progress_search.emit(best_count[0], best_count[1], len(merged) > 0)
-                    if all_done:
-                        return
+                # the previous query's searches, finished or not, out of the engine before new ones go in:
+                # every live search costs the engine memory and the network goodwill
+                for old in list(getattr(self, "_active_rungs", [])):
+                    self.svc.forget_search(old)
+                self._active_rungs = []
+                self.svc.engine_housekeeping()
+                sid = self._ladder(q, SEARCH_LADDER_S, sent=q, dropped="")
+                if sid is None:
+                    return
+                if self._last_count == 0 and self.search_id == sid:
+                    from ..core import fuzzy
+                    dropped = fuzzy.shakiest_word(q, self._known_words())
+                    if dropped:
+                        reduced = " ".join(w for w in q.split() if w.lower().strip("'\"") != dropped)
+                        _applog(f"no results for {q!r}; trying without {dropped!r}: {reduced!r}")
+                        self._ladder(reduced, SEARCH_FALLBACK_S, sent=reduced, dropped=dropped, keep_id=sid)
             except Exception as e:
                 import traceback
                 _applog("search failed: " + traceback.format_exc())
+                self.search_running = False                 # before the emit, so the buttons come back
                 self.signals.results.emit(SearchResult(query=q, search_id=sid, finished=True,
                                                        error=f"The search stopped: {e}"))
                 raise
@@ -525,6 +516,106 @@ class MainWindow(QMainWindow):
                 self.search_running = False
                 self.signals.done.emit("")
         self.io.start(Task(work, self.signals))
+
+    def _known_words(self) -> set[str]:
+        """Words we've seen in result names this session plus the library's own file names."""
+        from ..core import fuzzy
+        known = set(getattr(self, "_seen_words", set()))
+        try:
+            for j in self.svc.db.jobs(include_hidden=True, limit=2000):
+                known.update(fuzzy.words(j.get("original_name") or ""))
+        except Exception:
+            pass
+        return known
+
+    def _take_search_token(self) -> None:
+        """Token bucket for network searches; blocks (off the UI thread) until one is available."""
+        now = time.monotonic()
+        tokens, last = getattr(self, "_bucket", (SEARCH_BURST, now))
+        tokens = min(SEARCH_BURST, tokens + (now - last) / SEARCH_REFILL_S)
+        if tokens < 1:
+            wait = (1 - tokens) * SEARCH_REFILL_S
+            self.signals.notice.emit(f"Pacing… the network limits how often we can ask. Next search in {wait:.0f} s.")
+            _applog(f"search budget: waiting {wait:.1f}s")
+            time.sleep(wait)
+            now = time.monotonic(); tokens = 1
+        self._bucket = (tokens - 1, now)
+
+    def _ladder(self, q: str, secs_list, sent: str, dropped: str, keep_id: str | None = None):
+        """ONE network search per query (what the other clients do, and all the network tolerates), stopped
+        by us the moment it's ripe: the engine only hands out a search's rows once it has ended, so we watch
+        its live counts and end it when they stop growing (or at the deadline), then read everything it got.
+        Returns the id the page is keyed on. secs_list[-1] is the deadline."""
+        from ..core import fuzzy
+        deadline = float(secs_list[-1])
+        self._take_search_token()
+        res = self.svc.search(q, timeout_s=deadline + 10, check_login=(keep_id is None))
+        sid_engine = res.search_id
+        sid = keep_id or sid_engine
+        if keep_id is None:
+            self.search_id = sid
+        self._last_count = 0
+        t0 = time.monotonic()
+        history: list[tuple[float, int]] = []                  # (elapsed, files) samples
+        stopped = False
+        delay = 0.35
+        while True:
+            time.sleep(delay)
+            delay = min(0.8, delay * 1.25)
+            if self.search_id != sid:
+                self.svc.stop_search(sid_engine)
+                return None                                     # a newer search took over
+            done, n_users, n_files, err = self.svc.search_status(sid_engine)
+            el = time.monotonic() - t0
+            history.append((el, n_files))
+            self.signals.progress_search.emit(n_users, n_files, False)
+            if not done and not stopped and self._ripe(history, el, deadline):
+                self.svc.stop_search(sid_engine); stopped = True
+                _applog(f"search {sid_engine[:8]} {q!r} stopped at {el:.1f}s with {n_users} users / {n_files} files")
+                continue
+            if done or el > deadline + 25:
+                final = self.svc.search_results(sid_engine); final.query = q
+                final.search_id = sid; final.finished = True
+                final.sent, final.dropped = sent, dropped
+                if err:
+                    final.error = err
+                n = len(final.candidates)
+                _applog(f"search {sid_engine[:8]} {q!r} done at {el:.1f}s: {n} rows from {n_users} users")
+                self._last_count = n
+                self.search_running = False if (n or dropped or len(fuzzy.words(q)) < 2) else True
+                self.signals.results.emit(final)
+                words = getattr(self, "_seen_words", set())
+                for c in final.candidates:
+                    words.update(fuzzy.words(c.display_name or ""))
+                self._seen_words = words
+                if sid_engine != sid:
+                    self.io.start(Task(lambda s=sid_engine: self.svc.forget_search(s), self.signals))
+                return sid
+
+    @staticmethod
+    def _ripe(history, el: float, deadline: float) -> bool:
+        """Stop when the flow of results has dried up — not before SEARCH_MIN_S, never after the deadline.
+        A plateau is: nothing new for SEARCH_QUIET_S, or growth under 3% over the last SEARCH_QUIET_S once
+        we already hold a good number of files."""
+        if el >= deadline:
+            return True
+        if el < SEARCH_MIN_S:
+            return False
+        files_now = history[-1][1]
+        if files_now == 0:
+            return False                                        # rare query: give the far corners time
+        past = [f for (t, f) in history if t <= el - SEARCH_QUIET_S]
+        if not past:
+            return False
+        then = past[-1]
+        grew = files_now - then
+        return grew == 0 or (files_now >= 200 and grew < files_now * 0.03)
+
+    def _search_buttons_settle(self, _id: str = ""):
+        """Whatever path a search took to its end, the two Search buttons must read "Search" again."""
+        if not self.search_running:
+            self.home.search_btn.setText("Search"); self.home.search_btn.setEnabled(self._connected)
+            self.searchp.end_search()
 
     def _on_results(self, res: SearchResult):
         _applog(f"on_results id={str(res.search_id)[:8]} mine={str(self.search_id)[:8]} n={len(res.candidates)} running={self.search_running}")
@@ -571,6 +662,30 @@ class MainWindow(QMainWindow):
 
     def _start_analysis(self, job_id: str):
         self.pool.start(Task(lambda: self._analyze(job_id), self.signals))
+
+    def _recheck(self, job_id: str):
+        """Re-check from the review page: show it at once (CHECK tag, moving dots, button greyed)."""
+        job = self.svc.db.job(job_id)
+        if not job or not job.get("staged_path"):
+            self.statusBar().showMessage("Nothing to re-check: the file never arrived. Use Retry download.", 6000); return
+        self.steps[job_id] = "Re-checking…"
+        self.svc.db.update_job(job_id, state=J.ANALYZING, message="Re-checking…")
+        self._acache.pop(job_id, None)
+        self.refresh()
+        self._start_analysis(job_id)
+
+    def _retry_download(self, job_id: str):
+        self.review.set_busy(True)
+
+        def work():
+            try:
+                self.svc.retry_download(job_id)
+                self.signals.notice.emit("Asked the source again.")
+            except ActionBlocked as e:
+                self.signals.notice.emit(str(e))
+            finally:
+                self.signals.done.emit(job_id)
+        self.io.start(Task(work, self.signals))
 
     def _analyze(self, job_id: str):
         try:

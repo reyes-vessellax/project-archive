@@ -91,5 +91,9 @@ def _audio_probe(exe_ffmpeg: str) -> str:
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         sys.exit(self_test())
+    if "--bench" in sys.argv:
+        from app.bench import main as bench_main
+        i = sys.argv.index("--bench")
+        sys.exit(bench_main(sys.argv[i + 1:]))
     from app.main import main
     sys.exit(main())

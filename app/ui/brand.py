@@ -27,7 +27,7 @@ def paint_mark(p: QPainter, rect: QRectF, colour: QColor, text_colour: QColor | 
 
 def mark_pixmap(size: int, colour: str, bg: str | None = None, dpr: float = 1.0) -> QPixmap:
     pm = QPixmap(int(size * dpr), int(size * dpr)); pm.setDevicePixelRatio(dpr)
-    pm.fill(QColor(bg) if bg else Qt.transparent)
+    pm.fill(Qt.transparent)                                  # the tile itself is drawn; corners stay clear
     p = QPainter(pm)
     paint_mark(p, QRectF(0, 0, size, size), QColor(bg or colour))
     p.end()

@@ -6,10 +6,6 @@ one line changes and this file gets a note.
 
 ## Unreleased
 
-- Library drop-down should open *inline under the clicked row* (slide down) and scroll with the list,
-  rather than as a panel under the whole list.
-- Cap saved spectrograms (e.g. newest 100); for older library tracks, re-analyse on demand from the
-  stored path.
 
 - Account backend on the website (sign-up, sign-in, license check); the in-app screens already exist.
 - Plan & billing: the account page shows the section; nothing is stored or charged yet.
@@ -19,6 +15,149 @@ one line changes and this file gets a note.
 - macOS build with the bundled engine.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
+
+## 0.5.5 — unreleased (search load)
+
+Searches got slow by the third query of a session. Each query was sending four engine searches, and
+earlier queries' searches stayed live in the engine until a periodic clean-up; the network throttles
+accounts that search that often, and the engine was carrying every past search's results in memory.
+- Two engine searches per query (5 s and 40 s) instead of four, spaced 1.5 s apart; fallback is one.
+- A new query first removes the previous query's searches from the engine, finished or not.
+- Per-rung timing (rows, users, seconds to finish) goes to `app.log` so slow sessions can be read.
+
+## 0.5.8 — unreleased (no more jumping lists)
+
+- The "elements skip" after an action: three lists were rebuilt from scratch on every poll tick and
+  reset their scroll to the top — the Ready rail (every 1–2 s, whether or not anything changed), the
+  queue list, and the Library (which also re-opened its drop-down with the slide animation and scrolled
+  the clicked row to the top). Now: the rail rebuilds only when its rows actually change (a selection
+  change just moves the highlight), every rebuild keeps the scroll position, the Library keeps its
+  position and re-mounts the open panel without animating, and opening a panel no longer scrolls the
+  list — it only brings the panel into view if it's off-screen.
+- 0.5.7 search numbers logged in `docs/SEARCH_TEST_CASES.md`: every "none found" name now returns
+  thousands of rows in 6–8 s.
+
+## 0.5.7 — unreleased
+
+- Tighter timings: a search can be stopped from 3 s (was 4) after 2.5 s of quiet (was 3), so popular
+  names land around 5 s; the budget is a burst of 4 then one search per 6 s on average (was 3 / 8 s).
+  Back off if a log shows the network going dark again.
+
+## 0.5.6 — unreleased (one search per query; the slowdown, explained)
+
+The 0.5.3 log showed it plainly: after ~16 network searches in three minutes, five queries in a row came
+back empty; after seven quiet minutes the same query returned 1,427 rows. The network rate-limits
+accounts that search often, and our ladder (4, then 2 searches per query) was tripping it.
+- **One network search per query**, like every other client. The engine only releases a search's rows
+  once it has ended, so we watch its live counts ("29 users · 121 files so far") and **stop it ourselves
+  when results dry up** (never before 4 s; after 3 s with nothing new, or under 3 % growth on a big
+  result; deadline 40 s for rare names). The engine keeps everything received up to the stop.
+- **Search budget**: at most a short burst, then about one search per 8 s on average. Faster than that
+  and the page says "Pacing… next search in N s" instead of the network silently going dark.
+- Punctuation at the ends of search words is dropped ("ulo s." → "ulo s"; "a.m." kept).
+- **Benchmark mode** for the 500-name list: `"Pied Piper.exe" --bench docs\search_bench_list.txt
+  --limit 60` writes `bench.csv` (time to first rows, users/files at 5 s and at the end, pickable /
+  locked / other-format / ad-bot) with proper pacing. `docs/SEARCH_TEST_CASES.md` tracks the cases.
+- Per-search timing lines in `app.log` (stopped at / done at, users, rows).
+
+## 0.5.5 — unreleased (search slowing down over a session)
+
+- Searches got slow by the third or fourth query of a session: the ladder sent four network searches
+  per query and the network throttles accounts that search that often. Now two per query (5 s and
+  40 s), spaced 1.5 s apart, and the previous query's searches are removed from the engine before a new
+  one starts. The typo fallback is one search.
+- Each query's timing goes to `app.log`: rows and users per rung and seconds to first rows.
+
+## 0.5.4 — unreleased
+
+- macOS builds for **both chips**: `-macOS-AppleSilicon` and `-macOS-Intel` dmgs ("this application is
+  not supported on this Mac" was the Apple Silicon build on an Intel machine).
+
+## 0.5.3 — unreleased
+
+- macOS ships as a **.dmg** (open, drag to Applications) instead of a zip; Archive Utility refused the
+  zip on at least one Mac. The build mounts the image, copies the app out the way a user would, checks
+  the signature survived and runs the self-test from the copy before publishing.
+
+## 0.5.2 — unreleased (scrolling with momentum)
+
+- Wheel scrolling now feels like a browser's: a fixed ~110 px per notch, an ease-out glide, and
+  **momentum** — notches that arrive mid-glide add distance and lengthen the glide rather than
+  restarting it. Stress-tested: 25 notches in a quarter second on a 20,000-row list glides forward
+  monotonically and carries the distance. Trackpads keep their native behaviour.
+
+## 0.5.1 — unreleased
+
+- Search buttons always return to "Search" when a search ends (the error path left them stuck).
+- macOS icon generated as .icns (the Mac build failed on the .ico); icon corners transparent.
+
+## 0.5.0 — unreleased (smooth scrolling, macOS build)
+
+- Smooth scrolling everywhere: lists scroll per pixel and wheel ticks glide (220 ms ease-out) instead
+  of jumping a row at a time; ticks that land mid-glide extend it. Trackpads are left as they are.
+- **macOS build** (Apple Silicon): `PiedPiper-<version>-macOS.zip` containing `Pied Piper.app` with a
+  static FFmpeg and the engine bundled, ad-hoc signed so it runs on Apple Silicon. Not notarized yet:
+  first open is right-click → Open (or System Settings → Privacy & Security → Open Anyway).
+- 0.5 rolls up everything since 0.4.0: tour, Library with inline drop-down and player, search that
+  matches other clients (ladder, locked files, ad bots greyed, typo fallback), no popups, auto-retry,
+  progress, Retry download, blip, start-up marks, spectrogram cap, Pied Piper placeholder.
+
+## 0.4.16 — unreleased (spectrogram cap)
+
+- Library spectrograms on disk are capped at the newest 100 (~0.8 MB each → ~80 MB). Opening an older
+  track in the Library redraws its picture from the library file in the background ("Drawing the
+  spectrogram again…"), which then counts as newest. The grade is not recomputed — only the picture.
+  Cap is `keep_spectrograms` in settings (floor 10).
+
+## 0.4.15 — unreleased (a little give in search; inline library drop-down)
+
+- **Zero results → one retry without the shakiest word.** The network matches every typed word as a
+  plain substring of the filename, so a typo ("dace it out") or a tense ("danced") finds nothing. When a
+  search comes back empty, the app re-runs it once without the word most likely to be the mistake (not a
+  common word, not seen in any result or library name before; shortest wins) and says so in the header:
+  *Nothing matched "dace it out chris gooding" — showing results for "it out chris gooding" (without "dace")*.
+  One extra search, only on a miss.
+- On that fallback, rows whose names contain a near-miss of the dropped word ("Dance" for "dace") are
+  ranked first within the same availability band — fastest sources still bubble to the top.
+- **Library drop-down opens inline, under the clicked row**, full width, sliding open, and scrolls with
+  the list. Click the row again or Close to fold it. Rebuilt fresh each time it opens.
+
+## 0.4.14 — unreleased (the time-outs, named)
+
+The 0.4.11 engine log settles the time-outs: every one of them was a request to the "user"
+`https://www.rawzik.com` — a shop's advertising account that answers every search with its catalogue
+and never sends a byte (the engine tried each one 3 times, 15 s apart). Every download from a real
+user went through at 3–12 MB/s, and the port was open. So:
+- Sources whose name looks like a web address are tagged **"Ad bot"**, greyed, sorted last and can't
+  be requested; the header counts them.
+- Our own automatic retries drop to 2 (15 s, 45 s) since the engine already makes 3 attempts per request.
+- The router/port result is written to `app.log` at start-up.
+
+## 0.4.13 — unreleased
+
+- **Fixed:** after the first Download to Library, every later track's Download / Delete button stayed
+  greyed (introduced in 0.4.2 when those actions moved off the UI thread; the buttons were disabled for
+  the copy and never re-enabled). There is no reason to pace downloads; they run back to back. A test
+  now clicks Download on one track and checks the next track's button is usable.
+
+## 0.4.12 — unreleased (downloads that time out)
+
+- **"Completed, TimedOut" downloads.** The engine gave a source 30 s to get the transfer going before
+  giving up; peers behind firewalls often need longer. Engine timeouts raised (connect 15 s, inactivity
+  60 s, transfer 120 s), and a timed-out download is now **retried automatically** up to 3 times
+  (10 s, 30 s, 60 s apart) with the row saying "No answer from the source. Retrying in 30 s (2 of 3)…"
+  before it's marked failed.
+- Review page for a track still downloading shows a progress bar with percentage and a plain-English
+  line (in line at the source / receiving the file…).
+- A failed download's review page offers **Retry download** (asks the same source again, right now)
+  instead of Re-check, which only re-runs the checks on a file that has arrived.
+- Re-check now shows at once: the verdict flips to CHECK with moving dots and the button reads
+  "Re-checking…" until the result lands.
+- A queue row blips green for a moment when its track moves to the next stage (downloaded → checking,
+  checking → verdict).
+- Start-up screen lights are real marks now (● busy, ✓ done, ✕ failed, – skipped).
+- "Open Archive" → "Open Pied Piper" (follows the app name).
+- The player's pause glyph is drawn, not a font character, so the bars sit together.
 
 ## 0.4.11 — unreleased (the flashing windows, found)
 

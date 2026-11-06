@@ -28,6 +28,7 @@ class FakeSlskd:
         self.auto_complete = True                   # finish downloads on the first status poll
         self.logged_in = True
         self.fail_next_download = False
+        self.timeout_next_downloads = 0        # how many upcoming requests end "Completed, TimedOut"
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -107,6 +108,18 @@ class FakeSlskd:
                     return self._send(201)
                 self._send(404)
 
+            def do_PUT(self):
+                if not self._auth():
+                    return
+                parts = [unquote(p) for p in urlsplit(self.path).path.split("/") if p]
+                if parts[2:3] == ["searches"] and len(parts) == 4:
+                    s = server.searches.get(parts[3])
+                    if not s:
+                        return self._send(404)
+                    s["ends_at"] = 0; s["meta"]["state"] = "Completed, Cancelled"
+                    return self._send(200, server._meta(parts[3]))
+                self._send(404)
+
             def do_DELETE(self):
                 if not self._auth():
                     return
@@ -134,14 +147,16 @@ class FakeSlskd:
     # behaviour -----------------------------------------------------------------------
     def _make_search(self, sid: str, text: str, timeout_s: float = 15.0) -> dict:
         words = text.lower().split()
-        files = []
+        by_user: dict[str, list] = {}
         for remote, local in self.library.items():
             if all(w in remote.lower() for w in words):
-                files.append({"filename": remote, "size": local.stat().st_size,
+                user = getattr(self, "user_for", {}).get(remote, "peer_a")
+                by_user.setdefault(user, []).append({"filename": remote, "size": local.stat().st_size,
                               "extension": local.suffix.lstrip("."), "bitRate": 320, "length": 40,
                               "isVariableBitRate": False, "sampleRate": 44100, "bitDepth": None, "isLocked": False})
-        responses = [{"username": "peer_a", "hasFreeUploadSlot": True, "uploadSpeed": 500000, "queueLength": 0,
-                      "fileCount": len(files), "files": files}] if files else []
+        files = [f for fs in by_user.values() for f in fs]
+        responses = [{"username": u, "hasFreeUploadSlot": True, "uploadSpeed": 500000, "queueLength": 0,
+                      "fileCount": len(fs), "files": fs} for u, fs in by_user.items()]
         return {"meta": {"id": sid, "searchText": text, "state": "InProgress",
                          "responseCount": len(responses), "fileCount": len(files)},
                 "responses": responses, "ends_at": time.monotonic() + min(timeout_s, self.search_seconds)}
@@ -164,6 +179,10 @@ class FakeSlskd:
         if self.fail_next_download:
             self.fail_next_download = False
             t["state"] = "Completed, Errored"
+            return
+        if self.timeout_next_downloads > 0:
+            self.timeout_next_downloads -= 1
+            t["state"] = "Completed, TimedOut"
             return
         if not self.auto_complete:
             t["state"], t["percentComplete"] = "InProgress", 42.0
