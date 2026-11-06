@@ -43,13 +43,13 @@ def _applog(line: str) -> None:
 # session go dark by the third query). We stop it ourselves when results dry up. Deadlines in seconds.
 SEARCH_LADDER_S = (40,)             # deadline for a normal search
 SEARCH_FALLBACK_S = (25,)           # the one retry without the shakiest word, when nothing at all came back
-SEARCH_MIN_S = 4.0                  # never stop before this: the first wave is still arriving
-SEARCH_QUIET_S = 3.0                # stop once nothing new has arrived for this long (after SEARCH_MIN_S)
+SEARCH_MIN_S = 3.0                  # never stop before this: the first wave is still arriving
+SEARCH_QUIET_S = 2.5                # stop once nothing new has arrived for this long (after SEARCH_MIN_S)
 # Client-side budget so we never trip the network's own throttle: a small burst, then roughly one
 # network search every SEARCH_REFILL_S on average. Over the line, the server simply stops answering for
 # minutes, which looks like "no results" to the user; under it, every search comes back.
-SEARCH_BURST = 3
-SEARCH_REFILL_S = 8.0
+SEARCH_BURST = 4
+SEARCH_REFILL_S = 6.0
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
 FIREWALL_ASK = (f"To download from other users, {APP_NAME} needs to accept incoming connections.\n\n"
                 f"Allow it now? Windows will ask you to confirm once. Nothing is shared from your computer "

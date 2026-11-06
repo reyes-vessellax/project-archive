@@ -25,6 +25,12 @@ accounts that search that often, and the engine was carrying every past search's
 - A new query first removes the previous query's searches from the engine, finished or not.
 - Per-rung timing (rows, users, seconds to finish) goes to `app.log` so slow sessions can be read.
 
+## 0.5.7 — unreleased
+
+- Tighter timings: a search can be stopped from 3 s (was 4) after 2.5 s of quiet (was 3), so popular
+  names land around 5 s; the budget is a burst of 4 then one search per 6 s on average (was 3 / 8 s).
+  Back off if a log shows the network going dark again.
+
 ## 0.5.6 — unreleased (one search per query; the slowdown, explained)
 
 The 0.5.3 log showed it plainly: after ~16 network searches in three minutes, five queries in a row came
