@@ -16,6 +16,12 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.5.3 — unreleased
+
+- macOS ships as a **.dmg** (open, drag to Applications) instead of a zip; Archive Utility refused the
+  zip on at least one Mac. The build mounts the image, copies the app out the way a user would, checks
+  the signature survived and runs the self-test from the copy before publishing.
+
 ## 0.5.2 — unreleased (scrolling with momentum)
 
 - Wheel scrolling now feels like a browser's: a fixed ~110 px per notch, an ease-out glide, and
