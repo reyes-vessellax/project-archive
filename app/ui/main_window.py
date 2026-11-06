@@ -39,8 +39,12 @@ def _applog(line: str) -> None:
         pass
 
 
-SEARCH_LADDER_S = (4, 10, 22, 40)   # engine searches per query, short to long; each one's rows land when it ends
-SEARCH_FALLBACK_S = (6, 25)         # the one retry without the shakiest word, when nothing at all came back
+# Engine searches per query, short to long; each one's rows land when it ends. Two, not four: the network
+# throttles accounts that search too often, and a session of 8-10 queries at four searches each was enough
+# to start losing results. Rungs are spaced by SEARCH_GAP_S for the same reason.
+SEARCH_LADDER_S = (5, 40)
+SEARCH_FALLBACK_S = (25,)           # the one retry without the shakiest word, when nothing at all came back
+SEARCH_GAP_S = 1.5
 SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
 FIREWALL_ASK = (f"To download from other users, {APP_NAME} needs to accept incoming connections.\n\n"
                 f"Allow it now? Windows will ask you to confirm once. Nothing is shared from your computer "
@@ -480,6 +484,12 @@ class MainWindow(QMainWindow):
             word most likely to be a typo (and the header says so)."""
             sid = None
             try:
+                # the previous query's searches, finished or not, out of the engine before new ones go in:
+                # every live search costs the engine memory and the network goodwill
+                for old in list(getattr(self, "_active_rungs", [])):
+                    self.svc.forget_search(old)
+                self._active_rungs = []
+                self.svc.engine_housekeeping()
                 sid = self._ladder(q, SEARCH_LADDER_S, sent=q, dropped="")
                 if sid is None:
                     return
@@ -518,8 +528,12 @@ class MainWindow(QMainWindow):
         from ..core import fuzzy
         rungs = []
         for i, secs in enumerate(secs_list):
+            if i:
+                time.sleep(SEARCH_GAP_S)
             r = self.svc.search(q, timeout_s=secs, check_login=(i == 0 and keep_id is None))
             rungs.append({"res": r, "done": False})
+            self._active_rungs = getattr(self, "_active_rungs", []) + [r.search_id]
+        t_sent = time.monotonic()
         sid = keep_id or rungs[0]["res"].search_id
         if keep_id is None:
             self.search_id = sid
@@ -546,7 +560,8 @@ class MainWindow(QMainWindow):
                         best_count = max(best_count, (n_resp, n_files))
                         if done:
                             rung["done"] = True
-                            _applog(f"rung {rung['res'].search_id[:8]} ({len(res.candidates)} rows) done; merged={len(merged)}")
+                            _applog(f"rung {rung['res'].search_id[:8]} {q!r} ({len(res.candidates)} rows, {n_resp} users) done at "
+                                    f"{time.monotonic() - t_sent:.1f}s; merged={len(merged)}")
                             if rung["res"].search_id != sid:
                                 self.io.start(Task(lambda s=rung["res"].search_id: self.svc.forget_search(s), self.signals))
                     all_done = all(r["done"] for r in rungs) or now - started > secs_list[-1] + 20

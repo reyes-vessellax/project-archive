@@ -181,8 +181,6 @@ class ArchiveService:
     def search(self, query: str, timeout_s: float = 45.0, check_login: bool = True) -> SearchResult:
         adapter = self._adapter_or_block()
         self._searches_started = getattr(self, "_searches_started", 0) + 1
-        if self._searches_started % 5 == 0:
-            self.engine_housekeeping()                       # old searches hold their results in the engine
         if check_login and self.managed_mode and not self.adapter_logged_in():
             raise ActionBlocked("Still signing in. Search opens as soon as you're connected.")
         return adapter.search(query, timeout_s=timeout_s)

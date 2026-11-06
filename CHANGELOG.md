@@ -16,6 +16,15 @@ one line changes and this file gets a note.
 - Support / FAQ page on the website (the Help button already points at `SUPPORT_URL`).
 - "Find it to buy" store search (Beatport, Bandcamp, Juno, Traxsource, Discogs); the code is kept, no button.
 
+## 0.5.5 — unreleased (search load)
+
+Searches got slow by the third query of a session. Each query was sending four engine searches, and
+earlier queries' searches stayed live in the engine until a periodic clean-up; the network throttles
+accounts that search that often, and the engine was carrying every past search's results in memory.
+- Two engine searches per query (5 s and 40 s) instead of four, spaced 1.5 s apart; fallback is one.
+- A new query first removes the previous query's searches from the engine, finished or not.
+- Per-rung timing (rows, users, seconds to finish) goes to `app.log` so slow sessions can be read.
+
 ## 0.5.4 — unreleased
 
 - macOS builds for **both chips**: `-macOS-AppleSilicon` and `-macOS-Intel` dmgs ("this application is
