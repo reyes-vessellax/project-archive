@@ -11,6 +11,11 @@ from pathlib import Path
 APP_NAME = "DigMart"
 APP_SLUG = "DigMart"                      # for file and artifact names that shouldn't carry a space
 APP_VERSION = "0.6.0"                     # keep in step with pyproject.toml; the build names the artifact with it
+try:                                      # CI writes app/_build.py with the run number: every push is a new version
+    from ._build import BUILD as APP_BUILD  # type: ignore
+except ImportError:
+    APP_BUILD = 0
+FULL_VERSION = f"{APP_VERSION}.{APP_BUILD}" if APP_BUILD else APP_VERSION   # what the updater compares
 PREVIOUS_NAMES = ("Pied Piper", "DEADWAX", "Project Archive")   # earlier placeholders; existing installs are migrated from them
 
 

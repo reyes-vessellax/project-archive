@@ -43,6 +43,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Stamp the build number (every push to main is a new version)
+        shell: bash
+        run: echo "BUILD = ${{ github.run_number }}" > app/_build.py
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -80,7 +83,7 @@ jobs:
         id: ver
         shell: pwsh
         run: |
-          $v = (python -c "from app.config import APP_VERSION; print(APP_VERSION)")
+          $v = (python -c "from app.config import FULL_VERSION; print(FULL_VERSION)")
           "version=$v" >> $env:GITHUB_OUTPUT
           $s = (python -c "from app.config import APP_SLUG; print(APP_SLUG)")
           "slug=$s" >> $env:GITHUB_OUTPUT
@@ -98,6 +101,15 @@ jobs:
           name: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-Windows
           path: dist/${{ steps.ver.outputs.name }}/
           retention-days: 30
+      - name: Make the update archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/${{ steps.ver.outputs.name }}" -DestinationPath "${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: update-windows
+          path: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-windows-x64.zip
+          retention-days: 7
 
   macos-app:
     needs: test
@@ -105,17 +117,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-latest   # Apple Silicon
+          - runner: macos-latest   # Apple Silicon. (Intel runners are retired/never start; build Intel locally.)
             arch: AppleSilicon
             ffmpeg_arch: arm64
             slskd_arch: osx-arm64
-          - runner: macos-13       # Intel
-            arch: Intel
-            ffmpeg_arch: amd64
-            slskd_arch: osx-x64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - name: Stamp the build number (every push to main is a new version)
+        shell: bash
+        run: echo "BUILD = ${{ github.run_number }}" > app/_build.py
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -153,7 +164,7 @@ jobs:
       - name: Read version
         id: ver
         run: |
-          echo "version=$(python -c 'from app.config import APP_VERSION; print(APP_VERSION)')" >> $GITHUB_OUTPUT
+          echo "version=$(python -c 'from app.config import FULL_VERSION; print(FULL_VERSION)')" >> $GITHUB_OUTPUT
           echo "slug=$(python -c 'from app.config import APP_SLUG; print(APP_SLUG)')" >> $GITHUB_OUTPUT
           echo "name=$(python -c 'from app.config import APP_NAME; print(APP_NAME)')" >> $GITHUB_OUTPUT
       - name: Make the disk image (drag to Applications)
@@ -185,3 +196,47 @@ jobs:
           name: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS-${{ matrix.arch }}
           path: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS-${{ matrix.arch }}.dmg
           retention-days: 30
+      - name: Make the update archive (keeps the app's links and permissions)
+        run: ditto -c -k --keepParent "dist/${{ steps.ver.outputs.name }}.app" "${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macos-arm64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: update-macos
+          path: |
+            ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macos-arm64.zip
+            ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS-AppleSilicon.dmg
+          retention-days: 7
+
+  release:
+    # Every push to main: publish a release the installed apps update from. The manifest is signed with the
+    # update key (repository secret DIGMART_SIGNING_KEY); apps refuse anything not signed with it.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [windows-app, macos-app]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Stamp the build number
+        run: echo "BUILD = ${{ github.run_number }}" > app/_build.py
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: update-*
+          merge-multiple: true
+          path: release
+      - name: Sign the update list and publish the release
+        env:
+          DIGMART_SIGNING_KEY: ${{ secrets.DIGMART_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          pip install -q "cryptography==49.0.0"
+          ver=$(python -c 'from app.config import FULL_VERSION; print(FULL_VERSION)')
+          slug=$(python -c 'from app.config import APP_SLUG; print(APP_SLUG)')
+          ls -la release
+          python packaging/make_manifest.py --version "$ver" --notes "DigMart $ver" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/v$ver" --out release/latest.json \
+            "windows-x64=release/$slug-$ver-windows-x64.zip" "macos-arm64=release/$slug-$ver-macos-arm64.zip"
+          gh release create "v$ver" release/* --title "DigMart $ver" --notes "Automatic build of main ($GITHUB_SHA)." --latest

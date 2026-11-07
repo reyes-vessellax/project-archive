@@ -29,10 +29,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from ..config import APP_NAME, APP_VERSION, data_dir
+from ..config import APP_NAME, APP_VERSION, FULL_VERSION, data_dir
 
 # Where the signed manifest lives. Set when hosting is decided; empty = updater off.
-UPDATE_URL = os.environ.get("PIEDPIPER_UPDATE_URL", "")
+UPDATE_URL = os.environ.get("DIGMART_UPDATE_URL",
+                            "https://github.com/reyes-vessellax/project-archive/releases/latest/download/latest.json")
 # Ed25519 public key (raw 32 bytes, base64). The matching private key never enters the repo.
 PUBLIC_KEY_B64 = "FDru7AGMRiAKdgsnbzGQ5/97gcaQkHyYCdq+W37x1eE="
 
@@ -68,7 +69,7 @@ def vtuple(v: str) -> tuple[int, ...]:
     return tuple(out)
 
 
-def is_newer(remote: str, local: str = APP_VERSION) -> bool:
+def is_newer(remote: str, local: str = FULL_VERSION) -> bool:
     return vtuple(remote) > vtuple(local)
 
 
@@ -103,7 +104,7 @@ def _get(url: str, timeout: float = 15.0) -> bytes:
 
 
 def check(url: str = UPDATE_URL, fetch: Callable[[str], bytes] = _get, public_key_b64: str = PUBLIC_KEY_B64,
-          local_version: str = APP_VERSION) -> Update | None:
+          local_version: str = FULL_VERSION) -> Update | None:
     """The newer update for this computer, or None. Raises UpdateError on a bad/forged manifest."""
     if not url or public_key_b64.startswith("REPLACE"):
         return None

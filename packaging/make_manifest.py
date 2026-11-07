@@ -3,7 +3,7 @@
     python packaging/make_manifest.py --version 0.6.0 --base-url https://.../download/v0.6.0 \
         --notes "What's new" windows-x64=dist/PiedPiper-0.6.0-windows-x64.zip macos-arm64=...zip
 
-The signing key comes from the PIEDPIPER_SIGNING_KEY environment variable (PEM, Ed25519) - a GitHub
+The signing key comes from the DIGMART_SIGNING_KEY environment variable (PEM, Ed25519) - a GitHub
 secret in CI. It is never written to disk or printed.
 """
 from __future__ import annotations
@@ -27,9 +27,9 @@ def main() -> int:
     ap.add_argument("--out", default="dist/latest.json")
     ap.add_argument("assets", nargs="+", help="platform=path, e.g. windows-x64=dist/x.zip")
     a = ap.parse_args()
-    key = os.environ.get("PIEDPIPER_SIGNING_KEY", "").encode()
+    key = os.environ.get("DIGMART_SIGNING_KEY", "").encode()
     if not key:
-        print("PIEDPIPER_SIGNING_KEY is not set", file=sys.stderr)
+        print("DIGMART_SIGNING_KEY is not set", file=sys.stderr)
         return 2
     if not a.base_url.startswith("https://"):
         print("--base-url must be https", file=sys.stderr)
