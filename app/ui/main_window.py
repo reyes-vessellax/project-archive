@@ -29,6 +29,7 @@ from .library_page import LibraryPage, reveal_in_folder
 from .settings_page import SettingsPage
 from .tour import TourOverlay, default_steps
 from .widgets import AvatarMenu, Sidebar, Signals, Task, hbox, vbox
+from .wishlist_page import WishlistPage
 from .batch_page import Batch, BatchPage, BatchSignals
 from ..core import batch as B
 from ..core import batch_runner as BR
@@ -155,8 +156,10 @@ class MainWindow(QMainWindow):
         sl.addWidget(right, 1)
         self.home = HomePage(self.svc); self.searchp = SearchPage(self.svc); self.review = ReviewPage(self.svc)
         self.settings = SettingsPage(self.svc); self.library = LibraryPage(self.svc); self.batchp = BatchPage()
-        for p in (self.home, self.searchp, self.review, self.settings, self.library, self.batchp):
+        self.wishlistp = WishlistPage(self.svc)
+        for p in (self.home, self.searchp, self.review, self.settings, self.library, self.batchp, self.wishlistp):
             self.pages.addWidget(p)
+        self._wire_wishlist()
         self.library.open_job.connect(self._open_job)
         self.library.delete_job.connect(self._delete_from_library)
         self.library.crates_changed.connect(self._refresh_crates)
@@ -258,8 +261,68 @@ class MainWindow(QMainWindow):
             self.pages.setCurrentWidget(self.library)
         elif key == "batch":
             self.pages.setCurrentWidget(self.batchp)
+        elif key == "wishlist":
+            self.svc.wishlist.mark_seen(); self.topbar.set_wish_count(0)
+            self.wishlistp.refresh()
+            self.pages.setCurrentWidget(self.wishlistp)
         self._page_key = key
         self._save_session()
+
+    # ---------------------------------------------------------------- wishlist
+    def _wire_wishlist(self):
+        from PySide6.QtCore import QObject, Signal as _Sig
+
+        class _WishSignals(QObject):
+            moved = _Sig()
+        self.wsig = _WishSignals(); self.wsig.moved.connect(self._wish_refresh)
+        self.searchp.watch.connect(self._watch)
+        self.wishlistp.add.connect(self._watch)
+        self.wishlistp.open_job.connect(self._open_job)
+        self.wishlistp.open_batch.connect(lambda: self._tab("batch"))
+        self.wishlistp.pause.connect(lambda wid, on: (self.svc.wishlist.pause(wid, on), self._wish_refresh()))
+        self.wishlistp.again.connect(lambda wid: (self.svc.wishlist.watch_again(wid), self._wish_refresh()))
+        self.wishlistp.remove.connect(lambda wid: (self.svc.wishlist.remove(wid), self._wish_refresh()))
+        self.svc.wishlist.log = _applog
+        self.svc.wishlist.on_found = lambda w: self.signals.notice.emit(
+            f"Wishlist: “{w['query']}” turned up and passed the checks. It's waiting on Ready.")
+        self._wish_running = False
+        self.wish_timer = QTimer(self, interval=20000, timeout=self._wish_tick); self.wish_timer.start()
+        self.topbar.set_wish_count(self.svc.wishlist.unseen())
+
+    def _watch(self, artist: str, title: str, mix: str = ""):
+        from ..core.wishlist import wish_label
+        try:
+            w = self.svc.wishlist.add(artist=artist, title=title, mix=mix)
+        except ValueError as e:
+            self.statusBar().showMessage(str(e), 6000); return
+        self.statusBar().showMessage(f"Watching “{wish_label(w)}”: asked for again every half hour for 30 days; "
+                                     "a copy that passes the checks lands on Ready.", 8000)
+        self._wish_refresh()
+
+    def _wish_refresh(self):
+        self.topbar.set_wish_count(self.svc.wishlist.unseen())
+        if self.pages.currentWidget() is self.wishlistp:
+            self.wishlistp.refresh()
+
+    def _wish_tick(self):
+        """Every 20 s the wishlist takes one step (a due search, or following a find through its check), off the
+        UI thread. Never while you're searching or a batch is running: those come first."""
+        if self._wish_running or self.svc.adapter is None or not self._connected:
+            return
+        self._wish_running = True
+        busy = lambda: self.search_running or self._batches_running > 0
+
+        def work():
+            moved = None
+            try:
+                moved = self.svc.wishlist.tick(busy=busy)
+            except Exception as e:                                    # noqa: BLE001
+                _applog(f"wishlist tick failed: {e}")
+            finally:
+                self._wish_running = False
+            if moved is not None:
+                self.wsig.moved.emit()
+        self.io.start(Task(work, self.signals))
 
     def _menu(self):
         menu = AvatarMenu(self)                           # built on click, destroyed on close
@@ -858,17 +921,8 @@ class MainWindow(QMainWindow):
             s.volume = round(v, 2); self.svc.save_settings(s)
 
     def _take_search_token(self) -> None:
-        """Token bucket for network searches; blocks (off the UI thread) until one is available."""
-        now = time.monotonic()
-        tokens, last = getattr(self, "_bucket", (SEARCH_BURST, now))
-        tokens = min(SEARCH_BURST, tokens + (now - last) / SEARCH_REFILL_S)
-        if tokens < 1:
-            wait = (1 - tokens) * SEARCH_REFILL_S
-            self.signals.notice.emit(f"Pacing… the network limits how often we can ask. Next search in {wait:.0f} s.")
-            _applog(f"search budget: waiting {wait:.1f}s")
-            time.sleep(wait)
-            now = time.monotonic(); tokens = 1
-        self._bucket = (tokens - 1, now)
+        """One token from the app-wide search budget (shared with Batch and the Wishlist); blocks off the UI thread."""
+        self.svc.search_budget.take(notice=self.signals.notice.emit, log=_applog)
 
     def _ladder(self, q: str, secs_list, sent: str, dropped: str, keep_id: str | None = None):
         """ONE network search per query (what the other clients do, and all the network tolerates), stopped

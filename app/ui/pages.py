@@ -216,6 +216,7 @@ class SearchPage(QWidget):
     search = Signal(str)
     filters_changed = Signal()
     preview = Signal(object)          # Candidate: download it and play 20 s from the drop
+    watch = Signal(str, str, str)     # artist, title, mix: a standing search on the Wishlist
     stop_preview = Signal()
 
     def _theme(self) -> str:
@@ -235,7 +236,16 @@ class SearchPage(QWidget):
         srow.addWidget(self.q, 1)
         self.search_btn = button("Search", "accent", lambda: self.search.emit(self.q.text()))
         srow.addWidget(self.search_btn)
+        self.watch_btn = button("Watch this search", "ghost", self._toggle_watch)
+        self.watch_btn.setToolTip("Nobody has it? Keep asking every half hour for 30 days and tell me when it shows up.")
+        self.watch_btn.setEnabled(False); self.q.textChanged.connect(lambda t: self.watch_btn.setEnabled(bool(t.strip())))
+        srow.addWidget(self.watch_btn)
         lay.addLayout(srow)
+        from .wishlist_page import WishForm
+        self.wish_form = WishForm("Watch for this track. Fill in what you know, as much or as little as you like.")
+        self.wish_form.hide()
+        self.wish_form.submitted.connect(self._watch_go); self.wish_form.cancelled.connect(self.wish_form.hide)
+        lay.addWidget(self.wish_form)
         head = hbox(spacing=12)
         self.title = label("Search", "h2"); head.addWidget(self.title)
         self.state = label("", "faint"); head.addWidget(self.state); head.addStretch(1)
@@ -413,7 +423,8 @@ class SearchPage(QWidget):
             elif searching:
                 pass                                            # the animation owns the empty area while searching
             else:
-                self._show_empty("Nobody online is sharing a match right now.\nTry fewer words, or try again in a minute.")
+                self._show_empty("Nobody online is sharing a match right now.\nTry fewer words, or press “Watch this search” "
+                                 "and it will be asked for again every half hour for 30 days.")
         else:
             self._show_empty("")
         selected = self.tree.selectedItems()
@@ -504,6 +515,15 @@ class SearchPage(QWidget):
         bar = self.tree.verticalScrollBar()
         if self._more_item is not None and bar.maximum() > 0 and value >= bar.maximum():
             self.load_more()
+
+    def _toggle_watch(self):
+        if self.wish_form.isVisible():
+            self.wish_form.hide(); return
+        self.wish_form.prefill(self.q.text()); self.wish_form.show()
+
+    def _watch_go(self, artist: str, title: str, mix: str):
+        self.wish_form.hide()
+        self.watch.emit(artist, title, mix)
 
     PV_NOTE = "Preview and Check both download into quarantine first; nothing reaches your library until you decide."
 

@@ -57,6 +57,13 @@ def run(items: list[Item], svc, library: list[tuple[str, str]], on_update: Calla
                 return
             sleep(min(wait, 0.5))
             wait = GAP_S - (clock() - last_start)
+        budget = getattr(svc, "search_budget", None)      # shared with the user's searches and the Wishlist
+        while budget is not None and budget.wait_needed() > 0:
+            if should_stop():
+                return
+            sleep(0.5)
+        if budget is not None:
+            budget.take()
         it.status = "searching"; on_update(i, it)
         last_start = clock()
         try:

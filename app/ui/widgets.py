@@ -236,14 +236,15 @@ class TopBar(QWidget):
 class Sidebar(QWidget):
     """Left navigation (design v6): brand, pages, update notice, connection status, account.
     Same interface as TopBar so the window logic doesn't care which one it has."""
-    tab_clicked = Signal(str)           # "queue" | "search" | "ready" | "library" | "batch"
+    tab_clicked = Signal(str)           # "queue" | "search" | "wishlist" | "ready" | "library" | "batch"
     avatar_clicked = Signal()
     update_clicked = Signal()
     crate_clicked = Signal(str, str)    # crate id, name
     new_crate = Signal()
     crate_menu = Signal(str, str, object)   # id, name, global QPoint (right-click: rename / delete)
 
-    NAV = (("queue", "Home"), ("search", "Search"), ("ready", "Ready"), ("library", "Library"), ("batch", "Batch"))
+    NAV = (("queue", "Home"), ("search", "Search"), ("wishlist", "Wishlist"), ("ready", "Ready"), ("library", "Library"),
+           ("batch", "Batch"))
 
     def __init__(self):
         super().__init__()
@@ -313,6 +314,10 @@ class Sidebar(QWidget):
     def set_counts(self, queue: int, ready: int) -> None:
         self.tabs["queue"].setText(f"Home   {queue}" if queue else "Home")
         self.tabs["ready"].setText(f"Ready   {ready}" if ready else "Ready")
+
+    def set_wish_count(self, found: int) -> None:
+        """How many wishes turned up and haven't been looked at yet."""
+        self.tabs["wishlist"].setText(f"Wishlist   ● {found}" if found else "Wishlist")
 
     def set_status(self, message: str, colour: str, detail: str = "") -> None:
         self.dot.setStyleSheet(f"color: {colour};")

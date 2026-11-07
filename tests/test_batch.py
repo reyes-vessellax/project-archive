@@ -149,3 +149,21 @@ def test_runner_stops_when_asked():
     items = [R.Item(B.Wanted("A", f"Song {n}")) for n in range(5)]
     R.run(items, net, [], lambda i, it: None, should_stop=lambda: len(net.started) >= 2, sleep=clock.sleep, clock=clock.now)
     assert len(net.started) == 2
+
+
+def test_runner_draws_from_the_shared_search_budget():
+    """Batch, the Search page and the Wishlist share one budget: an empty bucket makes the batch wait."""
+    from app.core.searching import Budget
+    clock.t = 0.0
+    net = FakeNet({})
+    net.search_budget = Budget(burst=1, refill_s=1.0)
+    net.search_budget.take()                                   # someone else just searched: bucket empty
+    waits = []
+
+    def sleep(s):
+        waits.append(s); clock.sleep(s)
+        import time as _t; _t.sleep(s)                          # the budget runs on the real clock
+    items = [R.Item(B.Wanted("A", "Song"))]
+    R.run(items, net, [], lambda i, it: None, sleep=sleep, clock=clock.now)
+    assert len(net.started) == 1 and sum(waits) >= 0.5         # waited for a token before searching
+    assert net.search_budget.wait_needed() > 0                 # and used it

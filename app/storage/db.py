@@ -43,6 +43,30 @@ CREATE TABLE IF NOT EXISTS crate_items (crate_id TEXT NOT NULL, job_id TEXT NOT 
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, timestamp TEXT, event_type TEXT, message TEXT
 );
+CREATE TABLE IF NOT EXISTS wishes (
+    id TEXT PRIMARY KEY,
+    query TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    status TEXT NOT NULL,            -- watching | checking | found | paused
+    next_run_at TEXT,                -- when the standing search runs again (watching only)
+    last_run_at TEXT,
+    runs INTEGER NOT NULL DEFAULT 0,  -- searches made for this wish
+    tries INTEGER NOT NULL DEFAULT 0, -- candidates sent to quarantine so far
+    job_id TEXT,                     -- the candidate currently being checked / the one found
+    candidates_json TEXT,            -- the remaining gated candidates from the last search
+    last_seen INTEGER,               -- rows the last search returned (before the gate)
+    found_at TEXT,
+    seen INTEGER NOT NULL DEFAULT 1, -- 0 = found and not yet looked at (the bell counts these)
+    note TEXT,
+    playlist TEXT,                   -- batch import this wish belongs to (NULL for a single wish)
+    position INTEGER,                -- its place in that playlist
+    expect_s INTEGER,                -- expected length in seconds, when the playlist gave one
+    expires_at TEXT,                 -- the standing order ends here unless renewed (status becomes expired)
+    artist TEXT,                     -- the structured wish, when the user filled the form (any part may be empty)
+    title TEXT,
+    mix TEXT
+);
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_source ON jobs(source_path, source_size, source_mtime);
 """
@@ -195,6 +219,33 @@ class Database:
     def crates_of(self, job_id: str) -> set[str]:
         with self._lock:
             return {r[0] for r in self._con.execute("SELECT crate_id FROM crate_items WHERE job_id = ?", (job_id,))}
+
+    # wishes -------------------------------------------------------------------------
+    def insert_wish(self, **wish) -> None:
+        wish.setdefault("created_at", now())
+        wish.setdefault("updated_at", wish["created_at"])
+        cols = ", ".join(wish)
+        with self._lock, self._con:
+            self._con.execute(f"INSERT INTO wishes ({cols}) VALUES ({', '.join('?' * len(wish))})", tuple(wish.values()))
+
+    def update_wish(self, wish_id: str, **fields) -> None:
+        fields["updated_at"] = now()
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        with self._lock, self._con:
+            self._con.execute(f"UPDATE wishes SET {sets} WHERE id = ?", (*fields.values(), wish_id))
+
+    def delete_wish(self, wish_id: str) -> None:
+        with self._lock, self._con:
+            self._con.execute("DELETE FROM wishes WHERE id = ?", (wish_id,))
+
+    def wish(self, wish_id: str) -> dict | None:
+        with self._lock:
+            row = self._con.execute("SELECT * FROM wishes WHERE id = ?", (wish_id,)).fetchone()
+        return dict(row) if row else None
+
+    def wishes(self) -> list[dict]:
+        with self._lock:
+            return [dict(r) for r in self._con.execute("SELECT * FROM wishes ORDER BY created_at DESC").fetchall()]
 
     # settings / events ----------------------------------------------------------------
     def load_settings(self) -> dict:

@@ -47,6 +47,9 @@ def default_steps() -> list[Step]:
         Step("home.add_btn", "Add your own files",
              "Not everything comes from the network. Use Add files, or drag tracks onto the window, to check files you "
              "already have.", page="queue"),
+        Step("topbar.tabs.wishlist", "Wishlist",
+             "Nobody has it today? Watch the search. It's asked for again every half hour for 30 days, and the first "
+             "copy that passes the checks lands on Ready, with a count here."),
         Step("topbar.tabs.library", "Library",
              "Everything you've downloaded, with its facts. Search it, and use Show in folder to jump straight to the "
              "file on disk."),

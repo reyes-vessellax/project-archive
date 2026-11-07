@@ -74,6 +74,10 @@ class ArchiveService:
                  adapter_factory: Callable[["ArchiveService"], SourceAdapter | None] | None = None,
                  manager: SlskdManager | None = None):
         self.db = Database(db_path or data_dir() / "archive.db")
+        from .searching import Budget
+        self.search_budget = Budget()     # one bucket: the user's searches, Batch and the Wishlist
+        from .wishlist import Wishlist
+        self.wishlist = Wishlist(self)
         self.settings = Settings.from_dict(self.db.load_settings())
         self._lock = threading.RLock()
         self._seen: dict[str, tuple[int, float]] = {}    # incoming path -> (size, mtime) last scan
