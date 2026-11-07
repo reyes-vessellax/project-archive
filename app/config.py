@@ -6,12 +6,12 @@ import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
-# The product name, in ONE place. "Pied Piper" is a placeholder (a dev-time joke) until the real name is
-# chosen; every visible use of the name reads this constant (window title, dialogs, engine, data folder).
-APP_NAME = "Pied Piper"
-APP_SLUG = "PiedPiper"                    # for file and artifact names that shouldn't carry a space
+# The product name, in ONE place: DigMart (brand guide, 2026-11). Earlier placeholders are in PREVIOUS_NAMES so
+# existing installs migrate; every visible use of the name reads this constant (window title, dialogs, engine, data folder).
+APP_NAME = "DigMart"
+APP_SLUG = "DigMart"                      # for file and artifact names that shouldn't carry a space
 APP_VERSION = "0.6.0"                     # keep in step with pyproject.toml; the build names the artifact with it
-PREVIOUS_NAMES = ("DEADWAX", "Project Archive")   # earlier placeholders; existing installs are migrated from them
+PREVIOUS_NAMES = ("Pied Piper", "DEADWAX", "Project Archive")   # earlier placeholders; existing installs are migrated from them
 
 
 def data_dir() -> Path:

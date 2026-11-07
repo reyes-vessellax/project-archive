@@ -11,17 +11,20 @@ from pathlib import Path
 from PySide6.QtGui import QFontDatabase
 
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
-SANS = "Sora"                 # body and UI
-DISPLAY = "Sora"              # headlines: h1, big, hero search, counts, verdict, brand
-MONO = "IBM Plex Mono"
+SANS = "Open Sans"            # body and UI (DigMart brand guide: Open Sans Regular)
+DISPLAY = "Poppins"           # headlines, numbers that should feel bold, brand (Poppins Bold / SemiBold)
+MONO = "IBM Plex Mono"        # measured values and labels
 
+# DigMart brand: black #000000, crimson #DC143C, yellow #FFD700, white #FFFFFF.
+# Light: crimson leads (yellow text on white is unreadable). Dark: true black with yellow leading, like the logo.
+# Verdict colours stay green / amber / red so Good / Have a look / Broken read at a glance.
 PALETTES = {
-    "light": dict(bg="#fbfbfa", panel="#ffffff", line="#ebebe7", text="#1b1b1a", muted="#6b6b66", faint="#a4a49e",
-                  accent="#0f7b6c", soft="#eef4f2", pass_="#2a8a55", warn="#b5741b", fail="#c43d3d", bar="#e3e9e7",
-                  on_text="#fbfbfa", accent_text="#ffffff"),
-    "dark": dict(bg="#111111", panel="#171717", line="#262626", text="#f2f2f0", muted="#9c9c97", faint="#66665f",
-                 accent="#35b8a3", soft="#17201e", pass_="#55c98a", warn="#e2a24a", fail="#ef6b6b", bar="#263330",
-                 on_text="#111111", accent_text="#06201c"),
+    "light": dict(bg="#fafafa", panel="#ffffff", line="#e6e6e6", text="#0a0a0a", muted="#5c5c5c", faint="#8f8f8f",
+                  accent="#dc143c", soft="#fdedf0", pass_="#1f8a4c", warn="#a8650f", fail="#a3162f", bar="#ececec",
+                  on_text="#ffffff", accent_text="#ffffff", brand_yellow="#ffd700"),
+    "dark": dict(bg="#000000", panel="#0f0f0f", line="#262626", text="#ffffff", muted="#a3a3a3", faint="#6e6e6e",
+                 accent="#ffd700", soft="#211c00", pass_="#4cc38a", warn="#f0a742", fail="#ff5a6e", bar="#1f1f1f",
+                 on_text="#000000", accent_text="#000000", brand_yellow="#ffd700"),
 }
 
 # Word tags shown on queue rows and checks (design v5 wording).
@@ -80,7 +83,7 @@ QWidget#sidebar {{ background: {c['panel']}; border-right: 1px solid {c['line']}
 
 /* top bar */
 QWidget#topbar {{ background: {c['bg']}; }}
-QLabel#brandname {{ font-family: {display}; font-weight: 800; font-size: 17px; color: {c['accent']}; letter-spacing: -0.3px; }}
+QLabel#brandname {{ font-family: {display}; font-weight: 700; font-size: 21px; color: {c['text']}; letter-spacing: -0.4px; }}
 QPushButton#tab {{ background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0 2px 6px 2px; min-height: 40px; color: {c['faint']}; font-weight: 600; font-size: 14px; }}
 QPushButton#tab:hover {{ color: {c['text']}; }}
 QPushButton#tab[active="true"] {{ color: {c['text']}; border-bottom: 2px solid {c['accent']}; }}
@@ -89,9 +92,9 @@ QLabel#status {{ color: {c['muted']}; }}
 QLabel#statusdot {{ font-size: 16px; }}
 
 /* text roles */
-QLabel#h1 {{ font-family: {display}; font-size: 30px; font-weight: 800; }}
+QLabel#h1 {{ font-family: {display}; font-size: 30px; font-weight: 700; }}
 QLabel#h2 {{ font-size: 15px; font-weight: 700; }}
-QLabel#big {{ font-family: {display}; font-size: 34px; font-weight: 800; }}
+QLabel#big {{ font-family: {display}; font-size: 34px; font-weight: 700; }}
 QLabel#muted {{ color: {c['muted']}; }}
 QLabel#faint {{ color: {c['faint']}; }}
 QLabel#mono {{ font-family: {mono}; font-size: 12px; color: {c['muted']}; }}
@@ -109,11 +112,11 @@ QLabel#tag[tag="Good"], QLabel#tag[tag="Look"], QLabel#tag[tag="Broken"], QLabel
 QLabel#verdict[tag="Error"] {{ color: {c['fail']}; }}
 QProgressBar[tag="Error"]::chunk {{ background: {c['fail']}; }}
 QWidget#row[tag="Error"] {{ border-left: 3px solid {c['fail']}; }}
-QLabel#count {{ font-family: {display}; font-size: 26px; font-weight: 800; }}
+QLabel#count {{ font-family: {display}; font-size: 26px; font-weight: 700; }}
 QLabel#count[tag="Good"] {{ color: {c['pass_']}; }}
 QLabel#count[tag="Look"] {{ color: {c['warn']}; }}
 QLabel#count[tag="Broken"] {{ color: {c['fail']}; }}
-QLabel#verdict {{ font-family: {display}; font-size: 22px; font-weight: 800; }}
+QLabel#verdict {{ font-family: {display}; font-size: 22px; font-weight: 700; }}
 QLabel#verdict[tag="Good"] {{ color: {c['pass_']}; }}
 QLabel#verdict[tag="Look"] {{ color: {c['warn']}; }}
 QLabel#verdict[tag="Broken"] {{ color: {c['fail']}; }}

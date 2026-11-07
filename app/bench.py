@@ -1,7 +1,7 @@
 """Search benchmark: run a list of queries through the real engine, one at a time, with pacing that
 stays under the network's throttle, and record what came back and how fast.
 
-    "Pied Piper.exe" --bench docs/search_bench_list.txt [--limit 50] [--per 15] [--gap 10]
+    "DigMart.exe" --bench docs/search_bench_list.txt [--limit 50] [--per 15] [--gap 10]
 
 Writes bench.csv and bench.log into the data folder (Settings → Advanced → Open logs folder).
 Columns: n, query, first_rows_s, users_5s, files_5s, users_end, files_end, pickable, locked,

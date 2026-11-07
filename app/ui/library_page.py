@@ -66,7 +66,7 @@ class LibraryPage(QWidget):
                 self.key_box.addItem(f"{n}{l}", f"{n}{l}")
         self.key_box.currentIndexChanged.connect(lambda _: self._filter(self.q.text()))
         fl.addWidget(self.key_box); fl.addSpacing(16)
-        fl.addWidget(label("PLAYLIST", "tag"))
+        self.pl_label = label("PLAYLIST", "tag"); fl.addWidget(self.pl_label)
         self.pl_box = QComboBox(); self.pl_box.addItem("All tracks", "")
         self.pl_box.currentIndexChanged.connect(lambda _: self._filter(self.q.text()))
         fl.addWidget(self.pl_box); fl.addStretch(1)
@@ -90,7 +90,7 @@ class LibraryPage(QWidget):
         # the drop-down: built fresh each time it opens, as a full-width row under the clicked track
         self.panel: QFrame | None = None
         self.spectrum: SpectrumView | None = None
-        self._accent = "#0f7b6c"
+        self._accent = "#dc143c"
         self._child: QTreeWidgetItem | None = None
         self._anim = QTimer(self, interval=16, timeout=self._grow_step); self._grow_target = 0
         self.empty = label("Nothing downloaded yet. Approved tracks show up here.", "faint")
@@ -113,7 +113,7 @@ class LibraryPage(QWidget):
             self.pl_box.addItem(n, n)
         self.pl_box.setCurrentIndex(max(0, self.pl_box.findData(current)))
         self.pl_box.blockSignals(False)
-        self.pl_box.setVisible(bool(names))
+        self.pl_box.setVisible(bool(names)); self.pl_label.setVisible(bool(names))
         self._filter(self.q.text())
 
     def _filter(self, text: str):
@@ -242,7 +242,11 @@ class LibraryPage(QWidget):
         return panel
 
     def set_accent(self, colour: str):
+        changed = getattr(self, "_accent", None) != colour
         self._accent = colour
+        if changed and hasattr(self, "pl_box"):
+            self._key = None                                 # theme changed: recolour the rows
+            self.refresh()
         if self.spectrum is not None:
             try:
                 self.spectrum.set_accent(colour)

@@ -751,7 +751,7 @@ class ReviewPage(QWidget):
             mu, me = a.get("music") or {}, a.get("meta") or {}
             self.facts["BPM"].setText(f"{mu['bpm']:.2f}".rstrip("0").rstrip(".") if mu.get("bpm") else "–")
             muted = T.colours(getattr(self.svc.settings, "theme", "light"))["muted"]
-            self.facts["Key"].setText(f"{mu['camelot']} <span style='font-family: Sora; font-size: 13px; font-weight: 500; color: {muted}'>"
+            self.facts["Key"].setText(f"{mu['camelot']} <span style=\"font-family: Open Sans; font-size: 13px; font-weight: 500; color: {muted}\">"
                                       f"{html.escape(mu.get('key', ''))}</span>" if mu.get("camelot") else "–")
             self.facts["Key"].setToolTip(mu.get("key", ""))
             self.facts_key_name = mu.get("key", "")
