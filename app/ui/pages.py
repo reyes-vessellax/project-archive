@@ -646,8 +646,9 @@ class ReviewPage(QWidget):
         lv = hbox(spacing=12); lv.addWidget(label("LEVEL", "disptag"))
         self.level = LevelStrip(); lv.addWidget(self.level, 1)
         det.addLayout(lv)
-        self._level_timer = QTimer(self, interval=50, timeout=lambda: self.level.set_level(self.spectrum.current_level()))
-        self._level_timer.start()
+        # the meter only ticks while something plays (an always-on timer steals time from animations)
+        self._level_timer = QTimer(self, interval=50, timeout=self._tick_level)
+        self.spectrum.on_playing = lambda on: self._level_timer.start() if on else None
 
         self.checks_host = QWidget(); self.checks_host.setObjectName("page")
         self.checks = vbox(self.checks_host, spacing=0)
@@ -686,6 +687,11 @@ class ReviewPage(QWidget):
         for b in (self.btn_save, self.btn_anyway, self.btn_remove, self.btn_retry):
             b.setEnabled(not on)
         self.btn_delete.setEnabled(not on and self.btn_delete.property("can") is True)
+
+    def _tick_level(self):
+        self.level.set_level(self.spectrum.current_level())
+        if not self.spectrum.is_playing() and self.level._shown < 0.01:
+            self._level_timer.stop()                       # fell back to zero after playback stopped
 
     def set_rail(self, jobs: list[dict], analyses: dict[str, dict | None], steps: dict[str, str]):
         rows = [(j["id"], row_data(j, analyses.get(j["id"]), steps)) for j in jobs]

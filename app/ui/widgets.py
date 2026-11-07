@@ -579,6 +579,9 @@ class SpectrumView(QLabel):
 
     def _state_changed(self, *_):
         playing = self.is_playing()
+        cb = getattr(self, "on_playing", None)
+        if cb:
+            cb(playing)
         self.play_btn.set_playing(playing)
         self.play_btn.setToolTip("Pause (space)" if playing else "Play (space)")
         self.update()
