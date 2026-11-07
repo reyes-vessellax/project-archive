@@ -53,30 +53,25 @@ def app_icon(theme: str = "light") -> QIcon:
 
 
 class Brand(QWidget):
-    """Top-left: the brand-kit mark + the brand-kit wordmark (white in dark mode). Clicking it goes home."""
+    """Top of the sidebar: the brand-kit main logo (burst + smiley with DigMart underneath).
+    Dark mode uses the dark version of the same artwork (black outline and lettering shown white)."""
     clicked = Signal()
-    H = 34                                           # mark height in the sidebar (logical px)
+    H = 92                                           # logo height in the sidebar (logical px)
 
     def __init__(self):
         super().__init__()
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip(APP_NAME)
-        lay = QHBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(10)
-        self.mark = QLabel(); self.name = QLabel()
-        lay.addWidget(self.mark); lay.addWidget(self.name, 0, Qt.AlignVCenter)
+        lay = QHBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(0)
+        self.logo = QLabel()
+        lay.addStretch(1); lay.addWidget(self.logo); lay.addStretch(1)
         self.set_theme("light")
 
-    @staticmethod
-    def _sized(name: str, height: int) -> QPixmap:
-        pm = _asset(name).scaledToHeight(height * 3, Qt.SmoothTransformation)   # 3x: sharp on Retina
-        pm.setDevicePixelRatio(3.0)
-        return pm
-
     def set_theme(self, theme: str):
-        mark = self._sized("digmart-mark.png", self.H)
-        word = self._sized("digmart-wordmark-white.png" if theme == "dark" else "digmart-wordmark.png", 20)
-        self.mark.setPixmap(mark); self.mark.setFixedSize(mark.deviceIndependentSize().toSize())
-        self.name.setPixmap(word); self.name.setFixedSize(word.deviceIndependentSize().toSize())
+        pm = _asset("digmart-logo-dark.png" if theme == "dark" else "digmart-logo.png")
+        pm = pm.scaledToHeight(self.H * 3, Qt.SmoothTransformation)          # 3x: sharp on Retina
+        pm.setDevicePixelRatio(3.0)
+        self.logo.setPixmap(pm); self.logo.setFixedSize(pm.deviceIndependentSize().toSize())
 
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:

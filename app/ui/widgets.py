@@ -250,7 +250,7 @@ class Sidebar(QWidget):
         lay = vbox(self, (14, 20, 14, 16), 2)
         from .brand import Brand
         self.brand = Brand(); self.brand.clicked.connect(lambda: self.tab_clicked.emit("queue"))
-        bw = QWidget(); bl = hbox(bw, (8, 0, 0, 18)); bl.addWidget(self.brand); bl.addStretch(1)
+        bw = QWidget(); bl = hbox(bw, (0, 4, 0, 22)); bl.addWidget(self.brand)
         lay.addWidget(bw)
         self.tabs: dict[str, QPushButton] = {}
         self._names = dict(self.NAV)
