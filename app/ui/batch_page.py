@@ -188,6 +188,17 @@ class TrackRow(QFrame):
         self.set_open(was_open)
 
 
+class LinkBox(QPlainTextEdit):
+    """Enter adds the playlist; Shift+Enter starts a new line (for typing a list of tracks by hand).
+    A pasted multi-line list keeps its lines."""
+    submit = Signal()
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key_Return, Qt.Key_Enter) and not (e.modifiers() & Qt.ShiftModifier):
+            self.submit.emit(); e.accept(); return
+        super().keyPressEvent(e)
+
+
 class BatchPage(QWidget):
     start = Signal(str)                 # pasted text or link
     choose_folder = Signal()
@@ -214,9 +225,11 @@ class BatchPage(QWidget):
         # add a playlist: link or list, or a folder; or drag a link onto the window
         add = QFrame(); add.setObjectName("dropzone")
         al = hbox(add, (14, 12, 12, 12), 12)
-        self.input = QPlainTextEdit(); self.input.setObjectName("bare"); self.input.setFixedHeight(48)
-        self.input.setPlaceholderText("Paste a YouTube, SoundCloud, Spotify or Apple Music playlist link, or a list of "
-                                      "tracks (Artist - Title, one per line). You can also drag a link onto this window.")
+        self.input = LinkBox(); self.input.setObjectName("bare"); self.input.setFixedHeight(48)
+        self.input.submit.connect(self._go)
+        self.input.setPlaceholderText("Paste a YouTube, SoundCloud, Spotify or Apple Music playlist link and press Enter, "
+                                      "or a list of tracks (Artist - Title; Shift+Enter for a new line). You can also "
+                                      "drag a link onto this window.")
         al.addWidget(self.input, 1)
         self.btn_find = button("Add playlist", "primary", self._go)
         self.btn_folder = button("Folder…", "ghost", self.choose_folder.emit); self.btn_folder.setToolTip(

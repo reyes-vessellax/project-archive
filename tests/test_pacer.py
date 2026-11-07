@@ -30,10 +30,10 @@ def test_eighteen_tracks_never_start_together():
     left = p.run(items, lambda u: u, start)
     assert left == [] and len(starts) == 18
     times = [t for t, _ in starts]
-    assert all(b - a >= 5 for a, b in zip(times, times[1:]))          # a gap between every start
-    for t, u in starts:                                               # never more than 3 at once, never 2 per sharer
+    assert all(b - a >= 2 for a, b in zip(times, times[1:]))          # a gap between every start
+    for t, u in starts:                                               # never more than 4 at once, never 2 per sharer
         running = [v for s, v in starts if s <= t < s + 40]
-        assert len(running) <= 3 and running.count(u) == 1
+        assert len(running) <= 4 and running.count(u) == 1
 
 
 def test_stop_hands_back_the_rest():
@@ -42,3 +42,11 @@ def test_stop_hands_back_the_rest():
     done = []
     left = p.run(list(range(10)), lambda i: f"u{i}", done.append, should_stop=lambda: len(done) >= 2)
     assert done == [0, 1] and left == list(range(2, 10))
+
+
+def test_a_download_waiting_in_a_sharers_queue_doesnt_hold_a_slot(service):
+    from app.core import jobs as J
+    for i, msg in enumerate(["InProgress", "Queued, Remotely", "Queued, Remotely", "Initializing"]):
+        service.db.insert_job(id=f"j{i}", source_kind="soulseek", original_name="x.mp3", state=J.QUEUED,
+                              created_at="2026-11-07", updated_at="2026-11-07", remote_user=f"u{i}", message=msg)
+    assert sorted(service.download_pacer.active_users()) == ["u0", "u3"]

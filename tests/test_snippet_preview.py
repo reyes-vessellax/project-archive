@@ -112,7 +112,7 @@ def test_queued_copy_says_so(service, fixtures, monkeypatch):
     clock = {"t": real()}
     monkeypatch.setattr(time, "monotonic", lambda: clock.__setitem__("t", clock["t"] + 2) or clock["t"])
     monkeypatch.setattr(time, "sleep", lambda s: None)
-    with pytest.raises(ActionBlocked, match="wait"):
+    with pytest.raises(ActionBlocked, match="wait|line"):
         service.snippet_preview(_cand(fixtures["mp3_320"], "mp3"))
     assert eng.cancelled
 
@@ -137,3 +137,17 @@ def test_header_readers():
     assert (off - p.data_start) % 6 == 0 and n == 48000 * 6 * 10
     assert pv.flac_header(b"fLaC" + bytes([0, 0, 0, 34]) + b"\x11" * 34)[4] == 0x80
     assert pv.flac_header(b"ID3....") is None
+
+
+def test_ready_copy_that_queues_us_is_reported_busy(service, fixtures, monkeypatch):
+    import time
+    from app.core.service import PreviewBusy
+    eng = FakeEngine(fixtures["mp3_320"], Path(service.manager.instance_dir) / "incomplete", queued_polls=10_000)
+    monkeypatch.setattr(service, "_adapter_or_block", lambda: eng)
+    clock = {"t": time.monotonic()}
+    monkeypatch.setattr(time, "monotonic", lambda: clock.__setitem__("t", clock["t"] + 1) or clock["t"])
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    c = _cand(fixtures["mp3_320"], "mp3")
+    with pytest.raises(PreviewBusy):
+        service.snippet_preview(c)
+    assert eng.cancelled and not c.free_slot and c.queue_length >= 1     # the row can now show it as busy

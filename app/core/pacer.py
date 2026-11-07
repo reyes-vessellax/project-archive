@@ -3,7 +3,9 @@
 Pressing "Download and check" on an 18-track playlist used to request all 18 files in the same second. That
 looks like a bot to the people sharing (some auto-ban for it), splits the bandwidth 18 ways so everything
 crawls, and lands 18 files on the checker together. The pacer lets at most MAX_ACTIVE downloads run, never two
-from the same person at once, with a short random gap between starts. The rest wait their turn.
+from the same person at once, with a short random gap between starts. The rest wait their turn, fastest first.
+A download parked in a sharer's queue moves no bytes, so it doesn't hold one of the slots (0.7.1 let a few of
+those block the whole batch, which is why it felt slower than 0.7.0).
 """
 from __future__ import annotations
 
@@ -11,8 +13,8 @@ import random
 import time
 from typing import Callable, Iterable
 
-MAX_ACTIVE = 3
-GAP_S = (5.0, 11.0)
+MAX_ACTIVE = 4
+GAP_S = (2.0, 5.0)
 
 
 class DownloadPacer:

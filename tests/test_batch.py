@@ -197,3 +197,20 @@ def test_row_two_click_download_and_swap(monkeypatch):
     row.go.click(); assert got == [0] and row.go.text() == "Found"
     page._toggle_row(0); assert row.drop.isVisibleTo(row)
     page._choose(0, 1); assert it.pick is alts[1] and it.detail.startswith("MP3 320")
+
+
+def test_enter_adds_the_playlist_shift_enter_is_a_new_line():
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+    from app.ui.batch_page import BatchPage
+    app = QApplication.instance() or QApplication([])
+    page = BatchPage(); got = []
+    page.start.connect(got.append)
+    page.input.setPlainText("https://open.spotify.com/playlist/abc")
+    QTest.keyClick(page.input, Qt.Key_Return, Qt.ShiftModifier)
+    assert got == [] and page.input.toPlainText().count("\n") == 1
+    QTest.keyClick(page.input, Qt.Key_Return)
+    assert got and got[0].startswith("https://open.spotify.com/playlist/abc")

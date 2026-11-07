@@ -633,6 +633,33 @@ class SearchPage(QWidget):
         if items and isinstance(items[0].data(0, Qt.UserRole), Candidate):
             self.preview.emit(items[0].data(0, Qt.UserRole))
 
+    def mark_busy(self, cand) -> None:
+        """A copy that said "Ready now" queued us when asked: show it as waiting, and stop offering a preview."""
+        if cand is None:
+            return
+        for i in range(self.tree.topLevelItemCount()):
+            it = self.tree.topLevelItem(i)
+            c = it.data(0, Qt.UserRole)
+            if isinstance(c, Candidate) and c.key == cand.key:
+                c.free_slot, c.queue_length = False, max(1, c.queue_length or 0)
+                it.setText(9, "Busy now · queued you")
+                it.setForeground(9, QColor(T.colours(self._theme())["warn"]))
+                it.setToolTip(9, "It was ready when you searched; when asked, the sharer put you in their line.")
+                if it.isSelected():
+                    self._selection()
+                break
+
+    def ready_alternative(self, cand, tried: set):
+        """Another copy of the same track (same title and mix, same artist) that says it's ready, fastest first."""
+        def norm(x):
+            return " ".join((x or "").lower().split())
+        same = [c for c in self._ranked if isinstance(c, Candidate) and c.key not in tried and c.free_slot
+                and not (c.queue_length or 0) and not c.locked and not c.note
+                and norm(c.title) == norm(cand.title) and norm(c.mix) == norm(cand.mix)
+                and norm(c.artist) == norm(cand.artist)
+                and (c.extension or "").lower() in {e.lower().lstrip(".") for e in self.svc.settings.extensions}]
+        return max(same, key=lambda c: c.upload_speed or 0) if same else None
+
     def set_preview_state(self, state: str, text: str = ""):
         """state: '' (idle), 'loading' (downloading + checking), 'playing'."""
         self._previewing = state == "playing"

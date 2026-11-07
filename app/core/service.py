@@ -40,6 +40,11 @@ class ActionBlocked(RuntimeError):
     """A user action isn't allowed right now. The message is shown to the user."""
 
 
+class PreviewBusy(ActionBlocked):
+    """The search said this copy was ready, but when asked the sharer put us in their line (their free slot
+    went to someone else since the search). The window marks the copy as busy and tries another one."""
+
+
 MAX_DOWNLOAD_RETRIES = 2            # the engine already makes 3 attempts of its own per request
 RETRY_WAIT_S = (15, 45)
 
@@ -318,7 +323,8 @@ class ArchiveService:
         """One pacer for every batch, so two playlists downloading at once still share the same few slots."""
         if getattr(self, "_pacer", None) is None:
             from .pacer import DownloadPacer
-            self._pacer = DownloadPacer(lambda: [j.get("remote_user") or "" for j in self.db.jobs(states=(J.QUEUED,))])
+            self._pacer = DownloadPacer(lambda: [j.get("remote_user") or "" for j in self.db.jobs(states=(J.QUEUED,))
+                                                 if "Remotely" not in (j.get("message") or "")])
         return self._pacer
 
     # ---------------------------------------------------------------- search preview
@@ -444,10 +450,20 @@ class ArchiveService:
                     st = adapter.transfer_status(t)
                     if st.failed and not st.done:
                         raise ActionBlocked("That copy wouldn't send. Try another one.")
-                    if "Queued" in (st.state or ""):
+                    state = st.state or ""
+                    if "Queued" in state:
                         queued_since = queued_since or _time.monotonic()
-                        if _time.monotonic() - queued_since > 6:
-                            raise ActionBlocked("That copy has a wait, so it can't be previewed yet. "
+                        waited = _time.monotonic() - queued_since
+                        if "Remotely" in state and waited > 2.5:
+                            # the search said "ready", but the sharer's free slot has gone since: they queued us
+                            cand.free_slot, cand.queue_length = False, max(1, cand.queue_length or 0)
+                            raise PreviewBusy("That copy was ready when you searched, but the sharer is busy now "
+                                              "and put you in their line.")
+                        if waited > 8:
+                            raise ActionBlocked("Your other downloads are using every slot right now, so the preview "
+                                                "couldn't start. Try again when one finishes."
+                                                if "Locally" in state else
+                                                "That copy has a wait, so it can't be previewed yet. "
                                                 "Try one that's Ready now.")
                         progress("Waiting for the sharer…")
                     else:

@@ -855,12 +855,17 @@ class MainWindow(QMainWindow):
         self.io.start(Task(work, self.signals))
 
     def _batch_download_all(self, batch_id: str):
-        """Request the found tracks a few at a time (core/pacer.py): at most three downloading, never two from the
-        same person, a short random gap between starts. The rest show "Waiting its turn"."""
+        """Request the found tracks a few at a time (core/pacer.py), fastest first: at most four downloading,
+        never two from the same person, a short random gap between starts. The rest show "Waiting its turn"."""
         b = self.batchp.batch(batch_id)
         if not b:
             return
+        from ..core.availability import availability, download_seconds
         picks = [(i, it) for i, it in enumerate(b.items) if it.status == "found" and it.pick is not None]
+        # fastest first: ready copies before ones with a wait, then the quickest transfers, so results start
+        # landing on Ready straight away instead of waiting behind a slow 60 MB WAV
+        picks.sort(key=lambda p: (availability(p[1].pick).rank,
+                                  download_seconds(p[1].pick.size, p[1].pick.upload_speed) or 1e9))
         for i, it in picks:
             it.status = "turn"
             self.bsig.item.emit(b.id, i, it)
@@ -887,8 +892,8 @@ class MainWindow(QMainWindow):
                 self._dl_stop.discard(b.id)
         self.dl_pool.start(Task(work, self.signals))
         self.batchp.set_running(self._batches_running > 0,
-                                f"Downloading {len(picks)} track(s) from “{b.name}”, three at a time so sharers don't "
-                                f"take it for a bot. Each shows up under Ready once checked; the ones you keep go into a "
+                                f"Downloading {len(picks)} track(s) from “{b.name}”, fastest first and a few at a time so "
+                                f"sharers don't take it for a bot. Each shows up under Ready once checked; the ones you keep go into a "
                                 f"“{b.name}” folder in your library.")
 
     # ---------------------------------------------------------------- updates
@@ -1080,11 +1085,18 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Requested “{cand.title or cand.display_name}”. It goes to quarantine first.", 6000)
 
     # ---------------------------------------------------------------- preview (Search only)
-    def _preview_candidate(self, cand: Candidate):
-        """~20 seconds from the middle WITHOUT downloading the track (header, jump, fetch the slice, cancel, delete)."""
+    def _preview_candidate(self, cand: Candidate, retry_of: str = ""):
+        """~20 seconds from the middle WITHOUT downloading the track (header, jump, fetch the slice, cancel, delete).
+        If a copy that looked ready queues us after all, it's marked busy and the next ready copy of the same
+        track is tried (twice at most)."""
+        from ..core.service import PreviewBusy
         name = cand.title or cand.display_name
         self._pv_stop_flag = False
-        self.searchp.set_preview_state("loading", f"Getting a preview of “{name}”…")
+        if not retry_of:
+            self._pv_tried = set()
+        self._pv_tried.add(cand.key)
+        self._pv_cand = cand
+        self.searchp.set_preview_state("loading", retry_of or f"Getting a preview of “{name}”…")
 
         def work():
             try:
@@ -1092,9 +1104,22 @@ class MainWindow(QMainWindow):
                     cand, should_stop=lambda: self._pv_stop_flag,
                     progress=lambda m: self.signals.notice.emit("PREVIEW_PROGRESS " + m))
                 self.signals.notice.emit(f"PREVIEW_READY {wav}\t{start}\t{name}\t{cand.artist}")
+            except PreviewBusy as e:
+                self.signals.notice.emit("PREVIEW_BUSY " + str(e))
             except ActionBlocked as e:
                 self.signals.notice.emit("PREVIEW_FAILED " + str(e))
         self.io.start(Task(work, self.signals))
+
+    def _preview_busy(self, message: str):
+        """The copy queued us: show it as busy and try another ready copy of the same track."""
+        failed = getattr(self, "_pv_cand", None)
+        self.searchp.mark_busy(failed)
+        alt = self.searchp.ready_alternative(failed, getattr(self, "_pv_tried", set())) if failed else None
+        if alt is not None and len(self._pv_tried) < 3 and not self._pv_stop_flag:
+            self._preview_candidate(alt, retry_of=f"{message} Trying another ready copy ({alt.user})…")
+            return
+        self.searchp.set_preview_state("", message + " No other copy of this track is ready right now; "
+                                                     "press Check this file to wait in line for it.")
 
     def _stop_preview(self):
         self._pv_stop_flag = True
@@ -1226,6 +1251,8 @@ class MainWindow(QMainWindow):
     def _notice(self, message: str):
         if message.startswith("PREVIEW_PROGRESS "):
             self.searchp.set_preview_state("loading", message.split(" ", 1)[1]); return
+        if message.startswith("PREVIEW_BUSY "):
+            self._preview_busy(message.split(" ", 1)[1]); return
         if message.startswith("PREVIEW_FAILED "):
             self.searchp.set_preview_state("", message.split(" ", 1)[1]); return
         if message.startswith("PREVIEW_READY "):
