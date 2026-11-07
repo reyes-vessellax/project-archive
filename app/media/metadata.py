@@ -16,6 +16,8 @@ Existing tags are kept; we only fill gaps (and BPM/key, which we measured).
 """
 from __future__ import annotations
 
+from ..core import net as _netmod
+
 import json
 import re
 import unicodedata
@@ -87,7 +89,7 @@ Fetch = Callable[[str, float], bytes]
 
 def http_get(url: str, timeout: float = 6.0) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:            # noqa: S310 - fixed https hosts only
+    with _net_urlopen(req, timeout=timeout) as r:            # noqa: S310 - fixed https hosts only
         return r.read(8 * 1024 * 1024)
 
 
@@ -324,3 +326,7 @@ def cover_from_file(path: Path, dest: Path) -> Path | None:
     dest = dest.with_suffix(".png" if data[:8] == b"\x89PNG\r\n\x1a\n" else ".jpg")
     dest.write_bytes(data)
     return dest
+
+
+def _net_urlopen(req, timeout=15.0):
+    return _netmod.urlopen(req, timeout=timeout)

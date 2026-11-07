@@ -26,6 +26,9 @@ def self_test() -> int:
         from app.ui.theme import FONT_DIR
         fonts, logos = sorted(p.name for p in FONT_DIR.glob("*.ttf")), sorted(p.name for p in ASSETS.glob("*.png"))
         say(f"brand: {len(fonts)} fonts, {len(logos)} logo files")
+        from app.core.net import urlopen                    # the packaged Python must manage verified HTTPS
+        with urlopen("https://api.github.com/zen", timeout=20) as r:   # (updates + cover lookups depend on it)
+            say(f"https: ok ({r.status})")
         if not any(f.startswith("Poppins") for f in fonts) or "digmart-mark.png" not in logos:
             raise RuntimeError("brand fonts or logo files are missing from the build")
         say(f"components: mutagen {mutagen.version_string}, yt-dlp {yt_dlp.version.__version__}, cryptography {cryptography.__version__}")

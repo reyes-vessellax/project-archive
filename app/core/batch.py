@@ -9,6 +9,8 @@ the track list instead (always works). Then each track is searched once, with sp
 """
 from __future__ import annotations
 
+from . import net as _netmod
+
 import csv
 import io
 import json
@@ -166,7 +168,7 @@ def _get_page(url: str, timeout: float = 10.0) -> bytes:
     import urllib.request
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/130 Safari/537.36",
                                                "Accept-Language": "en"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:            # noqa: S310 - https, known hosts
+    with _net_urlopen(req, timeout=timeout) as r:            # noqa: S310 - https, known hosts
         return r.read(16 * 1024 * 1024)
 
 
@@ -268,3 +270,7 @@ def best(cands: list[Candidate], w: Wanted) -> Candidate | None:
     scored = [(score(c, w), c) for c in cands]
     scored = [x for x in scored if x[0] > 0]
     return max(scored, key=lambda x: x[0])[1] if scored else None
+
+
+def _net_urlopen(req, timeout=15.0):
+    return _netmod.urlopen(req, timeout=timeout)

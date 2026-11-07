@@ -16,6 +16,8 @@ Manifest (latest.json), signature over the exact UTF-8 bytes of "manifest":
 """
 from __future__ import annotations
 
+from . import net as _netmod
+
 import base64
 import hashlib
 import json
@@ -99,7 +101,7 @@ def _get(url: str, timeout: float = 15.0) -> bytes:
     if not url.startswith("https://"):
         raise UpdateError("Update links must be https.")
     req = urllib.request.Request(url, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION} updater"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:            # noqa: S310 - https enforced above
+    with _net_urlopen(req, timeout=timeout) as r:            # noqa: S310 - https enforced above
         return r.read(1024 * 1024)
 
 
@@ -111,7 +113,7 @@ def check(url: str = UPDATE_URL, fetch: Callable[[str], bytes] = _get, public_ke
     try:
         doc = json.loads(fetch(url).decode("utf-8"))
     except Exception as e:                                           # noqa: BLE001 - offline etc.
-        raise UpdateError("Couldn't reach the update server.") from e
+        raise UpdateError(f"Couldn't reach the update server ({type(e).__name__}: {str(e)[:120]}).") from e
     m = verify_manifest(doc, public_key_b64)
     if not is_newer(str(m.get("version", "0")), local_version):
         return None
@@ -138,7 +140,7 @@ def download(u: Update, progress: Callable[[int, int], None] = lambda done, tota
         return final
     part = final.with_suffix(".zip.part")
     h, done = hashlib.sha256(), 0
-    resp = opener(u.url) if opener else urllib.request.urlopen(  # noqa: S310 - https checked in check()
+    resp = opener(u.url) if opener else _net_urlopen(  # noqa: S310 - https checked in check()
         urllib.request.Request(u.url, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION} updater"}), timeout=30)
     with resp as r, open(part, "wb") as f:
         while True:
@@ -262,3 +264,7 @@ def finish_pending() -> None:
     if target is not None:
         shutil.rmtree(target.with_name(target.name + ".previous"), ignore_errors=True)
     shutil.rmtree(updates_dir(), ignore_errors=True)
+
+
+def _net_urlopen(req, timeout=15.0):
+    return _netmod.urlopen(req, timeout=timeout)
