@@ -445,7 +445,7 @@ class LibraryPage(QWidget):
         while self.checks_host.count():
             w = self.checks_host.takeAt(0).widget()
             if w:
-                w.deleteLater()
+                w.hide(); w.deleteLater()      # hidden now: no ghost rows painted over the new ones
         for c in sorted(a.get("checks", []), key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}.get(c["status"], 3)):
             row = QWidget(); hl = hbox(row, (0, 2, 0, 2), 10)
             word = T.GRADE_WORD.get(c["status"], c["status"])

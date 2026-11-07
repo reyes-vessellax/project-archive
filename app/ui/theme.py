@@ -51,7 +51,6 @@ def colours(theme: str) -> dict:
 
 def stylesheet(theme: str) -> str:
     c = colours(theme)
-    grain = (Path(__file__).resolve().parent / "brand_assets" / f"grain-{'dark' if theme == 'dark' else 'light'}.png").as_posix()
     sans = f'"{SANS}", "Segoe UI", system-ui, sans-serif'
     display = f'"{DISPLAY}", "{SANS}", "Segoe UI", system-ui, sans-serif'
     mono = f'"{MONO}", "Consolas", monospace'
@@ -61,7 +60,7 @@ def stylesheet(theme: str) -> str:
     )
     return f"""
 * {{ font-family: {sans}; font-size: 13px; color: {c['text']}; }}
-QMainWindow, QDialog {{ background-color: {c['bg']}; background-image: url("{grain}"); }}
+QMainWindow, QDialog {{ background-color: {c['bg']}; }}
 QWidget#page, QWidget#root {{ background: transparent; }}
 QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
 QToolTip {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['line']}; padding: 4px 8px; }}

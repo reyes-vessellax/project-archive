@@ -27,7 +27,11 @@ that 0.6.0 didn't (0.5.9 to 0.6.5 came after the 0.5.8 handoff), and a Windows p
   files too small to be a track, and sizes that can't fit the length stop at once with the reason.
 - **Engine watchdog:** if the engine dies it's started again (status: Reconnecting…), no app restart.
 - **Volume** slider in the now-playing bar, remembered between sessions.
+- **No grain texture** behind the pages (it made text harder to read); plain off-white in light, black in dark.
 - Gentler wheel scrolling (the 0.5.9 change that missed the handoff).
+- **Fix: text painted over text on Ready.** Switching tracks left the previous track's check lines drawn under
+  the new ones (also the Home queue, the Ready list and Library details): rows are now hidden the moment
+  they're removed (the Pied Piper 0.5.10 fix that missed the handoff).
 - Fixes: the review page no longer widens for a frame on every refresh; wrapped text never gets clipped;
   "Sharing your library" light only on the first start; a router that won't open the port is a dash, not
   a red cross; the self-test plays its audio probe muted.

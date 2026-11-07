@@ -154,7 +154,7 @@ class HomePage(QWidget):
             while self.list.count() > 1:
                 item = self.list.takeAt(0)
                 if item.widget():
-                    item.widget().deleteLater()
+                    item.widget().hide(); item.widget().deleteLater()   # hidden now: no ghost rows painted over the new ones
             self.empty.setVisible(not jobs)
             self.list_host.setUpdatesEnabled(False)
             for jid, d in rows:
@@ -830,7 +830,7 @@ class ReviewPage(QWidget):
         while self.rail.count() > 1:
             item = self.rail.takeAt(0)
             if item.widget():
-                item.widget().deleteLater()
+                item.widget().hide(); item.widget().deleteLater()   # hidden now: no ghost rows painted over the new ones
         shown = jobs
         for j in shown:
             d = row_data(j, analyses.get(j["id"]), steps)
@@ -864,7 +864,7 @@ class ReviewPage(QWidget):
         while self.checks.count():
             item = self.checks.takeAt(0)
             if item.widget():
-                item.widget().deleteLater()
+                item.widget().hide(); item.widget().deleteLater()   # hidden now: no ghost rows painted over the new ones
         if not job:
             self.source.setText(""); self.h1.setText("Pick a track from the list"); self.artist.setText("")
             for v in self.fact_subs.values(): v.setText("")
