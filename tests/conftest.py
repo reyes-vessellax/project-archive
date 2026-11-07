@@ -47,6 +47,14 @@ def fixtures(tmp_path_factory) -> dict[str, Path]:
     return out
 
 
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Tests never reach the internet: online lookups see an offline network."""
+    def offline(url, timeout=0):
+        raise OSError("network disabled in tests")
+    monkeypatch.setattr("app.media.metadata.http_get", offline)
+
+
 @pytest.fixture
 def service(tmp_path, monkeypatch):
     """A service with NO bundled engine, so tests decide explicitly whether Soulseek is on."""

@@ -32,7 +32,11 @@ def test_promote_pass_verifies_hash(service, fixtures):
     a = service.analyze(job["id"])
     target = service.promote(job["id"])
     from app.core.analyzer import sha256_file
-    assert sha256_file(target) == a["sha256"]
+    # the copy was verified against the checked file BEFORE tags were added; the tagged result is recorded
+    assert sha256_file(target) == service.db.analysis(job["id"])["final_sha256"]
+    import subprocess
+    pcm = lambda p: subprocess.run(["ffmpeg", "-v", "error", "-i", str(p), "-f", "s16le", "-"], capture_output=True).stdout
+    assert pcm(target) == pcm(fixtures["mp3_320"])                      # tags only: the audio is identical
     assert service.db.job(job["id"])["state"] == J.PROMOTED
     assert not Path(job["staged_path"]).exists()
 

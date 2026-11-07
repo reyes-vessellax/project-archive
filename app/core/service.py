@@ -431,6 +431,9 @@ class ArchiveService:
                 shutil.copyfile(staged, tmp)
                 if sha256_file(tmp) != analysis["sha256"]:
                     raise OSError("copy verification failed")
+                self._tag_for_library(tmp, analysis, target.suffix)   # Rekordbox-ready tags + cover, on the copy only
+                analysis["final_sha256"] = sha256_file(tmp)
+                self.db.save_analysis(job_id, analysis)   # so crash recovery recognises the tagged copy
                 if target.exists():                      # appeared meanwhile: never overwrite
                     target = unique_path(library, target.name)
                 os.replace(tmp, target)
@@ -443,8 +446,22 @@ class ArchiveService:
                                disposition="promoted_override" if status == WARN else "promoted")
             self.db.event(job_id, "promoted", str(target))
             self._keep_spectrogram(job_id, analysis)        # the library page keeps showing it after staging is gone
+            self._keep_cover(job_id, analysis)
             shutil.rmtree(staged.parent, ignore_errors=True)
             return target
+
+    def _tag_for_library(self, path: Path, analysis: dict, ext: str) -> None:
+        """Best effort: a tagging problem never blocks the save (the audio was already verified)."""
+        from ..media import metadata as md
+        meta = analysis.get("meta") or {}
+        try:
+            m = md.Meta(**{k: meta.get(k, "") or "" for k in ("title", "mix", "artist", "album", "label", "catalog",
+                                                              "year", "genre")})
+            cover = Path(meta["cover_path"]) if meta.get("cover_path") else None
+            analysis["tags_written"] = md.write_tags(path, m, analysis.get("music"), cover, ext)
+        except Exception as e:                          # noqa: BLE001
+            analysis["tags_written"] = []
+            analysis["tags_error"] = str(e)[:200]
 
     def _keep_spectrogram(self, job_id: str, analysis: dict) -> None:
         src = analysis.get("spectrogram_path")
@@ -458,6 +475,21 @@ class ArchiveService:
             analysis["spectrogram_path"] = str(dst)
             self.db.save_analysis(job_id, analysis)
             self._prune_spectrograms(keep_dir)
+        except OSError:
+            pass
+
+    def _keep_cover(self, job_id: str, analysis: dict) -> None:
+        meta = analysis.get("meta") or {}
+        src = Path(meta["cover_path"]) if meta.get("cover_path") else None
+        if not src or not src.is_file():
+            return
+        try:
+            keep_dir = self.db.path.parent / "covers"
+            keep_dir.mkdir(parents=True, exist_ok=True)
+            dst = keep_dir / f"{job_id}{src.suffix}"
+            shutil.copyfile(src, dst)
+            meta["cover_path"] = str(dst)
+            self.db.save_analysis(job_id, analysis)
         except OSError:
             pass
 
@@ -538,7 +570,7 @@ class ArchiveService:
             if job["state"] == J.PROMOTING:
                 final = Path(job["final_path"]) if job["final_path"] else None
                 a = self.db.analysis(job["id"])
-                if final and final.is_file() and a and sha256_file(final) == a["sha256"]:
+                if final and final.is_file() and a and sha256_file(final) in (a["sha256"], a.get("final_sha256")):
                     self.db.update_job(job["id"], state=J.PROMOTED, disposition="promoted")
                     if staged:
                         shutil.rmtree(staged.parent, ignore_errors=True)
