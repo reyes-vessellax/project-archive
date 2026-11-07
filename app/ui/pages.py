@@ -6,8 +6,8 @@ import html
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QProgressBar, QFrame, QGridLayout, QHeaderView, QLineEdit, QSizePolicy, QTreeWidget, QTreeWidgetItem,
+from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtWidgets import (QLabel, QProgressBar, QFrame, QGridLayout, QHeaderView, QLineEdit, QSizePolicy, QTreeWidget, QTreeWidgetItem,
                                QWidget)
 
 from ..adapters.base import Candidate, SearchResult
@@ -514,10 +514,14 @@ class ReviewPage(QWidget):
         # detail
         det = vbox(spacing=22)
         head = hbox(spacing=20)
+        self.cover = QLabel(); self.cover.setFixedSize(104, 104); self.cover.setObjectName("cover")
+        self.cover.setAlignment(Qt.AlignCenter); self.cover.setScaledContents(False)
+        head.addWidget(self.cover, 0, Qt.AlignTop)
         names = vbox(spacing=4)
         self.source = label("", "tag"); self.h1 = label("", "h1"); self.h1.setWordWrap(True); self.artist = label("", "muted")
         self.artist.setStyleSheet("font-size: 15px;")
-        names.addWidget(self.source); names.addWidget(self.h1); names.addWidget(self.artist)
+        self.meta_line = label("", "muted")
+        names.addWidget(self.source); names.addWidget(self.h1); names.addWidget(self.artist); names.addWidget(self.meta_line)
         head.addLayout(names, 1)
         verdict = vbox(spacing=4); verdict.setAlignment(Qt.AlignRight)
         self.verdict = label("", "verdict"); self.verdict.setAlignment(Qt.AlignRight)
@@ -529,7 +533,7 @@ class ReviewPage(QWidget):
         det.addWidget(rule())
         facts = QGridLayout(); facts.setHorizontalSpacing(14); facts.setVerticalSpacing(4)
         self.facts = {}
-        for i, k in enumerate(("Format", "Bitrate", "Rate", "Length", "Channels", "Plays")):
+        for i, k in enumerate(("BPM", "Key", "Format", "Bitrate", "Rate", "Length", "Channels", "Plays")):
             facts.addWidget(label(k.upper(), "tag"), 0, i)
             v = label("–", "monotext"); facts.addWidget(v, 1, i); self.facts[k] = v
         det.addLayout(facts)
@@ -543,7 +547,10 @@ class ReviewPage(QWidget):
         self.dl_bar.setProperty("tag", "Down"); dl.addWidget(self.dl_bar)
         self.dl_note = label("", "muted"); dl.addWidget(self.dl_note)
         det.addWidget(self.dl_host); self.dl_host.hide()
-        sh = hbox(); sh.addWidget(label("Spectrogram", "h2")); sh.addStretch(1)
+        sh = hbox(spacing=12); sh.addWidget(label("Spectrogram", "h2"))
+        self.btn_preview = button("▶  Preview the drop", "small", lambda: self.spectrum.play_preview())
+        self.btn_preview.setToolTip("Plays 20 seconds starting just before the drop")
+        sh.addWidget(self.btn_preview); sh.addStretch(1)
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
         det.addLayout(sh)
         self.spectrum = SpectrumView(180); det.addWidget(self.spectrum)
@@ -640,6 +647,7 @@ class ReviewPage(QWidget):
                 item.widget().deleteLater()
         if not job:
             self.source.setText(""); self.h1.setText("Pick a track from the list"); self.artist.setText("")
+            self.meta_line.setText(""); self.cover.clear(); self.cover.setVisible(False); self.btn_preview.setVisible(False)
             self.verdict.setText(""); self.verdict_sub.setText("")
             for v in self.facts.values(): v.setText("–")
             self.spectrum.clear_view(""); self.spec_note.setText("")
@@ -679,12 +687,27 @@ class ReviewPage(QWidget):
             self.facts["Rate"].setText(f"{f['sample_rate_hz'] / 1000:g} kHz" if f.get("sample_rate_hz") else "?")
             self.facts["Length"].setText(fmt_time(f["duration_s"]) if f.get("duration_s") else "?")
             self.facts["Channels"].setText({1: "Mono", 2: "Stereo"}.get(f.get("channels"), str(f.get("channels") or "?")))
+            mu, me = a.get("music") or {}, a.get("meta") or {}
+            self.facts["BPM"].setText(f"{mu['bpm']:.2f}".rstrip("0").rstrip(".") if mu.get("bpm") else "–")
+            self.facts["Key"].setText(f"{mu['camelot']}  {mu['key']}" if mu.get("camelot") else "–")
+            self.facts["Key"].setToolTip("Estimated from the audio")
+            bits = [me.get("label"), me.get("year"), me.get("genre")]
+            self.meta_line.setText("  ·  ".join(b for b in bits if b))
+            self.meta_line.setToolTip("From " + ", ".join(me.get("sources") or ["the file"]) if me else "")
+            cov = me.get("cover_path")
+            pm = QPixmap(cov) if cov and Path(cov).exists() else QPixmap()
+            self.cover.setVisible(not pm.isNull())
+            if not pm.isNull():
+                self.cover.setPixmap(pm.scaled(104, 104, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
             played = dec.get("decoded_s")
             dec_ok = a.get("decode_ok") and next((c for c in a["checks"] if c["id"] == "decode"), {}).get("status") != "FAIL"
             self.facts["Plays"].setText("–" if played is None else ("All the way" if dec_ok else f"Stops at {fmt_time(played)}"))
             if a.get("spectrogram_path") and Path(a["spectrogram_path"]).exists():
                 self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
                                        audio=_audio_path(job), duration_s=f.get("duration_s"))
+                self.spectrum.set_preview(mu.get("drop_s"), mu.get("preview_start_s"), mu.get("preview_len_s") or 20.0)
+                self.btn_preview.setVisible(mu.get("preview_start_s") is not None and _audio_path(job) is not None)
+                self.btn_preview.setText("▶  Preview the drop" if mu.get("drop_s") is not None else "▶  Preview the liveliest part")
             else:
                 self.spectrum.clear_view("Spectrogram unavailable." if job["state"] not in J.FINAL else "Staged copy removed.")
             cut = a.get("cutoff_hz")

@@ -7,8 +7,9 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QTimer, QUrl, Qt, Signal
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QFrame, QGridLayout, QHeaderView, QLineEdit, QTreeWidget, QTreeWidgetItem, QWidget
+from PySide6.QtGui import QDesktopServices, QPixmap
+from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHeaderView, QLabel, QLineEdit, QTreeWidget, QTreeWidgetItem, QWidget
+from ..media.musical import compatible_keys
 
 from ..core import jobs as J
 from ..core.rules import fmt_time
@@ -34,8 +35,9 @@ def reveal_in_folder(path: Path) -> None:
 
 class LibraryPage(QWidget):
     open_job = Signal(str)
-    COLS = ["Title", "Artist", "Mix", "Format", "Bitrate", "Length", "Checked", "Added", "File"]
-    WIDTHS = [220, 150, 110, 70, 90, 60, 90, 130, 260]
+    COLS = ["Title", "Artist", "Mix", "BPM", "Key", "Format", "Bitrate", "Length", "Checked", "Added", "File"]
+    WIDTHS = [220, 150, 110, 64, 56, 70, 90, 60, 90, 130, 260]
+    C_BPM, C_KEY, C_FMT, C_KBPS, C_LEN, C_GRADE, C_ADDED, C_FILE = 3, 4, 5, 6, 7, 8, 9, 10
 
     def __init__(self, svc: ArchiveService):
         super().__init__()
@@ -55,6 +57,19 @@ class LibraryPage(QWidget):
         self.sub = label("", "faint"); head.addWidget(self.sub); head.addStretch(1)
         self.folder_btn = button("Open downloads folder", "ghost", self._open_folder); head.addWidget(self.folder_btn)
         lay.addLayout(head)
+        fl = hbox(spacing=10)
+        fl.addWidget(label("BPM", "tag"))
+        self.bpm_box = QLineEdit(); self.bpm_box.setPlaceholderText("e.g. 120-128"); self.bpm_box.setFixedWidth(120)
+        self.bpm_box.textChanged.connect(lambda _: self._filter(self.q.text()))
+        fl.addWidget(self.bpm_box); fl.addSpacing(16)
+        fl.addWidget(label("MIXES WITH", "tag"))
+        self.key_box = QComboBox(); self.key_box.addItem("Any key", "")
+        for n in range(1, 13):
+            for l in ("A", "B"):
+                self.key_box.addItem(f"{n}{l}", f"{n}{l}")
+        self.key_box.currentIndexChanged.connect(lambda _: self._filter(self.q.text()))
+        fl.addWidget(self.key_box); fl.addStretch(1)
+        lay.addLayout(fl)
 
         self.tree = QTreeWidget(); self.tree.setColumnCount(len(self.COLS)); self.tree.setHeaderLabels(self.COLS)
         self.tree.setRootIsDecorated(False); self.tree.setSortingEnabled(True); self.tree.setAlternatingRowColors(False)
@@ -63,7 +78,7 @@ class LibraryPage(QWidget):
         hdr = self.tree.header(); hdr.setSectionResizeMode(QHeaderView.Interactive); hdr.setStretchLastSection(True)
         for i, w in enumerate(self.WIDTHS):
             self.tree.setColumnWidth(i, w)
-        self.tree.sortByColumn(7, Qt.DescendingOrder)
+        self.tree.sortByColumn(self.C_ADDED, Qt.DescendingOrder)
         self.tree.itemSelectionChanged.connect(self._selection)
         smooth(self.tree)
         self.tree.itemClicked.connect(self._clicked)
@@ -105,9 +120,17 @@ class LibraryPage(QWidget):
             tags = f.get("tags", {}) or {}
             from ..adapters.base import parse_track
             p_artist, p_title, p_mix = parse_track(job["original_name"])
-            artist = tags.get("artist") or p_artist
-            title = tags.get("title") or p_title
-            mix = p_mix
+            meta, mu = (a or {}).get("meta") or {}, (a or {}).get("music") or {}
+            artist = meta.get("artist") or tags.get("artist") or p_artist
+            title = meta.get("title") or tags.get("title") or p_title
+            mix = meta["mix"] if "mix" in meta else p_mix          # the check already dropped catalogue numbers
+            bpm, cam = mu.get("bpm"), mu.get("camelot") or ""
+            lo_hi = self._bpm_range()
+            if lo_hi and (not bpm or not (lo_hi[0] <= bpm <= lo_hi[1])):
+                continue
+            want_key = self.key_box.currentData() if hasattr(self, "key_box") else ""
+            if want_key and cam not in compatible_keys(want_key):
+                continue
             final = job.get("final_path") or ""
             hay = " ".join([artist, title, mix, tags.get("album", ""), Path(final).name, job["original_name"]]).lower()
             if words and not all(w in hay for w in words):
@@ -115,14 +138,16 @@ class LibraryPage(QWidget):
             grade = T.GRADE_LONG.get((a or {}).get("overall_status", ""), "")
             added = (job.get("updated_at") or "")[:16].replace("T", " ")
             kbps = f"{round(f['bitrate_bps'] / 1000)} {f.get('bitrate_mode') if f.get('bitrate_mode') in ('CBR','VBR') else 'kbps'}" if f.get("bitrate_bps") else ("lossless" if f.get("lossless") else "")
-            it = QTreeWidgetItem([title, artist, mix, (f.get("container") or "").upper(), kbps,
+            it = QTreeWidgetItem([title, artist, mix, "", cam, (f.get("container") or "").upper(), kbps,
                                   fmt_time(f["duration_s"]) if f.get("duration_s") else "", grade, added, Path(final).name])
+            if bpm:
+                it.setData(self.C_BPM, Qt.DisplayRole, round(float(bpm), 1))      # sorts as a number
             it.setData(0, Qt.UserRole, job["id"]); it.setData(0, Qt.UserRole + 1, final)
-            it.setToolTip(8, final)
+            it.setToolTip(self.C_FILE, final)
             if not Path(final).exists():
                 for c in range(self.tree.columnCount()):
                     it.setForeground(c, self.palette().mid())
-                it.setText(8, Path(final).name + "  (moved or deleted)")
+                it.setText(self.C_FILE, Path(final).name + "  (moved or deleted)")
             self.tree.addTopLevelItem(it); shown += 1
         self.tree.setSortingEnabled(True)
         reselected = False
@@ -166,8 +191,15 @@ class LibraryPage(QWidget):
         panel = QFrame(); panel.setObjectName("card")
         pl = hbox(panel, (20, 16, 20, 16), 24)
         left = vbox(spacing=8)
-        self.p_title = label("", "h2"); self.p_artist = label("", "muted")
-        left.addWidget(self.p_title); left.addWidget(self.p_artist)
+        top = hbox(spacing=14)
+        self.p_cover = QLabel(); self.p_cover.setFixedSize(72, 72); top.addWidget(self.p_cover, 0, Qt.AlignTop)
+        names = vbox(spacing=3)
+        self.p_title = label("", "h2"); self.p_artist = label("", "muted"); self.p_meta = label("", "faint")
+        names.addWidget(self.p_title); names.addWidget(self.p_artist); names.addWidget(self.p_meta)
+        top.addLayout(names, 1)
+        self.p_preview = button("▶  Preview the drop", "small", lambda: self.spectrum and self.spectrum.play_preview())
+        top.addWidget(self.p_preview, 0, Qt.AlignTop)
+        left.addLayout(top)
         self.spectrum = SpectrumView(170); self.spectrum.set_accent(self._accent); left.addWidget(self.spectrum)
         self.p_note = label("", "faint"); left.addWidget(self.p_note)
         left.addStretch(1)
@@ -175,7 +207,7 @@ class LibraryPage(QWidget):
         right = vbox(spacing=10)
         grid = QGridLayout(); grid.setHorizontalSpacing(18); grid.setVerticalSpacing(6)
         self.facts = {}
-        for i, name in enumerate(("Verdict", "Format", "Bitrate", "Rate", "Length", "Channels", "Added", "File")):
+        for i, name in enumerate(("Verdict", "BPM", "Key", "Format", "Bitrate", "Rate", "Length", "Added", "File")):
             k = label(name.upper(), "tag"); v = label("", "monotext"); v.setWordWrap(True)
             grid.addWidget(k, i, 0, Qt.AlignTop); grid.addWidget(v, i, 1)
             self.facts[name] = v
@@ -184,9 +216,8 @@ class LibraryPage(QWidget):
         right.addStretch(1)
         acts = hbox(spacing=10)
         self.btn_reveal = button("Show in folder", "primary", self._reveal)
-        self.btn_details = button("Full details", "ghost", self._emit_open)
         self.btn_close = button("Close", "ghost", self._collapse)
-        acts.addWidget(self.btn_reveal); acts.addWidget(self.btn_details); acts.addStretch(1); acts.addWidget(self.btn_close)
+        acts.addWidget(self.btn_reveal); acts.addStretch(1); acts.addWidget(self.btn_close)
         right.addLayout(acts)
         pl.addLayout(right, 2)
         return panel
@@ -296,10 +327,18 @@ class LibraryPage(QWidget):
         final = job.get("final_path") or ""
         self.p_title.setText(it.text(0) + (f"  ·  {it.text(2)}" if it.text(2) else ""))
         self.p_artist.setText(it.text(1))
+        meta, mu = a.get("meta") or {}, a.get("music") or {}
+        self.p_meta.setText("  ·  ".join(x for x in (meta.get("label"), meta.get("year"), meta.get("genre")) if x))
+        cov = meta.get("cover_path")
+        pm = QPixmap(cov) if cov and Path(cov).exists() else QPixmap()
+        self.p_cover.setVisible(not pm.isNull())
+        if not pm.isNull():
+            self.p_cover.setPixmap(pm.scaled(72, 72, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
         exists = bool(final) and Path(final).exists()
         if a.get("spectrogram_path") and Path(a["spectrogram_path"]).exists():
             self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
                                    audio=final if exists else None, duration_s=f.get("duration_s"))
+            self.spectrum.set_preview(mu.get("drop_s"), mu.get("preview_start_s"), mu.get("preview_len_s") or 20.0)
         elif exists:
             self.spectrum.clear_view("Drawing the spectrogram again…")
             self._redraw(job_id)
@@ -310,11 +349,14 @@ class LibraryPage(QWidget):
         status = a.get("overall_status", "")
         self.facts["Verdict"].setText(T.GRADE_LONG.get(status, "–"))
         self.facts["Format"].setText((f.get("container") or "?").upper() + (f" ({f['codec']})" if f.get("codec") else ""))
-        self.facts["Bitrate"].setText(it.text(4) or "–")
+        self.facts["Bitrate"].setText(it.text(self.C_KBPS) or "–")
         self.facts["Rate"].setText(f"{f['sample_rate_hz'] / 1000:g} kHz" if f.get("sample_rate_hz") else "–")
-        self.facts["Length"].setText(it.text(5) or "–")
-        self.facts["Channels"].setText({1: "Mono", 2: "Stereo"}.get(f.get("channels"), str(f.get("channels") or "–")))
-        self.facts["Added"].setText(it.text(7))
+        self.facts["Length"].setText(it.text(self.C_LEN) or "–")
+        self.facts["BPM"].setText(f"{mu['bpm']:g}" if mu.get("bpm") else "–")
+        self.facts["Key"].setText(f"{mu['camelot']}  ({mu['key']})" if mu.get("camelot") else "–")
+        self.facts["Added"].setText(it.text(self.C_ADDED))
+        self.p_preview.setVisible(exists and mu.get("preview_start_s") is not None)
+        self.p_preview.setText("▶  Preview the drop" if mu.get("drop_s") is not None else "▶  Preview the liveliest part")
         self.facts["File"].setText(final + ("" if exists else "  (moved or deleted)"))
         while self.checks_host.count():
             w = self.checks_host.takeAt(0).widget()
@@ -328,6 +370,16 @@ class LibraryPage(QWidget):
             hl.addWidget(tag); hl.addWidget(txt, 1)
             self.checks_host.addWidget(row)
         self.btn_reveal.setEnabled(exists)
+
+    def _bpm_range(self) -> tuple[float, float] | None:
+        import re as _re
+        t = self.bpm_box.text().strip() if hasattr(self, "bpm_box") else ""
+        m = _re.fullmatch(r"(\d{2,3}(?:\.\d+)?)\s*(?:-|–|to)\s*(\d{2,3}(?:\.\d+)?)", t)
+        if m:
+            lo, hi = sorted((float(m.group(1)), float(m.group(2))))
+            return lo, hi
+        m = _re.fullmatch(r"(\d{2,3}(?:\.\d+)?)", t)
+        return (float(m.group(1)) - 1.5, float(m.group(1)) + 1.5) if m else None
 
     def _reveal(self):
         it = self._selected()

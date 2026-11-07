@@ -44,6 +44,16 @@ class Musical:
         return asdict(self)
 
 
+def compatible_keys(camelot: str) -> set[str]:
+    """Harmonic mixing on the Camelot wheel: same key, one step either way, or the relative major/minor."""
+    try:
+        n, letter = int(camelot[:-1]), camelot[-1].upper()
+    except (ValueError, IndexError):
+        return set()
+    other = "B" if letter == "A" else "A"
+    return {f"{n}{letter}", f"{n % 12 + 1}{letter}", f"{(n - 2) % 12 + 1}{letter}", f"{n}{other}"}
+
+
 def decode_low(path: Path, ffmpeg_override: str = "", max_s: float = 1200.0, timeout: float = 120.0) -> np.ndarray:
     exe = find_tool("ffmpeg", ffmpeg_override)
     args = [exe, "-v", "error", "-nostdin", "-i", str(path), "-t", str(max_s), "-vn", "-ac", "1", "-ar", str(SR),

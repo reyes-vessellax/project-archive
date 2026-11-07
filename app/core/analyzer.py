@@ -11,6 +11,9 @@ from ..media.probe import probe, sniff_magic
 from ..media.spectrogram import render
 from ..media import metadata as md
 from ..media.musical import analyze_music
+import re
+
+MIX_WORDS = re.compile(r"mix|edit|dub|remix|rmx|version|rework|re-work|vip|instrumental|extended|original|club|radio|bootleg|flip|acapella|remaster", re.I)
 from . import rules
 
 Progress = Callable[[str], None]
@@ -75,6 +78,8 @@ def describe(path: Path, settings: Settings, fetch=None) -> dict:
     fetch = fetch or md.http_get                               # looked up at call time (tests swap it out)
     tags = md.read_tags(path)
     f_artist, f_title, f_mix = parse_track(path.name)
+    if f_mix and not MIX_WORDS.search(f_mix):
+        f_mix = ""                                             # "[M.A.D 019]", "[Defected]": a catalogue/label, not a mix
     meta = md.Meta(title=tags["title"] or f_title, artist=tags["artist"] or f_artist, mix=f_mix,
                    album=tags["album"], label=tags["label"], genre=tags["genre"], year=tags["year"], source="file")
     if tags["title"] and f_mix and f_mix.lower() in tags["title"].lower():

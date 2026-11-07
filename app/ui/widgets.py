@@ -233,6 +233,74 @@ class TopBar(QWidget):
         self.avatar.setText(initials)
 
 
+class Sidebar(QWidget):
+    """Left navigation (design v6): brand, pages, update notice, connection status, account.
+    Same interface as TopBar so the window logic doesn't care which one it has."""
+    tab_clicked = Signal(str)           # "queue" | "search" | "ready" | "library" | "batch"
+    avatar_clicked = Signal()
+    update_clicked = Signal()
+
+    NAV = (("queue", "Home"), ("search", "Search"), ("ready", "Ready"), ("library", "Library"), ("batch", "Batch"))
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("sidebar")
+        self.setFixedWidth(232)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        lay = vbox(self, (14, 20, 14, 16), 2)
+        from .brand import Brand
+        self.brand = Brand(); self.brand.clicked.connect(lambda: self.tab_clicked.emit("queue"))
+        bw = QWidget(); bl = hbox(bw, (8, 0, 0, 18)); bl.addWidget(self.brand); bl.addStretch(1)
+        lay.addWidget(bw)
+        self.tabs: dict[str, QPushButton] = {}
+        self._names = dict(self.NAV)
+        for key, text in self.NAV:
+            b = button(text, "navitem", lambda _=False, k=key: self.tab_clicked.emit(k))
+            b.setCursor(Qt.PointingHandCursor)
+            self.tabs[key] = b
+            lay.addWidget(b)
+        lay.addStretch(1)
+        self.update_btn = button("", "accent", self.update_clicked.emit)
+        self.update_btn.setVisible(False)
+        lay.addWidget(self.update_btn); lay.addSpacing(10)
+        st = QWidget(); sl = hbox(st, (10, 0, 6, 0), 8)
+        self.dot = label("●", "statusdot"); self.status = label("", "mono"); self.status.setWordWrap(True)
+        sl.addWidget(self.dot); sl.addWidget(self.status, 1)
+        lay.addWidget(st)
+        self.counts = label("", "mono"); self.counts.setContentsMargins(10, 0, 0, 0); lay.addWidget(self.counts)
+        lay.addSpacing(10)
+        acc = QWidget(); al = hbox(acc, (6, 0, 0, 0), 10)
+        self.avatar = button("?", "avatar", self.avatar_clicked.emit)
+        self.account_name = label("Account", "muted")
+        al.addWidget(self.avatar); al.addWidget(self.account_name, 1)
+        lay.addWidget(acc)
+        self.set_active("queue")
+
+    def set_active(self, key: str) -> None:
+        for k, b in self.tabs.items():
+            set_active(b, k == key)
+
+    def set_counts(self, queue: int, ready: int) -> None:
+        self.tabs["queue"].setText(f"Home   {queue}" if queue else "Home")
+        self.tabs["ready"].setText(f"Ready   {ready}" if ready else "Ready")
+
+    def set_status(self, message: str, colour: str, detail: str = "") -> None:
+        self.dot.setStyleSheet(f"color: {colour};")
+        self.status.setText(message.lower() if len(message) < 40 else message)
+        self.status.setToolTip(message)
+        self.counts.setText(detail)
+        self.counts.setVisible(bool(detail))
+
+    def set_initials(self, initials: str, name: str = "") -> None:
+        self.avatar.setText(initials)
+        if name:
+            self.account_name.setText(name)
+
+    def set_update(self, text: str) -> None:
+        self.update_btn.setText(text)
+        self.update_btn.setVisible(bool(text))
+
+
 class AvatarMenu(QFrame):
     """The popup under the avatar: name, DJ name + plan, then the items."""
     picked = Signal(str)
@@ -383,6 +451,8 @@ class SpectrumView(QLabel):
         self._duration_ms = 0
         self._player = None
         self._out = None
+        self._drop_s = None; self._prev_start = None; self._prev_len = 20.0
+        self._prev_timer = None
         self.play_btn = PlayButton(self); self.play_btn.setObjectName("play"); self.play_btn.setCursor(Qt.PointingHandCursor)
         self.play_btn.setFixedSize(26, 26); self.play_btn.clicked.connect(self.toggle); self.play_btn.hide()
         self.play_btn.setToolTip("Play (space)")
@@ -416,6 +486,26 @@ class SpectrumView(QLabel):
         self.play_btn.setVisible(self._audio is not None)
         self._place_button()
         self.update()
+
+    def set_preview(self, drop_s: float | None, start_s: float | None, length_s: float = 20.0):
+        """Mark the drop and the 20-second preview window on the picture."""
+        self._drop_s, self._prev_start, self._prev_len = drop_s, start_s, length_s
+        self.update()
+
+    def play_preview(self):
+        """Play the 20 seconds around the drop (or the liveliest stretch), then stop."""
+        if not self._audio or self._prev_start is None or not self._ensure_player():
+            return
+        from PySide6.QtCore import QTimer
+        if self._player.source().toLocalFile() != self._audio:
+            self._player.setSource(QUrl.fromLocalFile(self._audio))
+        start_ms = int(self._prev_start * 1000)
+        self._player.setPosition(start_ms)
+        self._player.play()
+        QTimer.singleShot(150, lambda: self._player.setPosition(start_ms) if self._player.position() < start_ms - 500 else None)
+        if self._prev_timer is None:
+            self._prev_timer = QTimer(self, singleShot=True, timeout=lambda: self._player and self._player.pause())
+        self._prev_timer.start(int(self._prev_len * 1000) + 150)
 
     # ---------------------------------------------------------------- playback
     def _ensure_player(self) -> bool:
@@ -524,6 +614,19 @@ class SpectrumView(QLabel):
             p.setPen(QColor("#ffffff"))
             p.fillRect(r.right() - 112, y - 18, 108, 16, QColor(0, 0, 0, 120))
             p.drawText(r.right() - 108, y - 6, f"cutoff {self._cutoff / 1000:.1f} kHz")
+        # preview window + drop marker
+        if self._prev_start is not None and self._duration_ms > 0:
+            dur = self._duration_ms / 1000
+            x0 = r.left() + int(r.width() * self._prev_start / dur)
+            x1 = r.left() + int(r.width() * min(dur, self._prev_start + self._prev_len) / dur)
+            p.fillRect(x0, r.top(), max(2, x1 - x0), r.height(), QColor(255, 255, 255, 46))
+            if self._drop_s is not None:
+                xd = r.left() + int(r.width() * self._drop_s / dur)
+                pen = QPen(QColor("#ffffff")); pen.setWidth(2); p.setPen(pen)
+                p.drawLine(xd, r.top(), xd, r.bottom())
+                tag = f"drop {int(self._drop_s) // 60}:{int(self._drop_s) % 60:02d}"
+                p.fillRect(xd + 4, r.top() + 4, 74, 16, QColor(0, 0, 0, 130))
+                p.setPen(QColor("#ffffff")); p.drawText(xd + 9, r.top() + 16, tag)
         # playhead
         pos = self.position_ms()
         if self._audio and self._duration_ms > 0 and (pos > 0 or self.is_playing()):

@@ -57,6 +57,9 @@ QMainWindow, QDialog, QWidget#page, QWidget#root {{ background: {c['bg']}; }}
 QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
 QToolTip {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['line']}; padding: 4px 8px; }}
 
+/* sidebar (design v6) */
+QWidget#sidebar {{ background: {c['panel']}; border-right: 1px solid {c['line']}; }}
+
 /* top bar */
 QWidget#topbar {{ background: {c['bg']}; }}
 QLabel#brandname {{ font-family: {display}; font-weight: 800; font-size: 17px; color: {c['accent']}; letter-spacing: -0.3px; }}
@@ -153,6 +156,7 @@ QTreeWidget {{ background: transparent; border: none; alternate-background-color
 QTreeWidget::item {{ padding: 9px 4px; border-bottom: 1px solid {c['line']}; }}
 QTreeWidget::item:hover {{ background: {c['soft']}; }}
 QTreeWidget::item:selected {{ background: {c['soft']}; color: {c['text']}; }}
+QHeaderView {{ background: transparent; border: none; }}
 QHeaderView::section {{ background: transparent; border: none; border-bottom: 1px solid {c['line']}; padding: 6px 4px; font-family: {mono}; font-size: 10px; letter-spacing: 1px; color: {c['faint']}; }}
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: {c['bar']}; border-radius: 4px; min-height: 30px; }}

@@ -146,3 +146,14 @@ def test_offline_lookup_never_blocks_the_check(service, fixtures):
     job = service.stage(fixtures["mp3_320"])
     a = service.analyze(job["id"])                                       # network is disabled in tests
     assert a["overall_status"] in ("PASS", "WARN") and a["meta"]["cover_path"] is None
+
+
+@needs_ffmpeg
+def test_catalogue_number_in_brackets_is_not_a_mix(fixtures, tmp_path):
+    from app.config import Settings
+    from app.core.analyzer import describe
+    f = tmp_path / "TINO - ROCK YA BODY [M.A.D 019].mp3"; shutil.copy(fixtures["mp3_320"], f)
+    g = tmp_path / "Kessler Avenue - Night Bus (Extended Mix).mp3"; shutil.copy(fixtures["mp3_320"], g)
+    s = Settings(); s.online_lookup = False
+    assert describe(f, s)["mix"] == ""
+    assert describe(g, s)["mix"] == "Extended Mix"

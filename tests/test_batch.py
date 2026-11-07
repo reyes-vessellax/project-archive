@@ -91,3 +91,61 @@ def test_best_copy_prefers_right_mix_then_quality_then_ready():
 
 def test_no_match_returns_none():
     assert B.best([_cand("Other - Thing")], B.Wanted("Kessler Avenue", "Night Bus")) is None
+
+
+# ---------------------------------------------------------------- runner (fake network, fake clock)
+from app.adapters.base import SearchResult
+from app.core import batch_runner as R
+
+
+class FakeNet:
+    def __init__(self, catalogue):
+        self.catalogue, self.started = catalogue, []
+
+    def search(self, q, timeout_s=0):
+        self.started.append((q, clock.t)); return SearchResult(query=q, search_id=q, finished=False)
+
+    def search_status(self, sid):
+        return True, 1, 1, "Completed"
+
+    def stop_search(self, sid): pass
+    def forget_search(self, sid): pass
+
+    def search_results(self, sid):
+        return SearchResult(query=sid, search_id=sid, finished=True, candidates=self.catalogue.get(sid, []))
+
+
+class clock:
+    t = 0.0
+
+    @staticmethod
+    def now():
+        return clock.t
+
+    @staticmethod
+    def sleep(s):
+        clock.t += s
+
+
+def test_runner_spaces_searches_skips_owned_and_picks_best():
+    clock.t = 0.0
+    good = _cand("Kessler Avenue - Night Bus (Extended Mix)", "flac")
+    net = FakeNet({"Kessler Avenue Night Bus Extended Mix": [good], "Mira Vale Low Tide": []})
+    items = [R.Item(B.Wanted("Kessler Avenue", "Night Bus", "Extended Mix")),
+             R.Item(B.Wanted("Static", "Owned")),
+             R.Item(B.Wanted("Mira Vale", "Low Tide"))]
+    updates = []
+    R.run(items, net, [("Static", "Owned")], lambda i, it: updates.append((i, it.status)),
+          sleep=clock.sleep, clock=clock.now)
+    assert [it.status for it in items] == ["found", "have", "not_found"]
+    assert items[0].pick is good and items[0].detail.startswith("FLAC")
+    assert len(net.started) == 2                                          # the owned one never hit the network
+    assert net.started[1][1] - net.started[0][1] >= R.GAP_S               # spaced out
+
+
+def test_runner_stops_when_asked():
+    clock.t = 0.0
+    net = FakeNet({})
+    items = [R.Item(B.Wanted("A", f"Song {n}")) for n in range(5)]
+    R.run(items, net, [], lambda i, it: None, should_stop=lambda: len(net.started) >= 2, sleep=clock.sleep, clock=clock.now)
+    assert len(net.started) == 2
