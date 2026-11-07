@@ -177,6 +177,13 @@ QPushButton#small {{ min-height: 30px; max-height: 30px; padding: 0 14px; font-s
 QPushButton#small:hover {{ background: {c['text']}; color: {c['on_text']}; }}
 QPushButton#play {{ background: {c['accent']}; color: {c['accent_text']}; border: none; border-radius: 13px; font-size: 10px; padding: 0; min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; }}
 QPushButton#play:hover {{ background: {c['text']}; color: {c['bg']}; }}
+QPushButton#pillbtn {{ background: transparent; color: {c['pass_']}; border: 1px solid {c['pass_']}; border-radius: 3px; padding: 0 8px; min-height: 26px; max-height: 26px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; }}
+QPushButton#pillbtn:hover {{ background: {c['pass_']}; color: #ffffff; }}
+QPushButton#pillbtn[armed="true"] {{ background: {c['accent']}; border-color: {c['accent']}; color: {c['accent_text']}; }}
+QFrame#trowdrop {{ background: {c['panel']}; border-top: 1px dashed {c['line']}; }}
+QPushButton#altrow {{ background: transparent; border: none; text-align: left; padding: 0 8px; min-height: 26px; max-height: 26px; font-family: "IBM Plex Mono"; font-size: 12px; color: {c['text']}; border-radius: 3px; }}
+QPushButton#altrow:hover {{ background: {c['soft']}; }}
+QPushButton#altrow:disabled {{ color: {c['accent']}; font-weight: 600; }}
 QPushButton#zoom {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['line']}; border-radius: 3px; padding: 0; min-height: 0; font-size: 14px; font-weight: 600; }}
 QPushButton#zoom:hover {{ border-color: {c['accent']}; }}
 QPushButton#zoom:disabled {{ color: {c['faint']}; border-color: {c['bar']}; }}
@@ -212,7 +219,7 @@ QPushButton#menuitem:hover {{ background: {c['soft']}; }}
 QTreeWidget {{ background: transparent; border: none; alternate-background-color: transparent; outline: 0; }}
 QTreeWidget::item {{ padding: 9px 4px; border-bottom: 1px solid {c['line']}; }}
 QTreeWidget::item:hover {{ background: {c['soft']}; }}
-QTreeWidget::item:selected {{ background: {c['soft']}; color: {c['text']}; }}
+QTreeWidget::item:selected {{ background: {c['soft']}; }}
 QHeaderView {{ background: transparent; border: none; }}
 QHeaderView::section {{ background: transparent; border: none; border-bottom: 1px solid {c['line']}; padding: 6px 4px; font-family: {mono}; font-size: 10px; letter-spacing: 1px; color: {c['faint']}; }}
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 0; }}

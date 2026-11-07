@@ -167,3 +167,33 @@ def test_runner_draws_from_the_shared_search_budget():
     R.run(items, net, [], lambda i, it: None, sleep=sleep, clock=clock.now)
     assert len(net.started) == 1 and sum(waits) >= 0.5         # waited for a token before searching
     assert net.search_budget.wait_needed() > 0                 # and used it
+
+
+def test_low_bitrate_copies_are_never_picked():
+    """A beta batch picked an MP3 192 because it could start sooner. Below the bar it isn't a candidate."""
+    w = B.Wanted("Kessler Avenue", "Night Bus")
+    low = _cand("Kessler Avenue - Night Bus", "mp3", 192)
+    good = _cand("Kessler Avenue - Night Bus", "mp3", 320, free=False, q=12)
+    assert B.best([low, good], w) is good
+    assert B.best([low], w) is None
+    assert B.ranked([low, good, _cand("Kessler Avenue - Night Bus", "flac")], w)[0].extension == "flac"
+
+
+def test_row_two_click_download_and_swap(monkeypatch):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from app.core import batch_runner as BR
+    from app.ui.batch_page import Batch, BatchPage
+    app = QApplication.instance() or QApplication([])
+    w = B.Wanted("Kessler Avenue", "Night Bus")
+    alts = B.ranked([_cand("Kessler Avenue - Night Bus", "flac"), _cand("Kessler Avenue - Night Bus", "mp3", 320)], w)
+    it = BR.Item(w, status="found", alts=alts); BR.choose(it, alts[0])
+    page = BatchPage(); page.add_batch(Batch("Set", items=[it])); app.processEvents()
+    row = page._rows[0]
+    got = []
+    page.download_one.connect(lambda bid, i: got.append(i))
+    row.go.click(); assert row.go.text() == "Download?" and got == []
+    row.go.click(); assert got == [0] and row.go.text() == "Found"
+    page._toggle_row(0); assert row.drop.isVisibleTo(row)
+    page._choose(0, 1); assert it.pick is alts[1] and it.detail.startswith("MP3 320")

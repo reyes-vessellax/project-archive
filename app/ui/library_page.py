@@ -15,7 +15,7 @@ from ..core import jobs as J
 from ..core.rules import fmt_time
 from ..core.service import ArchiveService
 from . import theme as T
-from .widgets import smooth, SpectrumView, button, hbox, label, page, vbox
+from .widgets import KeepColourDelegate, smooth, SpectrumView, button, hbox, label, page, vbox
 
 
 def reveal_in_folder(path: Path) -> None:
@@ -75,6 +75,7 @@ class LibraryPage(QWidget):
         lay.addLayout(fl)
 
         self.tree = QTreeWidget(); self.tree.setColumnCount(len(self.COLS)); self.tree.setHeaderLabels(self.COLS)
+        self.tree.setItemDelegate(KeepColourDelegate(self.tree))
         self.tree.setRootIsDecorated(False); self.tree.setSortingEnabled(True); self.tree.setAlternatingRowColors(False)
         self.tree.setIndentation(0)                          # the drop-down row sits flush with its track
         self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
@@ -258,7 +259,8 @@ class LibraryPage(QWidget):
 
     def _build_panel(self) -> QFrame:
         panel = QFrame(); panel.setObjectName("card")
-        pl = hbox(panel, (20, 16, 20, 16), 24)
+        outer = vbox(panel, (20, 16, 20, 16), 14)
+        pl = hbox(spacing=24); outer.addLayout(pl)
         left = vbox(spacing=8)
         top = hbox(spacing=14)
         self.p_cover = QLabel(); self.p_cover.setFixedSize(72, 72); top.addWidget(self.p_cover, 0, Qt.AlignTop)
@@ -294,8 +296,10 @@ class LibraryPage(QWidget):
                                    "(you can still get it back from there)")
         acts.addWidget(self.btn_reveal); acts.addWidget(self.btn_crate); acts.addWidget(self.btn_uncrate)
         acts.addStretch(1); acts.addWidget(self.btn_delete); acts.addWidget(self.btn_close)
-        right.addLayout(acts)
+        for b in (self.btn_reveal, self.btn_close, self.btn_crate, self.btn_uncrate, self.btn_delete):
+            b.setMinimumWidth(b.sizeHint().width() + 8)       # a squeezed button cut its own label off
         pl.addLayout(right, 2)
+        outer.addLayout(acts)                                  # across the whole drop-down, under both columns
         return panel
 
     def set_accent(self, colour: str):
@@ -357,7 +361,8 @@ class LibraryPage(QWidget):
         self.tree.setItemWidget(child, 0, self.panel)       # parented into the tree first, shown after
         self.panel.show()
         it.setExpanded(True)
-        if animate:
+        self._reveal = animate                               # only a row the user just opened is brought into view;
+        if animate:                                          # a refresh re-mounting the panel must not move the list
             self._anim.start()
         else:
             self._grow_step()
@@ -383,7 +388,8 @@ class LibraryPage(QWidget):
             self.tree.doItemsLayout()
         if nh >= self._grow_target:
             self._anim.stop()
-            if self._child is not None:
+            if self._child is not None and getattr(self, "_reveal", False):
+                self._reveal = False
                 self.tree.scrollToItem(self._child, QTreeWidget.EnsureVisible)   # bring the panel into view; no jump to top
 
     def _collapse(self):

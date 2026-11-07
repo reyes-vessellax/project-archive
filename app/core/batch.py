@@ -264,7 +264,19 @@ def score(c: Candidate, w: Wanted) -> float:
     return s
 
 
-def best(cands: list[Candidate], w: Wanted) -> Candidate | None:
-    scored = [(score(c, w), c) for c in cands]
-    scored = [x for x in scored if x[0] > 0]
-    return max(scored, key=lambda x: x[0])[1] if scored else None
+def too_low(c: Candidate, min_kbps: int) -> bool:
+    """A lossy copy below the quality bar (an MP3 192 when the bar is 320). Unknown bitrates aren't refused."""
+    ext = (c.extension or "").lower()
+    return ext not in ("flac", "aiff", "aif", "wav") and bool(c.bitrate_kbps) and c.bitrate_kbps < min_kbps
+
+
+def ranked(cands: list[Candidate], w: Wanted, min_kbps: int = 320) -> list[Candidate]:
+    """Every acceptable copy of the track, best first. Copies below the quality bar are left out, so a batch
+    never settles for a 192 kbps MP3 just because it could start sooner."""
+    scored = [(score(c, w), c) for c in cands if not too_low(c, min_kbps)]
+    return [c for sc, c in sorted(scored, key=lambda x: -x[0]) if sc > 0]
+
+
+def best(cands: list[Candidate], w: Wanted, min_kbps: int = 320) -> Candidate | None:
+    r = ranked(cands, w, min_kbps)
+    return r[0] if r else None

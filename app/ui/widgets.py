@@ -181,10 +181,10 @@ class SmoothWheel(QObject):
         self.anim = QPropertyAnimation(self.bar, b"value", self)
         self.anim.setEasingCurve(QEasingCurve.OutCubic)
         self.target = None
-        try:
-            area.setVerticalScrollMode(area.ScrollPerPixel)      # item views default to jumping a row at a time
-        except Exception:
-            pass
+        from PySide6.QtWidgets import QAbstractItemView
+        if isinstance(area, QAbstractItemView):              # item views default to jumping a whole row at a time:
+            area.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)   # an open drop-down is one "row"
+            area.verticalScrollBar().setSingleStep(24)
         area.viewport().installEventFilter(self)
         area.installEventFilter(self)
 
@@ -539,6 +539,21 @@ class PlayButton(QPushButton):
             path = QPainterPath(); path.moveTo(cx - s * 0.42, cy - s * 0.5); path.lineTo(cx + s * 0.58, cy)
             path.lineTo(cx - s * 0.42, cy + s * 0.5); path.closeSubpath(); p.drawPath(path)
         p.end()
+
+
+from PySide6.QtWidgets import QStyledItemDelegate as _QStyledItemDelegate
+
+
+class KeepColourDelegate(_QStyledItemDelegate):
+    """A selected or opened row keeps its coloured text (the Key in accent, Good in green...). Qt paints selected
+    text in one highlight colour, which turned the Key black whenever a Library row dropped down."""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        from PySide6.QtGui import QPalette
+        fg = index.data(Qt.ForegroundRole)
+        colour = fg.color() if hasattr(fg, "color") else (fg if isinstance(fg, QColor) else option.palette.color(QPalette.Text))
+        option.palette.setColor(QPalette.HighlightedText, colour)
 
 
 class StopButton(QPushButton):

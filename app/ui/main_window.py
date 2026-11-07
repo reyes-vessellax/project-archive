@@ -77,16 +77,22 @@ def open_store_search(query: str) -> None:
         QDesktopServices.openUrl(QUrl(url.format(quote_plus(query))))
 
 
+MIN_W, MIN_H = 1280, 700
+
+
 class MainWindow(QMainWindow):
     def __init__(self, svc: ArchiveService):
         super().__init__()
         self.svc = svc
+        self._closing = False
+        self._dl_stop: set[str] = set()              # batches whose paced downloads should stop
         try:
             svc.purge_previews()                     # clips or partials a crash left behind
         except Exception:
             pass
         self.pool = QThreadPool(); self.pool.setMaxThreadCount(max(1, svc.settings.max_concurrent_analyses))
         self.io = QThreadPool(); self.io.setMaxThreadCount(3)
+        self.dl_pool = QThreadPool(); self.dl_pool.setMaxThreadCount(2)   # paced batch downloads (they wait minutes)
         self._polling = self._scanning = False
         self.signals = Signals()
         self.signals.progress.connect(self._on_progress)
@@ -111,7 +117,11 @@ class MainWindow(QMainWindow):
         self._connected = False
 
         self.setWindowTitle(APP_NAME)
-        self.resize(1280, 860)
+        # Smallest size at which every page shows all of its controls (checked page by page). Never bigger than
+        # the screen, so a small laptop still gets a window that fits.
+        avail = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None
+        self.setMinimumSize(min(MIN_W, avail.width()) if avail else MIN_W, min(MIN_H, avail.height() - 40) if avail else MIN_H)
+        self.resize(max(1280, self.minimumWidth()), 860)
         self.setAcceptDrops(True)
         self.apply_theme()
         self._build()
@@ -169,6 +179,7 @@ class MainWindow(QMainWindow):
         self.library.crates_changed.connect(self._refresh_crates)
         self.batchp.start.connect(self._batch_start); self.batchp.choose_folder.connect(self._batch_folder)
         self.batchp.stop.connect(self._batch_stop); self.batchp.download_all.connect(self._batch_download_all)
+        self.batchp.download_one.connect(self._batch_download_one); self.batchp.changed.connect(lambda _id: self._save_session())
         self.batchp.removed.connect(lambda _id: self._save_session())
         self.bsig = BatchSignals(); self.bsig.loaded.connect(self._batch_loaded); self.bsig.item.connect(self.batchp.update_item)
         self.bsig.item.connect(lambda *_: self._save_session()); self.bsig.error.connect(self._batch_error)
@@ -612,6 +623,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e):
         self._batch_stop_flag = True
+        self._closing = True
         try:
             from .player import Player
             Player.get().stop()                      # let go of the clip so it can be deleted
@@ -703,6 +715,8 @@ class MainWindow(QMainWindow):
             items = []
             for x in d.get("items", []):
                 st = x.get("status", "waiting")
+                if st == "turn":                             # was waiting its turn when the app closed
+                    st = "found"
                 items.append(BR.Item(B.Wanted(x.get("artist", ""), x.get("title", ""), x.get("mix", ""), x.get("source", "")),
                                      status="waiting" if st in ("searching", "found") else st,   # picks aren't kept: find again
                                      detail="" if st in ("searching", "found") else x.get("detail", "")))
@@ -812,6 +826,7 @@ class MainWindow(QMainWindow):
 
     def _batch_stop(self):
         self._batch_stop_flag = True
+        self._dl_stop.update(b.id for b in self.batchp.batches if b.count("turn"))
         self.batchp.set_running(False, "Paused. Add a playlist or reopen the app to carry on where it left off.")
 
     def _batch_resume_all(self):
@@ -820,25 +835,61 @@ class MainWindow(QMainWindow):
             if b.count("waiting"):
                 self._batch_run(b)
 
+    def _batch_download_one(self, batch_id: str, index: int):
+        """Found → Download? → this one track goes to quarantine and the check, like Download and check does."""
+        b = self.batchp.batch(batch_id)
+        if not b or not (0 <= index < len(b.items)):
+            return
+        it = b.items[index]
+        if it.status != "found" or it.pick is None:
+            return
+
+        def work():
+            try:
+                job = self.svc.request_download(it.pick, playlist=b.name)
+                it.status = "queued"
+                self.signals.done.emit(job["id"])
+            except ActionBlocked as e:
+                it.status, it.detail = "error", str(e)[:120]
+            self.bsig.item.emit(b.id, index, it)
+        self.io.start(Task(work, self.signals))
+
     def _batch_download_all(self, batch_id: str):
+        """Request the found tracks a few at a time (core/pacer.py): at most three downloading, never two from the
+        same person, a short random gap between starts. The rest show "Waiting its turn"."""
         b = self.batchp.batch(batch_id)
         if not b:
             return
         picks = [(i, it) for i, it in enumerate(b.items) if it.status == "found" and it.pick is not None]
+        for i, it in picks:
+            it.status = "turn"
+            self.bsig.item.emit(b.id, i, it)
+
+        def start(pair):
+            i, it = pair
+            try:
+                job = self.svc.request_download(it.pick, playlist=b.name)
+                it.status = "queued"
+                self.signals.done.emit(job["id"])
+            except ActionBlocked as e:
+                it.status, it.detail = "error", str(e)[:120]
+            self.bsig.item.emit(b.id, i, it)
 
         def work():
-            for i, it in picks:
-                try:
-                    job = self.svc.request_download(it.pick, playlist=b.name)
-                    it.status = "queued"
-                    self.signals.done.emit(job["id"])
-                except ActionBlocked as e:
-                    it.status, it.detail = "error", str(e)[:120]
-                self.bsig.item.emit(b.id, i, it)
-        self.io.start(Task(work, self.signals))
+            left = picks
+            try:
+                left = self.svc.download_pacer.run(picks, lambda p: p[1].pick.user, start,
+                                                   should_stop=lambda: self._closing or b.id in self._dl_stop)
+            finally:
+                for i, it in left:                           # stopped: back to Found, ready for next time
+                    if it.status == "turn":
+                        it.status = "found"; self.bsig.item.emit(b.id, i, it)
+                self._dl_stop.discard(b.id)
+        self.dl_pool.start(Task(work, self.signals))
         self.batchp.set_running(self._batches_running > 0,
-                                f"Downloading {len(picks)} track(s) from “{b.name}” into quarantine. Each shows up under Ready "
-                                f"once checked; the ones you keep go into a “{b.name}” folder in your library.")
+                                f"Downloading {len(picks)} track(s) from “{b.name}”, three at a time so sharers don't "
+                                f"take it for a bot. Each shows up under Ready once checked; the ones you keep go into a "
+                                f"“{b.name}” folder in your library.")
 
     # ---------------------------------------------------------------- updates
     def _check_updates(self):

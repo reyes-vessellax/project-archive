@@ -18,6 +18,7 @@ from .widgets import button, hbox, label, scroll, vbox
 
 STATUS = {"waiting": ("Waiting", "faint"), "searching": ("Searching", "accent"), "found": ("Found", "pass_"),
           "not_found": ("Not found", "fail"), "have": ("Already have", "muted"), "queued": ("Downloading", "accent"),
+          "turn": ("Waiting its turn", "faint"),
           "error": ("Problem", "fail")}
 SERVICE_COLOUR = {"YouTube": "#d9473f", "Spotify": "#2f9e5b", "SoundCloud": "#e8772e", "Apple Music": "#d6407a",
                   "Folder": "#6b7cff", "List": "#8a8f98", "CSV": "#8a8f98"}
@@ -79,7 +80,7 @@ class BatchCard(QFrame):
     def update_from(self, b: Batch):
         n = len(b.items)
         bits = [f"{n} track{'s' if n != 1 else ''}"]
-        if b.count("found", "queued"):
+        if b.count("found", "queued", "turn"):
             bits.append(f"{b.count('found', 'queued')} found")
         if b.count("waiting", "searching"):
             bits.append(f"{b.count('waiting', 'searching')} to go")
@@ -95,10 +96,19 @@ class BatchCard(QFrame):
 
 
 class TrackRow(QFrame):
+    """One track. Click it to see the other copies that were found and swap to one; press Found, then
+    Download?, to get just this track."""
+    toggled = Signal(int)                  # row index: open / close the drop-down
+    chosen = Signal(int, int)              # row index, alternative index
+    download = Signal(int)                 # row index
+
     def __init__(self, n: int):
         super().__init__()
+        self.index = n - 1
         self.setObjectName("trow")
-        lay = hbox(self, (6, 10, 6, 10), 14)
+        outer = vbox(self, (0, 0, 0, 0), 0)
+        head = QWidget(); outer.addWidget(head); self.head = head
+        lay = hbox(head, (6, 10, 6, 10), 14)
         self.num = label(f"{n:02d}", "mono"); self.num.setFixedWidth(26); lay.addWidget(self.num)
         names = vbox(spacing=1)
         self.title = label("", "rowtitle"); self.title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
@@ -108,18 +118,74 @@ class TrackRow(QFrame):
         self.pick = label("", "fmt"); lay.addWidget(self.pick)
         self.avail = label("", "muted"); self.avail.setFixedWidth(150); self.avail.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lay.addWidget(self.avail)
-        self.status = label("", "pill"); self.status.setFixedWidth(108); self.status.setAlignment(Qt.AlignCenter)
-        lay.addWidget(self.status)
+        self.status = label("", "pill"); self.status.setFixedWidth(118); self.status.setAlignment(Qt.AlignCenter)
+        self.go = button("Found", "pillbtn", self._go); self.go.setFixedWidth(118)
+        lay.addWidget(self.status); lay.addWidget(self.go)
+        self._armed = False
+        self.drop = QFrame(); self.drop.setObjectName("trowdrop"); self.drop.hide()
+        self.drop_lay = vbox(self.drop, (46, 4, 6, 10), 2)
+        outer.addWidget(self.drop)
+        self._alts: list = []
+
+    def _go(self):
+        if not self._armed:                     # first press: ask
+            self._armed = True
+            self.go.setText("Download?"); self.go.setProperty("armed", True); T.repolish(self.go)
+            self.go.setToolTip("Press again to download this track; it's checked before it reaches your library")
+            return
+        self._disarm()
+        self.download.emit(self.index)
+
+    def _disarm(self):
+        self._armed = False
+        self.go.setText("Found"); self.go.setProperty("armed", False); T.repolish(self.go)
+        self.go.setToolTip("Press to download just this track")
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.LeftButton and len(self._alts) > 1 and e.position().y() <= self.head.height():
+            self.toggled.emit(self.index)
+        super().mouseReleaseEvent(e)
+
+    def set_open(self, on: bool):
+        self.drop.setVisible(on and len(self._alts) > 1)
+
+    def _fill_drop(self, it):
+        while self.drop_lay.count():
+            w = self.drop_lay.takeAt(0).widget()
+            if w:
+                w.hide(); w.deleteLater()
+        if len(self._alts) <= 1:
+            return
+        self.drop_lay.addWidget(label("OTHER COPIES · click one to use it instead", "tag"))
+        from ..core.availability import availability
+        from ..core.batch_runner import describe_pick
+        for j, c in enumerate(self._alts):
+            mine = c is it.pick
+            speed = f"{c.upload_speed / 1e6:.1f} MB/s" if c.upload_speed else "speed unknown"
+            text = f"{'●' if mine else '○'}  {describe_pick(c)}  ·  {availability(c).label}  ·  {speed}  ·  {c.user}"
+            b = button(text, "altrow", lambda _=False, j=j: self.chosen.emit(self.index, j))
+            b.setProperty("current", mine); b.setEnabled(not mine); b.setFixedHeight(26)
+            self.drop_lay.addWidget(b)
 
     def update_from(self, it):
         w = it.wanted
         self.title.setText(f"{w.title}  ({w.mix})" if w.mix else w.title); self.title.setToolTip(w.label)
         self.artist.setText(w.artist or "Unknown artist")
-        pick = it.detail if it.status in ("found", "queued") else ""
+        pick = it.detail if it.status in ("found", "queued", "turn") else ""
         self.pick.setText(pick); self.pick.setVisible(bool(pick))
-        self.avail.setText(it.avail if it.status in ("found", "queued") else (it.detail if it.status in ("not_found", "have", "error") else ""))
+        self.avail.setText(it.avail if it.status in ("found", "queued", "turn") else (it.detail if it.status in ("not_found", "have", "error") else ""))
         word, tone = STATUS.get(it.status, (it.status, "muted"))
         self.status.setText(word); self.status.setProperty("tone", tone); T.repolish(self.status)
+        found = it.status == "found" and it.pick is not None
+        self.go.setVisible(found); self.status.setVisible(not found)
+        if not found:
+            self._disarm()
+        self._alts = list(it.alts or []) if found else []
+        self.setCursor(Qt.PointingHandCursor if len(self._alts) > 1 else Qt.ArrowCursor)
+        self.setToolTip("Click to see the other copies found" if len(self._alts) > 1 else "")
+        was_open = self.drop.isVisible()
+        self._fill_drop(it)
+        self.set_open(was_open)
 
 
 class BatchPage(QWidget):
@@ -127,6 +193,8 @@ class BatchPage(QWidget):
     choose_folder = Signal()
     stop = Signal()
     download_all = Signal(str)          # batch id
+    download_one = Signal(str, int)     # batch id, track index
+    changed = Signal(str)               # batch id (a pick was swapped)
     removed = Signal(str)               # batch id
 
     def __init__(self):
@@ -140,7 +208,6 @@ class BatchPage(QWidget):
 
         head = hbox(spacing=12)
         head.addWidget(label("Batch", "h1"), 0, Qt.AlignBottom)
-        head.addWidget(label("one search per track · every pick is checked before your library", "mono"), 0, Qt.AlignBottom)
         head.addStretch(1)
         root.addLayout(head)
 
@@ -255,8 +322,26 @@ class BatchPage(QWidget):
         self.d_svc.setText(b.service.upper()); self.d_svc.setStyleSheet(f"color: {SERVICE_COLOUR.get(b.service, '#8a8f98')};")
         for i, it in enumerate(b.items):
             r = TrackRow(i + 1); r.update_from(it)
+            r.toggled.connect(self._toggle_row); r.chosen.connect(self._choose)
+            r.download.connect(lambda idx, bid=b.id: self.download_one.emit(bid, idx))
             self.row_lay.insertWidget(self.row_lay.count() - 1, r); self._rows.append(r)
         self._update_head(b)
+
+    def _toggle_row(self, i: int):
+        for j, r in enumerate(self._rows):                   # one drop-down open at a time
+            r.set_open(j == i and not r.drop.isVisible())
+
+    def _choose(self, i: int, j: int):
+        from ..core.batch_runner import choose
+        b = self.batch(self.selected)
+        if not b or not (0 <= i < len(b.items)):
+            return
+        it = b.items[i]
+        if it.status != "found" or not it.alts or not (0 <= j < len(it.alts)):
+            return
+        choose(it, it.alts[j])
+        self._rows[i].update_from(it)
+        self.changed.emit(b.id)
 
     def update_item(self, batch_id: str, i: int, it) -> None:
         b = self.batch(batch_id)
@@ -269,7 +354,7 @@ class BatchPage(QWidget):
             self._update_head(b)
 
     def _update_head(self, b: Batch):
-        self.tiles["found"].setText(str(b.count("found", "queued")))
+        self.tiles["found"].setText(str(b.count("found", "queued", "turn")))
         self.tiles["left"].setText(str(b.count("waiting", "searching")))
         self.tiles["have"].setText(str(b.count("have")))
         self.tiles["missing"].setText(str(b.count("not_found", "error")))

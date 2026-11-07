@@ -313,6 +313,14 @@ class ArchiveService:
                 c.note = "Extension mismatch"
         return res
 
+    @property
+    def download_pacer(self):
+        """One pacer for every batch, so two playlists downloading at once still share the same few slots."""
+        if getattr(self, "_pacer", None) is None:
+            from .pacer import DownloadPacer
+            self._pacer = DownloadPacer(lambda: [j.get("remote_user") or "" for j in self.db.jobs(states=(J.QUEUED,))])
+        return self._pacer
+
     # ---------------------------------------------------------------- search preview
     def _preview_dir(self) -> Path:
         out = self.db.path.parent / "preview"

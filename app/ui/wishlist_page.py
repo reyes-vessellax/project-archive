@@ -129,8 +129,6 @@ class WishlistPage(QWidget):
         root = vbox(self, (40, 28, 40, 28), 16)
         head = hbox(spacing=14)
         head.addWidget(label("Wishlist", "h1"), 0, Qt.AlignBottom)
-        head.addWidget(label(f"standing searches · every half hour for {WISH_DAYS} days · every find is checked",
-                             "mono"), 0, Qt.AlignBottom)
         head.addStretch(1)
         self.count = label("", "faint"); head.addWidget(self.count, 0, Qt.AlignBottom)
         root.addLayout(head)

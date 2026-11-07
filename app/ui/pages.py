@@ -15,7 +15,7 @@ from ..core import jobs as J
 from ..core.rules import fmt_time
 from ..core.service import ArchiveService
 from . import theme as T
-from .widgets import keep_scroll, smooth, LevelStrip, QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
+from .widgets import KeepColourDelegate, keep_scroll, smooth, LevelStrip, QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
 
 
 # ------------------------------------------------------------------ shared: a job -> row data
@@ -271,6 +271,7 @@ class SearchPage(QWidget):
         lay.addLayout(fr)
         self._last_res = None; self._last_searching = False
         self.tree = QTreeWidget(); self.tree.setColumnCount(len(self.COLS)); self.tree.setHeaderLabels(self.COLS)
+        self.tree.setItemDelegate(KeepColourDelegate(self.tree))
         self.tree.setRootIsDecorated(False); self.tree.setSortingEnabled(False); self.tree.setAlternatingRowColors(False)
         self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
         hdr = self.tree.header(); hdr.setSectionResizeMode(QHeaderView.Interactive); hdr.setStretchLastSection(True)
