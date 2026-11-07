@@ -302,10 +302,9 @@ class SearchPage(QWidget):
         row = hbox(spacing=12)
         self.btn = button("Check this file", "primary", self._pick); self.btn.setEnabled(False)
         self.btn_pv = button("▶  Preview", "ghost", self._preview_clicked); self.btn_pv.setEnabled(False)
-        self.btn_pv.setToolTip("Downloads it into quarantine, then plays 20 seconds from the drop")
+        self.btn_pv.setToolTip("Plays about 20 seconds from the middle. Only those seconds are fetched, and nothing is kept.")
         row.addWidget(self.btn); row.addWidget(self.btn_pv)
-        self.pv_note = label("Preview and Check both download into quarantine first; nothing reaches your library "
-                             "until you decide.", "faint", wrap=True)
+        self.pv_note = label(self.PV_NOTE, "faint", wrap=True)
         row.addWidget(self.pv_note, 1)
         self._previewing = False
         # the actions sit right above the results, next to what you picked, not at the far bottom of the page
@@ -592,14 +591,17 @@ class SearchPage(QWidget):
         self.wish_form.hide()
         self.watch.emit(artist, title, mix)
 
-    PV_NOTE = "Preview and Check both download into quarantine first; nothing reaches your library until you decide."
+    PV_NOTE = "Preview fetches only the seconds it plays. Check this file downloads it into quarantine; nothing reaches your library until you decide."
 
     def _selection(self):
         items = self.tree.selectedItems()
         c = items[0].data(0, Qt.UserRole) if items else None
         ok = isinstance(c, Candidate) and not c.note and not c.locked
         self.btn.setEnabled(ok)
-        self.btn_pv.setEnabled(self._previewing or self.btn.isEnabled())
+        self._pv_ok = ok and bool(c.free_slot) and not (c.queue_length or 0)     # busy copies can't be previewed
+        self.btn_pv.setEnabled(self._previewing or self._pv_ok)
+        self.btn_pv.setToolTip("Plays about 20 seconds from the middle. Only those seconds are fetched, and nothing is kept."
+                               if self._pv_ok or not ok else "This copy has a wait, so it can't be previewed. Pick one that's Ready now.")
         # already have it? (same remote file, or same artist + title in the library or the queue)
         self._armed_key = None
         have = None
@@ -634,9 +636,8 @@ class SearchPage(QWidget):
         """state: '' (idle), 'loading' (downloading + checking), 'playing'."""
         self._previewing = state == "playing"
         self.btn_pv.setText({"loading": "Getting preview…", "playing": "■  Stop"}.get(state, "▶  Preview"))
-        self.btn_pv.setEnabled(state != "loading" and (state == "playing" or self.btn.isEnabled()))
-        self.pv_note.setText(text or "Preview and Check both download into quarantine first; nothing reaches your "
-                                     "library until you decide.")
+        self.btn_pv.setEnabled(state != "loading" and (state == "playing" or getattr(self, "_pv_ok", False)))
+        self.pv_note.setText(text or self.PV_NOTE)
 
     def _pick(self):
         items = self.tree.selectedItems()

@@ -70,9 +70,15 @@ QFrame#nowplaying {{ background: {c['disp_bg']}; border-top: 1px solid {c['disp_
 QFrame#nowplaying QLabel {{ background: transparent; color: #f2f2f0; }}
 QFrame#nowplaying QLabel#faint {{ color: {c['disp_label']}; }}
 QFrame#nowplaying QLabel#mono {{ color: {c['disp_text']}; font-size: 13px; }}
-QFrame#nowplaying QSlider::groove:horizontal {{ height: 4px; background: #2c2c2c; }}
-QFrame#nowplaying QSlider::sub-page:horizontal {{ background: {c['disp_text']}; }}
-QFrame#nowplaying QSlider::handle:horizontal {{ width: 10px; margin: -4px 0; background: {c['disp_text']}; }}
+QFrame#nowplaying QSlider::groove:horizontal {{ height: 4px; background: #2c2c2c; border-radius: 2px; }}
+QFrame#nowplaying QSlider::sub-page:horizontal {{ background: {c['disp_text']}; border-radius: 2px; }}
+QFrame#nowplaying QSlider::handle:horizontal {{ width: 12px; height: 12px; margin: -4px 0; border-radius: 6px; background: {c['disp_text']}; }}
+QFrame#nowplaying QSlider::handle:horizontal:hover {{ background: #ffd36b; }}
+QPushButton#barplay {{ background: {c['disp_text']}; color: {c['disp_bg']}; border: none; border-radius: 18px; padding: 0; min-width: 36px; max-width: 36px; min-height: 36px; max-height: 36px; }}
+QPushButton#barplay:hover {{ background: #ffd36b; }}
+QPushButton#barplay:pressed {{ background: #e09a00; }}
+QPushButton#barstop {{ background: transparent; border: 1px solid #3a3a3a; border-radius: 15px; padding: 0; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px; }}
+QPushButton#barstop:hover {{ border-color: {c['disp_text']}; }}
 
 /* batch (design v6) */
 QFrame#dropzone {{ background: {c['panel']}; border: 1px dashed {c['faint']}; border-radius: 3px; }}
@@ -169,8 +175,11 @@ QPushButton#link {{ background: none; border: none; color: {c['text']}; font-wei
 QPushButton#link:hover {{ color: {c['muted']}; }}
 QPushButton#small {{ min-height: 30px; max-height: 30px; padding: 0 14px; font-size: 12px; border-radius: 3px; background: {c['accent']}; color: {c['accent_text']}; border: none; }}
 QPushButton#small:hover {{ background: {c['text']}; color: {c['on_text']}; }}
-QPushButton#play {{ background: {c['accent']}; color: {c['accent_text']}; border: none; border-radius: 3px; font-size: 10px; padding: 0; min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; }}
+QPushButton#play {{ background: {c['accent']}; color: {c['accent_text']}; border: none; border-radius: 13px; font-size: 10px; padding: 0; min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; }}
 QPushButton#play:hover {{ background: {c['text']}; color: {c['bg']}; }}
+QPushButton#zoom {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['line']}; border-radius: 3px; padding: 0; min-height: 0; font-size: 14px; font-weight: 600; }}
+QPushButton#zoom:hover {{ border-color: {c['accent']}; }}
+QPushButton#zoom:disabled {{ color: {c['faint']}; border-color: {c['bar']}; }}
 QPushButton#x {{ min-height: 0; padding: 0; border: none; background: none; color: {c['faint']}; font-size: 15px; font-weight: 500; min-width: 18px; max-width: 18px; max-height: 18px; }}
 QPushButton#x:hover {{ color: {c['fail']}; }}
 QPushButton#chip {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 3px; padding: 0 12px; min-height: 30px; max-height: 30px; font-size: 12px; font-weight: 600; color: {c['text']}; }}
@@ -209,6 +218,8 @@ QHeaderView::section {{ background: transparent; border: none; border-bottom: 1p
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: {c['bar']}; border-radius: 3px; min-height: 30px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar:vertical[idle="true"] {{ background: transparent; }}
+QScrollBar::handle:vertical[idle="true"] {{ background: transparent; }}
 QScrollBar:horizontal {{ background: transparent; height: 8px; }}
 QScrollBar::handle:horizontal {{ background: {c['bar']}; border-radius: 3px; }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}

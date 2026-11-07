@@ -225,9 +225,22 @@ def keep_scroll(area, rebuild) -> None:
 
 
 def scroll(inner: QWidget) -> QScrollArea:
+    """A scroll area whose vertical bar never comes and goes. With the bar "as needed", wrapped text that just
+    fits flips it on, the text re-wraps narrower and taller, the bar is needed, it isn't... and the page
+    flickers (the Ready page did this every few seconds). The bar's lane is always there; the handle only
+    shows when there is something to scroll."""
     s = QScrollArea()
     s.setWidgetResizable(True)
     s.setFrameShape(QFrame.NoFrame)
+    s.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+    bar = s.verticalScrollBar()
+
+    def idle(_lo=0, hi=0):
+        on = hi <= 0
+        if bar.property("idle") != on:
+            bar.setProperty("idle", on)
+            bar.style().unpolish(bar); bar.style().polish(bar)
+    bar.rangeChanged.connect(idle); idle(0, bar.maximum())
     s.setWidget(inner)
     smooth(s)
     return s
@@ -528,6 +541,23 @@ class PlayButton(QPushButton):
         p.end()
 
 
+class StopButton(QPushButton):
+    """Round stop control with a drawn square (a "■" glyph sits off-centre and changes size from font to font)."""
+    NORMAL, HOVER = "#f2f2f0", "#ffb000"
+
+    def __init__(self, parent=None):
+        super().__init__("", parent)
+        self.setAttribute(Qt.WA_Hover)
+
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen); p.setBrush(QColor(self.HOVER if self.underMouse() else self.NORMAL))
+        w, h = self.width(), self.height(); s = min(w, h) * 0.30
+        p.drawRoundedRect(QRectF((w - s) / 2, (h - s) / 2, s, s), 1.5, 1.5)
+        p.end()
+
+
 class LevelStrip(QWidget):
     """A row of LED segments (green -> amber -> red) showing the level while a track plays."""
     SEGMENTS = 40
@@ -583,6 +613,15 @@ class SpectrumView(QLabel):
         self.play_btn = PlayButton(self); self.play_btn.setObjectName("play"); self.play_btn.setCursor(Qt.PointingHandCursor)
         self.play_btn.setFixedSize(26, 26); self.play_btn.clicked.connect(self.toggle); self.play_btn.hide()
         self.play_btn.setToolTip("Play (space)")
+        # zoom: the part of the track on screen, as fractions 0..1 (Ctrl+scroll / pinch / + − buttons)
+        self._v0, self._v1 = 0.0, 1.0
+        self._press = None; self._dragged = False
+        self.zoom_out_btn = button("−", "zoom", lambda: self.zoom(1 / 1.6), self)
+        self.zoom_in_btn = button("+", "zoom", lambda: self.zoom(1.6), self)
+        self.zoom_out_btn.setToolTip("Zoom out (Ctrl + scroll)"); self.zoom_in_btn.setToolTip("Zoom in (Ctrl + scroll)")
+        for b in (self.zoom_out_btn, self.zoom_in_btn):
+            b.setFixedSize(24, 22); b.hide()
+        self.setMouseTracking(True)
         self.clear_view("")
 
     # ---------------------------------------------------------------- content
@@ -593,6 +632,7 @@ class SpectrumView(QLabel):
     def clear_view(self, text: str):
         self.stop()
         self._pix = None; self._audio = None
+        self._v0, self._v1 = 0.0, 1.0
         self.setText(text)
         self.setObjectName("faint")
         self.play_btn.hide()
@@ -612,8 +652,68 @@ class SpectrumView(QLabel):
         self._duration_ms = int((duration_s or 0) * 1000)
         self.setText("")
         self.play_btn.setVisible(self._audio is not None)
+        self._v0, self._v1 = 0.0, 1.0
         self._place_button()
         self.update()
+
+    # ---------------------------------------------------------------- zoom
+    MAX_ZOOM = 16
+
+    def zoomed(self) -> bool:
+        return self._v1 - self._v0 < 0.999
+
+    def _frac_at(self, x: float) -> float:
+        r = self._image_rect()
+        return self._v0 + (x - r.left()) / max(1, r.width()) * (self._v1 - self._v0)
+
+    def _x_of(self, frac: float) -> float:
+        r = self._image_rect()
+        return r.left() + (frac - self._v0) / (self._v1 - self._v0) * r.width()
+
+    def _set_view(self, v0: float, span: float):
+        span = max(1 / self.MAX_ZOOM, min(1.0, span))
+        v0 = max(0.0, min(1.0 - span, v0))
+        self._v0, self._v1 = v0, v0 + span
+        self._place_button(); self.update()
+
+    def zoom(self, factor: float, anchor: float | None = None):
+        """Zoom by `factor` (>1 in) keeping `anchor` (a fraction of the track; default: the middle of the view,
+        or the playhead while playing) at the same place on screen."""
+        if self._pix is None:
+            return
+        span = self._v1 - self._v0
+        if anchor is None:
+            pos = self.position_ms()
+            anchor = pos / self._duration_ms if self._duration_ms > 0 and self.is_playing() else self._v0 + span / 2
+        new = max(1 / self.MAX_ZOOM, min(1.0, span / factor))
+        self._set_view(anchor - (anchor - self._v0) * new / span, new)
+
+    def reset_zoom(self):
+        self._set_view(0.0, 1.0)
+
+    def wheelEvent(self, e):
+        r = self._image_rect()
+        if self._pix is None or not r.contains(e.position().toPoint()):
+            return super().wheelEvent(e)
+        dy, dx = e.angleDelta().y(), e.angleDelta().x()
+        if e.modifiers() & (Qt.ControlModifier | Qt.MetaModifier) and dy:
+            self.zoom(1.25 ** (dy / 120), self._frac_at(e.position().x())); e.accept(); return
+        if self.zoomed() and (dx or e.modifiers() & Qt.ShiftModifier):
+            d = dx or dy
+            span = self._v1 - self._v0
+            self._set_view(self._v0 - d / 120 * span * 0.15, span); e.accept(); return
+        e.ignore()                                             # plain scroll still scrolls the page
+
+    def event(self, e):
+        if e.type() == QEvent.NativeGesture and self._pix is not None:          # trackpad pinch
+            if e.gestureType() == Qt.ZoomNativeGesture:
+                self.zoom(1 + e.value(), self._frac_at(e.position().x())); return True
+        return super().event(e)
+
+    def mouseDoubleClickEvent(self, e):
+        if self._pix is not None and self.zoomed() and self._image_rect().contains(e.pos()):
+            self.reset_zoom(); return
+        super().mouseDoubleClickEvent(e)
 
     def current_level(self) -> float:
         """0..1 loudness at the playhead, read from the spectrogram's brightness (what the level strip shows)."""
@@ -723,6 +823,13 @@ class SpectrumView(QLabel):
     def _place_button(self):
         self.play_btn.move(self.AXIS, self.height() - self.BAR + (self.BAR - self.play_btn.height()) // 2 + 3)
         self.play_btn.raise_()
+        y = self.height() - self.BAR + (self.BAR - 22) // 2 + 3
+        self.zoom_in_btn.move(self.width() - 2 - 24, y)
+        self.zoom_out_btn.move(self.width() - 2 - 24 - 28, y)
+        for b in (self.zoom_in_btn, self.zoom_out_btn):
+            b.setVisible(self._pix is not None); b.raise_()
+        self.zoom_in_btn.setEnabled(self._v1 - self._v0 > 1 / self.MAX_ZOOM + 1e-6)
+        self.zoom_out_btn.setEnabled(self.zoomed())
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -730,10 +837,35 @@ class SpectrumView(QLabel):
 
     def mousePressEvent(self, e):
         r = self._image_rect()
-        if self._pix is not None and self._audio and r.contains(e.pos()) and r.width() > 0:
-            self.seek_fraction((e.pos().x() - r.left()) / r.width())
+        if self._pix is not None and r.contains(e.pos()) and r.width() > 0 and e.button() == Qt.LeftButton:
+            self._press = (e.pos().x(), self._v0); self._dragged = False
             return
         super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        r = self._image_rect()
+        if self._press is not None:
+            x0, v0 = self._press
+            if self.zoomed() and abs(e.pos().x() - x0) > 4:          # drag to move along a zoomed-in track
+                self._dragged = True
+                span = self._v1 - self._v0
+                self._set_view(v0 - (e.pos().x() - x0) / max(1, r.width()) * span, span)
+                self.setCursor(Qt.ClosedHandCursor)
+            return
+        if self._pix is not None and r.contains(e.pos()):
+            self.setCursor(Qt.OpenHandCursor if self.zoomed() else Qt.PointingHandCursor)
+        else:
+            self.unsetCursor()
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if self._press is not None:
+            dragged, self._press = self._dragged, None
+            self.setCursor(Qt.OpenHandCursor if self.zoomed() else Qt.PointingHandCursor)
+            if not dragged and self._audio:
+                self.seek_fraction(self._frac_at(e.pos().x()))   # a click (not a drag) jumps there
+            return
+        super().mouseReleaseEvent(e)
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Space and self._audio:
@@ -747,7 +879,17 @@ class SpectrumView(QLabel):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         r = self._image_rect()
-        p.drawPixmap(r, self._pix)
+        dur_ms = self._duration_ms
+        pos = self.position_ms()
+        if self.zoomed() and dur_ms > 0 and self.is_playing() and self._press is None:
+            f = pos / dur_ms                                   # keep the playhead on screen while zoomed in
+            span = self._v1 - self._v0
+            if f > self._v1 - span * 0.02 or f < self._v0:
+                self._v0 = max(0.0, min(1 - span, f - span * 0.1))
+                self._v1 = self._v0 + span
+        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        pw, ph = self._pix.width(), self._pix.height()
+        p.drawPixmap(QRectF(r), self._pix, QRectF(self._v0 * pw, 0, (self._v1 - self._v0) * pw, ph))
         faint = self.palette().text().color(); faint.setAlpha(140)
         p.setPen(faint)
         small = QFont(T.MONO); small.setPointSizeF(7.5); p.setFont(small)
@@ -763,14 +905,15 @@ class SpectrumView(QLabel):
             p.fillRect(r.right() - 112, ly, 108, 16, QColor(0, 0, 0, 140))
             p.drawText(r.right() - 108, ly + 12, f"cutoff {self._cutoff / 1000:.1f} kHz")
         # preview window + drop marker
+        p.save(); p.setClipRect(r)
         if self._duration_ms > 0 and (self._prev_start is not None or self._drop_s is not None):
             dur = self._duration_ms / 1000
             if self._prev_start is not None:
-                x0 = r.left() + int(r.width() * self._prev_start / dur)
-                x1 = r.left() + int(r.width() * min(dur, self._prev_start + self._prev_len) / dur)
+                x0 = int(self._x_of(self._prev_start / dur))
+                x1 = int(self._x_of(min(dur, self._prev_start + self._prev_len) / dur))
                 p.fillRect(x0, r.top(), max(2, x1 - x0), r.height(), QColor(255, 255, 255, 46))
             if self._drop_s is not None:
-                xd = r.left() + int(r.width() * self._drop_s / dur)
+                xd = int(self._x_of(self._drop_s / dur))
                 pen = QPen(QColor("#ffffff")); pen.setWidth(2); p.setPen(pen)
                 p.drawLine(xd, r.top(), xd, r.bottom())
                 tag = f"drop {int(self._drop_s) // 60}:{int(self._drop_s) % 60:02d}"
@@ -778,13 +921,13 @@ class SpectrumView(QLabel):
                 p.fillRect(lx, r.bottom() - 21, 78, 17, QColor(0, 0, 0, 150))
                 p.setPen(QColor("#ffffff")); p.drawText(lx + 5, r.bottom() - 8, tag)
         # playhead
-        pos = self.position_ms()
         if self._audio and self._duration_ms > 0 and (pos > 0 or self.is_playing()):
-            x = r.left() + int(r.width() * min(1.0, pos / self._duration_ms))
+            x = int(self._x_of(min(1.0, pos / self._duration_ms)))
             pen = QPen(QColor("#ffffff")); pen.setWidth(2); p.setPen(pen)
             p.drawLine(x, r.top(), x, r.bottom())
             p.setBrush(QColor("#ffffff")); p.setPen(Qt.NoPen)
             p.drawPolygon([QPoint(x - 5, r.top()), QPoint(x + 5, r.top()), QPoint(x, r.top() + 7)])
+        p.restore()
         p.setPen(faint)
         base = self.height() - self.BAR // 2 + 7
         time_x = r.left() + (self.play_btn.width() + 10 if self.play_btn.isVisible() else 0)
@@ -792,7 +935,13 @@ class SpectrumView(QLabel):
             p.drawText(time_x, base, f"{_mmss(pos)} / {_mmss(self._duration_ms)}")
         else:
             p.drawText(time_x, base, "0:00")
-        p.drawText(r.right() - 36, base, "time →")
+        if self.zoomed() and self._duration_ms > 0:
+            a, b = self._v0 * self._duration_ms, self._v1 * self._duration_ms
+            hint = f"{_mmss(a)} – {_mmss(b)}  ·  ×{1 / (self._v1 - self._v0):.0f}  ·  drag to move, double-click to fit"
+        else:
+            hint = "Ctrl + scroll to zoom"
+        fm = p.fontMetrics()
+        p.drawText(r.right() - 60 - fm.horizontalAdvance(hint), base, hint)
         p.end()
 
 

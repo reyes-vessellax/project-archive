@@ -11,7 +11,7 @@ import numpy as np
 from .tools import find_tool, popen
 
 N_FFT = 4096
-COLUMNS = 1000          # spectrogram width
+COLUMNS = 2000          # spectrogram width (sharp enough to zoom in on the Ready page)
 MAX_FRAMES = 4000       # hard cap on spectra kept in memory (~33 MB at float32)
 CHUNK = 1 << 20         # bytes read from FFmpeg per step
 

@@ -81,6 +81,10 @@ class MainWindow(QMainWindow):
     def __init__(self, svc: ArchiveService):
         super().__init__()
         self.svc = svc
+        try:
+            svc.purge_previews()                     # clips or partials a crash left behind
+        except Exception:
+            pass
         self.pool = QThreadPool(); self.pool.setMaxThreadCount(max(1, svc.settings.max_concurrent_analyses))
         self.io = QThreadPool(); self.io.setMaxThreadCount(3)
         self._polling = self._scanning = False
@@ -608,6 +612,12 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e):
         self._batch_stop_flag = True
+        try:
+            from .player import Player
+            Player.get().stop()                      # let go of the clip so it can be deleted
+            self.svc.purge_previews()
+        except Exception:
+            pass
         self._save_session(now=True)
         self.svc.stop_backend()
         super().closeEvent(e)
@@ -1020,10 +1030,10 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- preview (Search only)
     def _preview_candidate(self, cand: Candidate):
-        """10-second snippet WITHOUT downloading the whole track (partial download, clip, cancel, delete)."""
+        """~20 seconds from the middle WITHOUT downloading the track (header, jump, fetch the slice, cancel, delete)."""
         name = cand.title or cand.display_name
         self._pv_stop_flag = False
-        self.searchp.set_preview_state("loading", f"Getting a 10-second preview of “{name}”…")
+        self.searchp.set_preview_state("loading", f"Getting a preview of “{name}”…")
 
         def work():
             try:
@@ -1171,9 +1181,9 @@ class MainWindow(QMainWindow):
             wav, start, name, artist = message.split(" ", 1)[1].split("\t")
             from .player import Player
             pos = int(float(start))
-            Player.get().play(wav, name, f"{artist + ' · ' if artist else ''}preview · 10 s from {pos // 60}:{pos % 60:02d} · not downloaded",
-                              stop_after_s=10.5)
-            self.searchp.set_preview_state("playing", "Playing a 10-second preview. Nothing was kept; press Check this file to download it.")
+            Player.get().play(wav, name, f"{artist + ' · ' if artist else ''}preview from {pos // 60}:{pos % 60:02d} · not downloaded",
+                              stop_after_s=21)
+            self.searchp.set_preview_state("playing", "Playing a preview from the middle. Nothing was kept; press Check this file to download it.")
             return
         if message.startswith("UPDATE_READY "):
             self.topbar.set_update(f"Update to {message.split()[1]} · restart")

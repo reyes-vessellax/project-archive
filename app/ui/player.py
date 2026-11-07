@@ -6,9 +6,9 @@ thing ever plays at a time, and whatever plays is always visible in the bar with
 from __future__ import annotations
 
 from PySide6.QtCore import QObject, QTimer, QUrl, Qt, Signal
-from PySide6.QtWidgets import QFrame, QSlider
+from PySide6.QtWidgets import QFrame, QSlider, QStyle, QStyleOptionSlider
 
-from .widgets import button, hbox, label, vbox
+from .widgets import PlayButton, StopButton, hbox, label, vbox
 
 
 class Player(QObject):
@@ -111,6 +111,41 @@ def _mmss(ms: int) -> str:
     return f"{s // 60}:{s % 60:02d}"
 
 
+class SeekSlider(QSlider):
+    """Position bar: click anywhere to jump there, or drag; the seek happens when you let go.
+    (A plain QSlider only steps a little towards the click, which felt like seeking was broken.)"""
+    seek = Signal(float)                      # 0..1
+
+    def __init__(self):
+        super().__init__(Qt.Horizontal)
+        self.setRange(0, 1000)
+        self.setCursor(Qt.PointingHandCursor)
+
+    def _value_at(self, x: float) -> int:
+        opt = QStyleOptionSlider(); self.initStyleOption(opt)
+        handle = self.style().subControlRect(QStyle.CC_Slider, opt, QStyle.SC_SliderHandle, self).width()
+        return QStyle.sliderValueFromPosition(self.minimum(), self.maximum(), int(x - handle / 2),
+                                              max(1, self.width() - handle))
+
+    def mousePressEvent(self, e):
+        if e.button() != Qt.LeftButton:
+            return super().mousePressEvent(e)
+        self.setSliderDown(True); self.setValue(self._value_at(e.position().x())); e.accept()
+
+    def mouseMoveEvent(self, e):
+        if self.isSliderDown():
+            self.setValue(self._value_at(e.position().x())); e.accept()
+        else:
+            super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if self.isSliderDown():
+            self.setValue(self._value_at(e.position().x())); self.setSliderDown(False)
+            self.seek.emit(self.value() / self.maximum()); e.accept()
+        else:
+            super().mouseReleaseEvent(e)
+
+
 class NowPlayingBar(QFrame):
     """Bottom bar: what's playing, play/pause, stop, position. Hidden when nothing is loaded."""
 
@@ -119,19 +154,22 @@ class NowPlayingBar(QFrame):
         self.setObjectName("nowplaying")
         self.p = Player.get()
         lay = hbox(self, (20, 10, 20, 10), 14)
-        self.btn = button("❚❚", "play", self.p.toggle); self.btn.setToolTip("Play / pause")
-        self.stop_btn = button("■", "small", self.p.stop); self.stop_btn.setToolTip("Stop")
+        self.btn = PlayButton(); self.btn.setObjectName("barplay"); self.btn.setCursor(Qt.PointingHandCursor)
+        self.btn.clicked.connect(self.p.toggle); self.btn.setToolTip("Play / pause")
+        self.stop_btn = StopButton(); self.stop_btn.setObjectName("barstop"); self.stop_btn.setCursor(Qt.PointingHandCursor)
+        self.stop_btn.clicked.connect(self.p.stop); self.stop_btn.setToolTip("Stop")
         names = vbox(spacing=0)
         self.title = label("", "rowtitle"); self.sub = label("", "faint")
         names.addWidget(self.title); names.addWidget(self.sub)
-        self.pos = QSlider(Qt.Horizontal); self.pos.setRange(0, 1000)
-        self.pos.sliderMoved.connect(lambda v: self.p.duration() and self.p.seek(v / 1000 * self.p.duration()))
+        self.pos = SeekSlider()
+        self.pos.seek.connect(lambda f: self.p.duration() and self.p.seek(f * self.p.duration()))
+        self.pos.valueChanged.connect(lambda _: self.pos.isSliderDown() and self._refresh())
         self.time = label("", "mono")
         self.vol = QSlider(Qt.Horizontal); self.vol.setObjectName("vol"); self.vol.setRange(0, 100)
         self.vol.setFixedWidth(90); self.vol.setValue(int(round(self.p.volume * 100))); self.vol.setToolTip("Volume")
         self.vol.valueChanged.connect(self._vol_moved)
         self.on_volume = None                  # the window sets this to remember the volume in Settings
-        lay.addWidget(self.btn); lay.addWidget(self.stop_btn); lay.addLayout(names, 2); lay.addWidget(self.pos, 3); lay.addWidget(self.time)
+        lay.addWidget(self.btn); lay.addSpacing(-4); lay.addWidget(self.stop_btn); lay.addSpacing(6); lay.addLayout(names, 2); lay.addWidget(self.pos, 3); lay.addWidget(self.time)
         lay.addWidget(label("vol", "faint")); lay.addWidget(self.vol)
         self.tick = QTimer(self, interval=250, timeout=self._refresh)
         self.p.changed.connect(self._refresh)
@@ -155,8 +193,10 @@ class NowPlayingBar(QFrame):
             self.tick.stop(); return
         self.tick.start()
         self.title.setText(self.p.title); self.sub.setText(self.p.subtitle)
-        self.btn.setText("❚❚" if self.p.playing() else "▶")
+        self.btn.set_playing(self.p.playing())
         d, t = self.p.duration(), self.p.position()
-        if not self.pos.isSliderDown():
+        if self.pos.isSliderDown():
+            t = int(d * self.pos.value() / 1000)              # show where you're about to jump
+        else:
             self.pos.setValue(int(1000 * t / d) if d > 0 else 0)
         self.time.setText(f"{_mmss(t)} / {_mmss(d)}" if d > 0 else _mmss(t))

@@ -313,75 +313,203 @@ class ArchiveService:
                 c.note = "Extension mismatch"
         return res
 
-    def snippet_preview(self, cand: Candidate, seconds: float = 10.0, should_stop=lambda: False,
-                        progress=lambda msg: None, timeout_s: float = 90.0) -> tuple[Path, float]:
-        """Hear a track WITHOUT downloading all of it: fetch only enough of the file to cover `seconds` of audio
-        about a third of the way in (past the intro), cut that into a small WAV, then cancel the transfer and
-        delete the partial file. Returns (wav, start_s). Works for copies that can start now (no queue)."""
+    # ---------------------------------------------------------------- search preview
+    def _preview_dir(self) -> Path:
+        out = self.db.path.parent / "preview"
+        out.mkdir(parents=True, exist_ok=True)
+        return out
+
+    def purge_previews(self) -> int:
+        """Delete every preview clip and any partial download a preview left behind (a crash mid-preview).
+        Runs at start-up, before each new preview and when the app closes; nothing from a preview stays."""
+        out, n = self._preview_dir(), 0
+        for f in list(out.glob("*.wav")) + list(out.glob("chunk.*")):
+            try:
+                f.unlink(); n += 1
+            except OSError:
+                pass
+        ledger = out / "partials.txt"
+        if ledger.exists():
+            for line in ledger.read_text(encoding="utf-8", errors="replace").splitlines():
+                q = Path(line.strip())
+                if line.strip() and q.is_file():
+                    try:
+                        q.unlink(); n += 1
+                    except OSError:
+                        pass
+            ledger.unlink(missing_ok=True)
+        return n
+
+    def _preview_roots(self) -> list[Path]:
+        return [Path(getattr(self.manager, "instance_dir", Path("/nonexistent"))) / "incomplete",
+                Path(self.settings.slskd_downloads_dir or getattr(self.manager, "downloads_dir", "/nonexistent"))]
+
+    @staticmethod
+    def _find_named(roots: list[Path], name: str) -> Path | None:
+        import os
+        for root in roots:                                  # incomplete folder first, then downloads
+            if root.is_dir():
+                for dirpath, _, files in os.walk(root):
+                    if name in files:
+                        return Path(dirpath) / name
+        return None
+
+    def snippet_preview(self, cand: Candidate, seconds: float = 20.0, should_stop=lambda: False,
+                        progress=lambda msg: None, timeout_s: float = 60.0) -> tuple[Path, float]:
+        """Hear ~20 seconds from somewhere in the middle of a track WITHOUT downloading it.
+
+        The engine resumes a partial download from where the partial file ends, so: fetch the first few KB
+        (the header), stop, pad the partial file out to a random point in the middle, ask again, and the sharer
+        sends from there. Only about 20 seconds' worth of bytes travel. The clip is cut into a small WAV and the
+        partial file is deleted. MP3, FLAC, WAV and AIFF work this way; other formats fetch from the start.
+        Copies with a wait are refused before anything is requested. Returns (wav, start_s)."""
+        import random
         import time as _time
         from ..media.tools import find_tool, run
+        from . import preview as pv
         adapter = self._adapter_or_block()
         if cand.locked:
             raise ActionBlocked("That copy is private; it can't be previewed.")
-        if (cand.extension or "").lower() not in {e.lower().lstrip(".") for e in self.settings.extensions}:
+        ext = (cand.extension or "").lower()
+        if ext not in {e.lower().lstrip(".") for e in self.settings.extensions}:
             raise ActionBlocked(f".{cand.extension or '(none)'} files can't be previewed.")
+        if not cand.free_slot or (cand.queue_length or 0) > 0:
+            raise ActionBlocked("That copy has a wait, so it can't be previewed. Pick one that's Ready now.")
         length = float(cand.length_s or 0) or (cand.size * 8 / (cand.bitrate_kbps * 1000) if cand.bitrate_kbps else 360.0)
-        start = max(0.0, min(length * 0.33, length - seconds - 2))
-        need = int(cand.size * min(1.0, (start + seconds + 4) / max(length, 1)) + 256 * 1024)
+        seconds = min(seconds, max(5.0, length - 2))
+        start = max(0.0, min(length * random.uniform(0.30, 0.60), length - seconds - 1))
         name = cand.remote_path.replace("\\", "/").split("/")[-1]
-        roots = [Path(getattr(self.manager, "instance_dir", Path("/nonexistent"))) / "incomplete",
-                 Path(self.settings.slskd_downloads_dir or getattr(self.manager, "downloads_dir", "/nonexistent"))]
-        began = _time.time()
-        t = adapter.request_download(cand)
-        part: Path | None = None
-        out = self.db.path.parent / "preview"
-        out.mkdir(parents=True, exist_ok=True)
-        for old in out.glob("*.wav"):
-            old.unlink(missing_ok=True)
+        roots = self._preview_roots()
+        self.purge_previews()
+        out = self._preview_dir()
+        ledger = out / "partials.txt"
         wav = out / f"{uuid.uuid4().hex[:10]}.wav"
-        try:
-            t0, queued_since = _time.monotonic(), None
-            while True:
-                if should_stop():
-                    raise ActionBlocked("Preview cancelled.")
-                if _time.monotonic() - t0 > timeout_s:
-                    raise ActionBlocked("That copy is too slow to preview. Try one that's Ready now.")
-                st = adapter.transfer_status(t)
-                if st.failed:
-                    raise ActionBlocked("That copy wouldn't send. Try another one.")
-                if "Queued" in (st.state or ""):
-                    queued_since = queued_since or _time.monotonic()
-                    if _time.monotonic() - queued_since > 15:
-                        raise ActionBlocked("That copy has a wait, so it can't be previewed yet. Try one that's Ready now.")
-                    progress("Waiting for the sharer…")
-                else:
-                    queued_since = None
-                if part is None or not part.exists():
-                    part = next((p for root in roots if root.is_dir() for p in root.rglob(name) if p.is_file()), None)
-                have = part.stat().st_size if part and part.exists() else 0
-                if have >= need or (st.done and have):
+        ff = find_tool("ffmpeg", self.settings.ffmpeg_path)
+        began = _time.monotonic()
+        seen: set[Path] = set()
+
+        def note(part: Path) -> None:                       # remembered so a crash can't leave it behind
+            if part not in seen:
+                seen.add(part)
+                with open(ledger, "a", encoding="utf-8") as fh:
+                    fh.write(str(part) + "\n")
+
+        def release(t) -> None:
+            """Stop the transfer and wait until the engine lets go of the file (on Windows it holds it locked)."""
+            try:
+                adapter.cancel(t)
+            except Exception:
+                pass
+            t_end = _time.monotonic() + 8
+            while _time.monotonic() < t_end:
+                try:
+                    st = adapter.transfer_status(t)
+                    if st.failed or st.done:
+                        break
+                except Exception:
                     break
-                progress(f"Getting a preview… {min(99, int(100 * have / max(need, 1)))}%")
-                _time.sleep(0.4)
+                _time.sleep(0.15)
+            part = self._find_named(roots, name)
+            last, t_end = -1, _time.monotonic() + 5
+            while part is not None and part.exists() and _time.monotonic() < t_end:
+                try:
+                    with open(part, "r+b"):
+                        pass
+                    size = part.stat().st_size
+                    if size == last:
+                        return
+                    last = size
+                except OSError:
+                    pass
+                _time.sleep(0.15)
+
+        def fetch(target: int, label: str) -> Path:
+            """Ask for the file and wait until the partial holds `target` bytes (or the whole file came)."""
+            t = adapter.request_download(cand)
+            queued_since = None
+            try:
+                while True:
+                    if should_stop():
+                        raise ActionBlocked("Preview cancelled.")
+                    if _time.monotonic() - began > timeout_s:
+                        raise ActionBlocked("That copy is too slow to preview. Try one that's Ready now.")
+                    st = adapter.transfer_status(t)
+                    if st.failed and not st.done:
+                        raise ActionBlocked("That copy wouldn't send. Try another one.")
+                    if "Queued" in (st.state or ""):
+                        queued_since = queued_since or _time.monotonic()
+                        if _time.monotonic() - queued_since > 6:
+                            raise ActionBlocked("That copy has a wait, so it can't be previewed yet. "
+                                                "Try one that's Ready now.")
+                        progress("Waiting for the sharer…")
+                    else:
+                        queued_since = None
+                    part = self._find_named(roots, name)
+                    if part is not None:
+                        note(part)
+                    have = part.stat().st_size if part is not None and part.exists() else 0
+                    if part is not None and (have >= target or st.done):
+                        return part
+                    progress(f"{label}… {min(99, int(100 * have / max(target, 1)))}%")
+                    _time.sleep(0.2)
+            finally:
+                release(t)
+
+        def read(part: Path, offset: int, n: int) -> bytes:
+            with open(part, "rb") as fh:
+                fh.seek(offset)
+                return fh.read(n)
+
+        def cut(args: list[str], ss: float | None) -> bool:
+            cmd = [ff, "-v", "error", "-nostdin", "-y"] + args
+            if ss:
+                cmd += ["-ss", f"{ss:.2f}"]
+            run(cmd + ["-t", f"{seconds:.2f}", "-vn", "-ac", "2", "-ar", "44100", str(wav)], timeout=60)
+            return wav.exists() and wav.stat().st_size > 44100 * 4 * 2          # at least ~2 s of audio
+
+        chunk = out / f"chunk.{ext or 'bin'}"
+        try:
+            if ext in pv.MIDDLE:
+                progress("Reading the file's header…")
+                part = fetch(pv.HEAD_BYTES[ext], "Reading the file's header")
+                head = read(part, 0, 256 * 1024)
+                plan = pv.plan_offset(ext, head, cand.size, length, start, seconds)
+                if plan is not None:
+                    offset, nbytes, extra = plan
+                    if part.stat().st_size < offset + nbytes:
+                        if part.stat().st_size < offset:
+                            with open(part, "r+b") as fh:          # pad out to the middle; the engine resumes there
+                                fh.truncate(offset)
+                        part = fetch(offset + nbytes, "Getting a preview from the middle")
+                    data = read(part, offset, nbytes)
+                    if len(data) > nbytes // 4 and data.strip(b"\0"):
+                        chunk.write_bytes(pv.chunk_bytes(ext, extra, data))
+                        progress("Cutting the preview…")
+                        if cut(pv.decode_args(ext, extra, str(chunk)), None):
+                            return wav, start
+                # header unreadable or the slice didn't decode: fall through to the slow way
+            start = min(start, length * 0.33)
+            need = int(cand.size * min(1.0, (start + seconds + 4) / max(length, 1)) + 256 * 1024)
+            part = self._find_named(roots, name)
+            if part is not None and part.exists():
+                part.unlink(missing_ok=True)                        # start clean; a padded file has holes
+            part = fetch(need, "Getting a preview")
             progress("Cutting the preview…")
-            ff = find_tool("ffmpeg", self.settings.ffmpeg_path)
-            for s0 in (start, 0.0):                          # partial FLAC/MP3 decode from the start; if the seek
-                run([ff, "-v", "error", "-nostdin", "-y", "-i", str(part), "-ss", f"{s0:.2f}", "-t", f"{seconds:.2f}",
-                     "-vn", "-ac", "2", "-ar", "44100", str(wav)], timeout=60)
-                if wav.exists() and wav.stat().st_size > 44100 * 4 * 2:    # at least ~2 s of audio
+            for s0 in (start, 0.0):
+                if cut(["-i", str(part)], s0):
                     return wav, s0
             raise ActionBlocked("Couldn't cut a preview from that copy. Try another one.")
         finally:
-            try:
-                adapter.cancel(t)                            # stop the rest of the download
-            except Exception:
-                pass
-            for p in {part} | {q for root in roots if root.is_dir() for q in root.rglob(name) if q.is_file()}:
-                if p is not None and p.exists() and p.stat().st_mtime >= began - 5:   # only what THIS preview wrote
+            chunk.unlink(missing_ok=True)
+            leftover = self._find_named(roots, name)
+            for p in seen | ({leftover} if leftover is not None else set()):
+                if p in seen and p.exists():                        # only what THIS preview wrote
                     try:
-                        p.unlink()                           # the partial file never stays on disk
+                        p.unlink()
                     except OSError:
                         pass
+            if ledger.exists() and all(not p.exists() for p in seen):
+                ledger.unlink(missing_ok=True)
 
     def request_download(self, cand: Candidate, playlist: str = "") -> dict:
         """User picked a search result: ask the client to download it and track it as a QUEUED job."""
