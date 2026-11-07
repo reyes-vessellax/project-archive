@@ -60,7 +60,7 @@ class Brand(QWidget):
     """Top of the sidebar: the brand-kit main logo (burst + smiley with DigMart underneath).
     Dark mode uses the dark version of the same artwork (black outline and lettering shown white)."""
     clicked = Signal()
-    H = 92                                           # logo height in the sidebar (logical px)
+    H = 116                                          # logo height in the sidebar (logical px)
 
     def __init__(self):
         super().__init__()

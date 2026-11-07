@@ -46,7 +46,7 @@ def _logo(svc) -> QLabel:
     """The brand-kit main logo (burst + smiley, DigMart underneath) at the top of every first-run screen."""
     from .brand import _asset
     dark = getattr(svc.settings, "theme", "light") == "dark"
-    pm = _asset("digmart-logo-dark.png" if dark else "digmart-logo.png").scaledToHeight(120 * 3, Qt.SmoothTransformation)
+    pm = _asset("digmart-logo-dark.png" if dark else "digmart-logo.png").scaledToHeight(140 * 3, Qt.SmoothTransformation)
     pm.setDevicePixelRatio(3.0)
     lab = QLabel(); lab.setPixmap(pm); lab.setFixedSize(pm.deviceIndependentSize().toSize()); lab.setToolTip(APP_NAME)
     return lab
