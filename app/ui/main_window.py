@@ -143,13 +143,21 @@ class MainWindow(QMainWindow):
         shell = QWidget(); shell.setObjectName("root"); sl = hbox(shell)
         self.topbar = Sidebar(); self.topbar.tab_clicked.connect(self._tab); self.topbar.avatar_clicked.connect(self._menu)
         self.topbar.update_clicked.connect(self._install_update)
+        self.topbar.crate_clicked.connect(self._open_crate); self.topbar.new_crate.connect(self._new_crate)
+        self.topbar.crate_menu.connect(self._crate_menu)
         sl.addWidget(self.topbar)
-        self.pages = QStackedWidget(); sl.addWidget(self.pages, 1)
+        right = QWidget(); right.setObjectName("root"); rl = vbox(right)
+        self.pages = QStackedWidget(); rl.addWidget(self.pages, 1)
+        from .player import NowPlayingBar
+        self.nowbar = NowPlayingBar(); rl.addWidget(self.nowbar)
+        sl.addWidget(right, 1)
         self.home = HomePage(self.svc); self.searchp = SearchPage(self.svc); self.review = ReviewPage(self.svc)
         self.settings = SettingsPage(self.svc); self.library = LibraryPage(self.svc); self.batchp = BatchPage()
         for p in (self.home, self.searchp, self.review, self.settings, self.library, self.batchp):
             self.pages.addWidget(p)
         self.library.open_job.connect(self._open_job)
+        self.library.delete_job.connect(self._delete_from_library)
+        self.library.crates_changed.connect(self._refresh_crates)
         self.batchp.start.connect(self._batch_start); self.batchp.choose_folder.connect(self._batch_folder)
         self.batchp.stop.connect(self._batch_stop); self.batchp.download_all.connect(self._batch_download_all)
         self.batchp.removed.connect(lambda _id: self._save_session())
@@ -170,8 +178,9 @@ class MainWindow(QMainWindow):
         self.searchp.pick.connect(self._pick_candidate)
         self.searchp.filters_changed.connect(lambda: self._save_session())
         self.searchp.preview.connect(self._preview_candidate); self.searchp.stop_preview.connect(self._stop_preview)
+        from .player import Player
+        Player.get().changed.connect(lambda: self.searchp.set_preview_state("") if self.searchp._previewing and not Player.get().playing() else None)
         self._preview_jobs: set[str] = set()
-        self.signals.done.connect(self._maybe_play_preview)
         self.review.select.connect(self._open_job)
         self.review.promote.connect(self._promote); self.review.reject.connect(self._reject)
         self.review.cancel.connect(self._cancel); self.review.rerun.connect(self._recheck)
@@ -213,6 +222,7 @@ class MainWindow(QMainWindow):
             self.root.setCurrentWidget(self.shell)
             self._maybe_start_tour()
         self._restore_session()
+        self._refresh_crates()
         if not self._backend_started:
             self._backend_started = True
             QTimer.singleShot(0, self._start_backend)
@@ -240,6 +250,8 @@ class MainWindow(QMainWindow):
                 self.searchp.show_results(SearchResult(query="", search_id="", finished=True), searching=False,
                                           idle="Type something above and press Enter.")
         elif key == "library":
+            if self.library.crate_id:
+                self.library.set_crate(None)
             self.library.refresh()
             self.pages.setCurrentWidget(self.library)
         elif key == "batch":
@@ -393,6 +405,18 @@ class MainWindow(QMainWindow):
                 self.svc.hide(job_id)
                 self.signals.done.emit(job_id)
             self.io.start(Task(work, self.signals))
+        elif job["state"] == J.QUEUED:                          # × on a download = cancel it
+            name = row_data(job, self._analyses.get(job_id), self.steps)["title"]
+            self.statusBar().showMessage(f"Cancelled “{name}”. Nothing was kept.", 6000)
+
+            def work():
+                try:
+                    self.svc.cancel(job_id)
+                except ActionBlocked:
+                    pass
+                self.svc.hide(job_id)
+                self.signals.done.emit(job_id)
+            self.io.start(Task(work, self.signals))
         else:
             self.svc.hide(job_id)
             self.refresh()
@@ -516,6 +540,60 @@ class MainWindow(QMainWindow):
         self._save_session(now=True)
         self.svc.stop_backend()
         super().closeEvent(e)
+
+    # ---------------------------------------------------------------- crates + library removal
+    def _refresh_crates(self):
+        self.topbar.set_crates(self.svc.db.crates())
+        if self.library.crate_id:
+            self.topbar.set_active(f"crate:{self.library.crate_id}")
+
+    def _open_crate(self, crate_id: str, name: str):
+        self.pages.setCurrentWidget(self.library)
+        self.library.set_crate(crate_id, name)
+        self._page_key = "library"
+        self.topbar.set_active(f"crate:{crate_id}")
+
+    def _new_crate(self):
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, "New crate", "Crate name:")
+        if ok and name.strip():
+            cid = self.svc.db.create_crate(name)
+            self._refresh_crates()
+            self._open_crate(cid, " ".join(name.split()))
+
+    def _crate_menu(self, crate_id: str, name: str, pos):
+        from PySide6.QtWidgets import QInputDialog, QMenu
+        m = QMenu(self)
+        ren = m.addAction("Rename…"); dele = m.addAction("Delete crate (tracks stay in your library)")
+        chosen = m.exec(pos)
+        if chosen is ren:
+            new, ok = QInputDialog.getText(self, "Rename crate", "Crate name:", text=name)
+            if ok and new.strip():
+                self.svc.db.rename_crate(crate_id, new)
+        elif chosen is dele:
+            self.svc.db.delete_crate(crate_id)
+            if self.library.crate_id == crate_id:
+                self.library.set_crate(None); self.topbar.set_active("library")
+        self._refresh_crates()
+
+    def _delete_from_library(self, job_id: str):
+        """Delete from library = move the file to the Trash (recoverable), then drop it from the list."""
+        from PySide6.QtCore import QFile
+        from .player import Player
+        job = self.svc.db.job(job_id)
+        if not job:
+            return
+        if Player.get().owns(job.get("final_path")):
+            Player.get().stop()
+        try:
+            def trash(p):
+                r = QFile.moveToTrash(str(p))                       # one call; PySide returns bool or (bool, path)
+                return bool(r[0] if isinstance(r, tuple) else r)
+            self.svc.remove_from_library(job_id, trash=trash)
+        except ActionBlocked as e:
+            self.statusBar().showMessage(str(e), 8000); return
+        self.library._key = None; self.library.refresh(); self._refresh_crates()
+        self.statusBar().showMessage(f"Moved “{Path(job['final_path']).name}” to the Trash.", 8000)
 
     # ---------------------------------------------------------------- auto save
     def _save_session(self, now: bool = False):
@@ -874,48 +952,25 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- preview (Search only)
     def _preview_candidate(self, cand: Candidate):
-        """Download into quarantine like Check, then play 20 s from the drop once it's checked."""
+        """10-second snippet WITHOUT downloading the whole track (partial download, clip, cancel, delete)."""
         name = cand.title or cand.display_name
-        self.searchp.set_preview_state("loading", f"Getting “{name}” for a preview: downloading, then a quick check…")
+        self._pv_stop_flag = False
+        self.searchp.set_preview_state("loading", f"Getting a 10-second preview of “{name}”…")
 
         def work():
-            job = self.svc.request_download(cand)
-            self._preview_jobs.add(job["id"])
-            self.signals.done.emit(job["id"])
+            try:
+                wav, start = self.svc.snippet_preview(
+                    cand, should_stop=lambda: self._pv_stop_flag,
+                    progress=lambda m: self.signals.notice.emit("PREVIEW_PROGRESS " + m))
+                self.signals.notice.emit(f"PREVIEW_READY {wav}\t{start}\t{name}\t{cand.artist}")
+            except ActionBlocked as e:
+                self.signals.notice.emit("PREVIEW_FAILED " + str(e))
         self.io.start(Task(work, self.signals))
 
-    def _maybe_play_preview(self, job_id: str):
-        if job_id not in self._preview_jobs:
-            return
-        job = self.svc.db.job(job_id)
-        if not job:
-            return
-        if job["state"] == J.ERROR or job["state"] in J.FINAL:
-            self._preview_jobs.discard(job_id)
-            self.searchp.set_preview_state("", "That copy didn't come through for a preview. Try another one.")
-            return
-        if job["state"] != J.READY or not job.get("staged_path"):
-            return                                                  # still downloading / checking
-        self._preview_jobs.discard(job_id)
-        a = self.svc.db.analysis(job_id) or {}
-        mu = a.get("music") or {}
-        start = float(mu.get("preview_start_s") or 0.0)
-        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-        if not hasattr(self, "_pv"):
-            self._pv = QMediaPlayer(self); self._pv_out = QAudioOutput(self); self._pv.setAudioOutput(self._pv_out)
-            self._pv_timer = QTimer(self, singleShot=True, timeout=self._stop_preview)
-        self._pv.setSource(QUrl.fromLocalFile(job["staged_path"]))
-        self._pv.setPosition(int(start * 1000)); self._pv.play()
-        QTimer.singleShot(200, lambda: self._pv.setPosition(int(start * 1000)) if self._pv.position() < start * 1000 - 500 else None)
-        self._pv_timer.start(20_000)                                   # stops by itself after 20 s
-        where = f"from the drop at {int(mu['drop_s']) // 60}:{int(mu['drop_s']) % 60:02d}" if mu.get("drop_s") is not None \
-            else f"from {int(start) // 60}:{int(start) % 60:02d}"
-        title = row_data(job, a, self.steps)["title"]
-        self.searchp.set_preview_state("playing", f"Playing “{title}” {where} (20 s). It's waiting under Ready if you want it.")
-
     def _stop_preview(self):
-        if hasattr(self, "_pv"):
-            self._pv.stop(); self._pv_timer.stop()
+        self._pv_stop_flag = True
+        from .player import Player
+        Player.get().stop()
         self.searchp.set_preview_state("")
 
     def _poll_downloads(self):
@@ -1040,6 +1095,18 @@ class MainWindow(QMainWindow):
         self.io.start(Task(work, self.signals))
 
     def _notice(self, message: str):
+        if message.startswith("PREVIEW_PROGRESS "):
+            self.searchp.set_preview_state("loading", message.split(" ", 1)[1]); return
+        if message.startswith("PREVIEW_FAILED "):
+            self.searchp.set_preview_state("", message.split(" ", 1)[1]); return
+        if message.startswith("PREVIEW_READY "):
+            wav, start, name, artist = message.split(" ", 1)[1].split("\t")
+            from .player import Player
+            pos = int(float(start))
+            Player.get().play(wav, name, f"{artist + ' · ' if artist else ''}preview · 10 s from {pos // 60}:{pos % 60:02d} · not downloaded",
+                              stop_after_s=10.5)
+            self.searchp.set_preview_state("playing", "Playing a 10-second preview. Nothing was kept; press Check this file to download it.")
+            return
         if message.startswith("UPDATE_READY "):
             self.topbar.set_update(f"Update to {message.split()[1]} · restart")
             return

@@ -239,12 +239,16 @@ class Sidebar(QWidget):
     tab_clicked = Signal(str)           # "queue" | "search" | "ready" | "library" | "batch"
     avatar_clicked = Signal()
     update_clicked = Signal()
+    crate_clicked = Signal(str, str)    # crate id, name
+    new_crate = Signal()
+    crate_menu = Signal(str, str, object)   # id, name, global QPoint (right-click: rename / delete)
 
     NAV = (("queue", "Home"), ("search", "Search"), ("ready", "Ready"), ("library", "Library"), ("batch", "Batch"))
 
     def __init__(self):
         super().__init__()
         self.setObjectName("sidebar")
+        self._crate_btns: dict = {}
         self.setFixedWidth(232)
         self.setAttribute(Qt.WA_StyledBackground, True)
         lay = vbox(self, (14, 20, 14, 16), 2)
@@ -259,6 +263,15 @@ class Sidebar(QWidget):
             b.setCursor(Qt.PointingHandCursor)
             self.tabs[key] = b
             lay.addWidget(b)
+        lay.addSpacing(18)
+        ch = QWidget(); chl = hbox(ch, (12, 0, 4, 4), 6)
+        chl.addWidget(label("CRATES", "tag")); chl.addStretch(1)
+        add = button("+", "x", self.new_crate.emit); add.setToolTip("New crate"); chl.addWidget(add)
+        lay.addWidget(ch)
+        self.crate_host = QWidget(); self.crate_lay = vbox(self.crate_host, spacing=2)
+        lay.addWidget(self.crate_host)
+        self.crate_empty = button("+ New crate", "navitem", self.new_crate.emit)
+        lay.addWidget(self.crate_empty)
         lay.addStretch(1)
         self.update_btn = button("", "accent", self.update_clicked.emit)
         self.update_btn.setVisible(False)
@@ -279,6 +292,23 @@ class Sidebar(QWidget):
     def set_active(self, key: str) -> None:
         for k, b in self.tabs.items():
             set_active(b, k == key)
+        for cid, b in self._crate_btns.items():
+            set_active(b, key == f"crate:{cid}")
+
+    def set_crates(self, crates: list[dict]) -> None:
+        while self.crate_lay.count():
+            w = self.crate_lay.takeAt(0).widget()
+            if w:
+                w.hide(); w.deleteLater()
+        self._crate_btns = {}
+        for c in crates:
+            b = button(f"{c['name']}   {c['n']}" if c["n"] else c["name"], "navitem",
+                       lambda _=False, cid=c["id"], n=c["name"]: self.crate_clicked.emit(cid, n))
+            b.setContextMenuPolicy(Qt.CustomContextMenu)
+            b.customContextMenuRequested.connect(lambda pos, cid=c["id"], n=c["name"], btn=b: self.crate_menu.emit(cid, n, btn.mapToGlobal(pos)))
+            b.setToolTip("Right-click to rename or delete")
+            self.crate_lay.addWidget(b); self._crate_btns[c["id"]] = b
+        self.crate_empty.setVisible(not crates)
 
     def set_counts(self, queue: int, ready: int) -> None:
         self.tabs["queue"].setText(f"Home   {queue}" if queue else "Home")
@@ -363,7 +393,7 @@ class QueueRow(QWidget):
         # NOTE: every child is added to the layout BEFORE any setVisible(): a parentless widget that is shown
         # becomes its own top-level window for a frame — the "flashing dialog boxes" of 0.3/0.4.
         self.x = button("×", "x", lambda: self.removed.emit(self.job_id), parent=self)
-        self.x.setToolTip("Remove from the list" if tag in ("Done", "Gone", "Error") else "Delete this track from quarantine")
+        self.x.setToolTip("Cancel download" if tag == "Down" else "Remove from the list" if tag in ("Done", "Gone", "Error") else "Delete this track from quarantine")
         self.x.setFixedWidth(22)
         self.x_space = QWidget(self); self.x_space.setFixedWidth(22)
         lay.addWidget(self.x); lay.addWidget(self.x_space)
@@ -509,10 +539,10 @@ class SpectrumView(QLabel):
         if pix.isNull():
             self.clear_view("Spectrogram unavailable.")
             return
-        if audio != self._audio:
-            self.stop()
         self._pix, self._nyq, self._cutoff = pix, (sample_rate or 44100) / 2, cutoff_hz
         self._levels = None                                   # per-column loudness, computed on first use
+        self._ensure_player()                                 # follow the shared player (▶ shows ❚❚ if this track plays)
+        self._state_changed()
         self._audio = audio if audio and Path(audio).exists() else None
         self._duration_ms = int((duration_s or 0) * 1000)
         self.setText("")
@@ -540,37 +570,35 @@ class SpectrumView(QLabel):
         self.update()
 
     def play_preview(self):
-        """Play the 20 seconds around the drop (or the liveliest stretch), then stop."""
-        if not self._audio or self._prev_start is None or not self._ensure_player():
+        """Play the preview window through the shared player; it stops by itself."""
+        if not self._audio or self._prev_start is None:
             return
-        from PySide6.QtCore import QTimer
-        if self._player.source().toLocalFile() != self._audio:
-            self._player.setSource(QUrl.fromLocalFile(self._audio))
-        start_ms = int(self._prev_start * 1000)
-        self._player.setPosition(start_ms)
-        self._player.play()
-        QTimer.singleShot(150, lambda: self._player.setPosition(start_ms) if self._player.position() < start_ms - 500 else None)
-        if self._prev_timer is None:
-            self._prev_timer = QTimer(self, singleShot=True, timeout=lambda: self._player and self._player.pause())
-        self._prev_timer.start(int(self._prev_len * 1000) + 150)
+        from .player import Player
+        Player.get().play(self._audio, getattr(self, "_title", "") or Path(self._audio).stem, getattr(self, "_subtitle", ""),
+                          self._prev_start, stop_after_s=self._prev_len)
 
     # ---------------------------------------------------------------- playback
+    # Playback goes through the app-wide Player (ui/player.py): one thing plays at a time, shown in the bottom bar.
+    def set_track(self, title: str, subtitle: str = ""):
+        self._title, self._subtitle = title, subtitle
+
     def _ensure_player(self) -> bool:
         if self._player is not None:
             return True
         try:
-            from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-            self._out = QAudioOutput(self)
-            self._player = QMediaPlayer(self)
-            self._player.setAudioOutput(self._out)
-            self._player.positionChanged.connect(lambda _: self.update())
-            self._player.durationChanged.connect(self._got_duration)
-            self._player.playbackStateChanged.connect(self._state_changed)
-            self._player.errorOccurred.connect(lambda *_: self._state_changed())
+            from .player import Player
+            pl = Player.get()
+            self._player = pl.media
+            self._player.positionChanged.connect(lambda _: self.update() if self._mine() else None)
+            self._player.durationChanged.connect(lambda ms: self._got_duration(ms) if self._mine() else None)
+            pl.changed.connect(self._state_changed)
             return True
         except Exception:
             self._player = None
             return False
+
+    def _mine(self) -> bool:
+        return bool(self._audio) and self._player is not None and self._player.source().toLocalFile() == self._audio
 
     def _got_duration(self, ms: int):
         if ms > 0:
@@ -587,7 +615,7 @@ class SpectrumView(QLabel):
         self.update()
 
     def is_playing(self) -> bool:
-        if self._player is None:
+        if self._player is None or not self._mine():
             return False
         from PySide6.QtMultimedia import QMediaPlayer
         return self._player.playbackState() == QMediaPlayer.PlayingState
@@ -595,29 +623,31 @@ class SpectrumView(QLabel):
     def toggle(self):
         if not self._audio or not self._ensure_player():
             return
-        if self.is_playing():
-            self._player.pause(); return
-        if self._player.source().toLocalFile() != self._audio:
-            self._player.setSource(QUrl.fromLocalFile(self._audio))
-        self._player.play()
+        from .player import Player
+        if self._mine():
+            Player.get().toggle(); return
+        Player.get().play(self._audio, getattr(self, "_title", "") or Path(self._audio).stem, getattr(self, "_subtitle", ""))
 
     def stop(self):
-        if self._player is not None:
-            self._player.stop()
-            self._player.setSource(QUrl())
+        if self._player is not None and self._mine():
+            from .player import Player
+            Player.get().stop()
         self.update()
 
     def position_ms(self) -> int:
-        return self._player.position() if self._player is not None else 0
+        return self._player.position() if self._player is not None and self._mine() else 0
 
     def seek_fraction(self, f: float):
         if not self._audio or not self._ensure_player() or self._duration_ms <= 0:
             return
-        if self._player.source().toLocalFile() != self._audio:
-            self._player.setSource(QUrl.fromLocalFile(self._audio))
-        self._player.setPosition(int(max(0.0, min(1.0, f)) * self._duration_ms))
-        if not self.is_playing():
-            self._player.play()
+        from .player import Player
+        start = max(0.0, min(1.0, f)) * self._duration_ms / 1000
+        if self._mine():
+            self._player.setPosition(int(start * 1000))
+            if not self.is_playing():
+                Player.get().toggle()
+        else:
+            Player.get().play(self._audio, getattr(self, "_title", "") or Path(self._audio).stem, getattr(self, "_subtitle", ""), start)
 
     # ---------------------------------------------------------------- geometry
     def _image_rect(self):
@@ -677,8 +707,9 @@ class SpectrumView(QLabel):
                 pen = QPen(QColor("#ffffff")); pen.setWidth(2); p.setPen(pen)
                 p.drawLine(xd, r.top(), xd, r.bottom())
                 tag = f"drop {int(self._drop_s) // 60}:{int(self._drop_s) % 60:02d}"
-                p.fillRect(xd + 4, r.top() + 4, 74, 16, QColor(0, 0, 0, 130))
-                p.setPen(QColor("#ffffff")); p.drawText(xd + 9, r.top() + 16, tag)
+                lx = xd + 4 if xd + 82 < r.right() else xd - 82            # bottom edge: never under the cutoff label
+                p.fillRect(lx, r.bottom() - 21, 78, 17, QColor(0, 0, 0, 150))
+                p.setPen(QColor("#ffffff")); p.drawText(lx + 5, r.bottom() - 8, tag)
         # playhead
         pos = self.position_ms()
         if self._audio and self._duration_ms > 0 and (pos > 0 or self.is_playing()):

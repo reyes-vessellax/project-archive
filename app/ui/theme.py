@@ -66,6 +66,15 @@ QWidget#page, QWidget#root {{ background: transparent; }}
 QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
 QToolTip {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['line']}; padding: 4px 8px; }}
 
+/* now playing bar (one player for the whole app) */
+QFrame#nowplaying {{ background: {c['disp_bg']}; border-top: 1px solid {c['disp_line']}; }}
+QFrame#nowplaying QLabel {{ background: transparent; color: #f2f2f0; }}
+QFrame#nowplaying QLabel#faint {{ color: {c['disp_label']}; }}
+QFrame#nowplaying QLabel#mono {{ color: {c['disp_text']}; font-size: 13px; }}
+QFrame#nowplaying QSlider::groove:horizontal {{ height: 4px; background: #2c2c2c; }}
+QFrame#nowplaying QSlider::sub-page:horizontal {{ background: {c['disp_text']}; }}
+QFrame#nowplaying QSlider::handle:horizontal {{ width: 10px; margin: -4px 0; background: {c['disp_text']}; }}
+
 /* batch (design v6) */
 QFrame#dropzone {{ background: {c['panel']}; border: 1px dashed {c['faint']}; border-radius: 3px; }}
 QPlainTextEdit#bare {{ background: transparent; border: none; padding: 4px 2px; font-size: 14px; }}

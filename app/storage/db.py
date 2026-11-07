@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS analyses (
     decode_ok INTEGER, spectrum_path TEXT, overall_status TEXT, analysis_json TEXT
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS crates (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, created_at TEXT);
+CREATE TABLE IF NOT EXISTS crate_items (crate_id TEXT NOT NULL, job_id TEXT NOT NULL, added_at TEXT,
+    PRIMARY KEY (crate_id, job_id));
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, timestamp TEXT, event_type TEXT, message TEXT
 );
@@ -137,6 +140,55 @@ class Database:
         with self._lock:
             row = self._con.execute("SELECT analysis_json FROM analyses WHERE job_id = ?", (job_id,)).fetchone()
         return json.loads(row[0]) if row else None
+
+    # crates (the user's own groupings of library tracks) ------------------------------
+    def crates(self) -> list[dict]:
+        with self._lock:
+            rows = self._con.execute(
+                "SELECT c.id, c.name, COUNT(i.job_id) AS n FROM crates c LEFT JOIN crate_items i ON i.crate_id = c.id "
+                "LEFT JOIN jobs j ON j.id = i.job_id AND j.state = 'PROMOTED' GROUP BY c.id ORDER BY c.name COLLATE NOCASE").fetchall()
+        return [dict(r) for r in rows]
+
+    def create_crate(self, name: str) -> str:
+        import uuid
+        name = " ".join(name.split())[:60]
+        if not name:
+            raise ValueError("Give the crate a name.")
+        with self._lock, self._con:
+            row = self._con.execute("SELECT id FROM crates WHERE name = ? COLLATE NOCASE", (name,)).fetchone()
+            if row:
+                return row[0]
+            cid = uuid.uuid4().hex[:12]
+            self._con.execute("INSERT INTO crates VALUES (?,?,?)", (cid, name, now()))
+            return cid
+
+    def rename_crate(self, crate_id: str, name: str) -> None:
+        name = " ".join(name.split())[:60]
+        if name:
+            with self._lock, self._con:
+                self._con.execute("UPDATE crates SET name = ? WHERE id = ?", (name, crate_id))
+
+    def delete_crate(self, crate_id: str) -> None:
+        """Removes the crate only; the tracks stay in the library."""
+        with self._lock, self._con:
+            self._con.execute("DELETE FROM crate_items WHERE crate_id = ?", (crate_id,))
+            self._con.execute("DELETE FROM crates WHERE id = ?", (crate_id,))
+
+    def add_to_crate(self, crate_id: str, job_id: str) -> None:
+        with self._lock, self._con:
+            self._con.execute("INSERT OR IGNORE INTO crate_items VALUES (?,?,?)", (crate_id, job_id, now()))
+
+    def remove_from_crate(self, crate_id: str, job_id: str) -> None:
+        with self._lock, self._con:
+            self._con.execute("DELETE FROM crate_items WHERE crate_id = ? AND job_id = ?", (crate_id, job_id))
+
+    def crate_jobs(self, crate_id: str) -> set[str]:
+        with self._lock:
+            return {r[0] for r in self._con.execute("SELECT job_id FROM crate_items WHERE crate_id = ?", (crate_id,))}
+
+    def crates_of(self, job_id: str) -> set[str]:
+        with self._lock:
+            return {r[0] for r in self._con.execute("SELECT crate_id FROM crate_items WHERE job_id = ?", (job_id,))}
 
     # settings / events ----------------------------------------------------------------
     def load_settings(self) -> dict:

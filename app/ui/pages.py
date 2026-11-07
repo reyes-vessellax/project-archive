@@ -42,7 +42,7 @@ def row_data(job: dict, analysis: dict | None, steps: dict[str, str]) -> dict:
         if not artist and job.get("remote_user"):
             artist = ""
     if st == J.QUEUED:
-        return dict(tag="Down", title=title, artist=artist, pct=job.get("progress") or 0, meta=(job.get("message") or "")[:18], removable=False)
+        return dict(tag="Down", title=title, artist=artist, pct=job.get("progress") or 0, meta=(job.get("message") or "")[:18], removable=True)
     if st == J.STAGING:
         return dict(tag="Check", title=title, artist=artist, pct=0, meta="moving in", removable=False)
     if st == J.ANALYZING:
@@ -720,7 +720,7 @@ class ReviewPage(QWidget):
             w = QWidget(); w.setObjectName("row"); w.setCursor(Qt.PointingHandCursor); w.setProperty("tag", d["tag"])
             hl = hbox(w, (4, 9, 10, 9), 10)
             if d["removable"]:
-                x = button("×", "x", lambda _=False, jid=j["id"]: self.remove_job.emit(jid)); x.setToolTip("Remove from the list")
+                x = button("×", "x", lambda _=False, jid=j["id"]: self.remove_job.emit(jid)); x.setToolTip("Cancel download" if j["state"] == J.QUEUED else "Remove from the list")
             else:
                 x = QWidget(); x.setAttribute(Qt.WA_TransparentForMouseEvents)
             x.setFixedWidth(22); hl.addWidget(x)
@@ -819,6 +819,7 @@ class ReviewPage(QWidget):
                 self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
                                        audio=_audio_path(job), duration_s=f.get("duration_s"))
                 self.spectrum.set_preview(mu.get("drop_s"), None)        # mark the drop; no preview window here
+                self.spectrum.set_track(d["title"], d["artist"])
             else:
                 self.spectrum.clear_view("Spectrogram unavailable." if job["state"] not in J.FINAL else "Staged copy removed.")
             cut = a.get("cutoff_hz")

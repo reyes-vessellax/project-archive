@@ -229,6 +229,76 @@ class ArchiveService:
                 c.note = "Extension mismatch"
         return res
 
+    def snippet_preview(self, cand: Candidate, seconds: float = 10.0, should_stop=lambda: False,
+                        progress=lambda msg: None, timeout_s: float = 90.0) -> tuple[Path, float]:
+        """Hear a track WITHOUT downloading all of it: fetch only enough of the file to cover `seconds` of audio
+        about a third of the way in (past the intro), cut that into a small WAV, then cancel the transfer and
+        delete the partial file. Returns (wav, start_s). Works for copies that can start now (no queue)."""
+        import time as _time
+        from ..media.tools import find_tool, run
+        adapter = self._adapter_or_block()
+        if cand.locked:
+            raise ActionBlocked("That copy is private; it can't be previewed.")
+        if (cand.extension or "").lower() not in {e.lower().lstrip(".") for e in self.settings.extensions}:
+            raise ActionBlocked(f".{cand.extension or '(none)'} files can't be previewed.")
+        length = float(cand.length_s or 0) or (cand.size * 8 / (cand.bitrate_kbps * 1000) if cand.bitrate_kbps else 360.0)
+        start = max(0.0, min(length * 0.33, length - seconds - 2))
+        need = int(cand.size * min(1.0, (start + seconds + 4) / max(length, 1)) + 256 * 1024)
+        name = cand.remote_path.replace("\\", "/").split("/")[-1]
+        roots = [Path(getattr(self.manager, "instance_dir", Path("/nonexistent"))) / "incomplete",
+                 Path(self.settings.slskd_downloads_dir or getattr(self.manager, "downloads_dir", "/nonexistent"))]
+        began = _time.time()
+        t = adapter.request_download(cand)
+        part: Path | None = None
+        out = self.db.path.parent / "preview"
+        out.mkdir(parents=True, exist_ok=True)
+        for old in out.glob("*.wav"):
+            old.unlink(missing_ok=True)
+        wav = out / f"{uuid.uuid4().hex[:10]}.wav"
+        try:
+            t0, queued_since = _time.monotonic(), None
+            while True:
+                if should_stop():
+                    raise ActionBlocked("Preview cancelled.")
+                if _time.monotonic() - t0 > timeout_s:
+                    raise ActionBlocked("That copy is too slow to preview. Try one that's Ready now.")
+                st = adapter.transfer_status(t)
+                if st.failed:
+                    raise ActionBlocked("That copy wouldn't send. Try another one.")
+                if "Queued" in (st.state or ""):
+                    queued_since = queued_since or _time.monotonic()
+                    if _time.monotonic() - queued_since > 15:
+                        raise ActionBlocked("That copy has a wait, so it can't be previewed yet. Try one that's Ready now.")
+                    progress("Waiting for the sharer…")
+                else:
+                    queued_since = None
+                if part is None or not part.exists():
+                    part = next((p for root in roots if root.is_dir() for p in root.rglob(name) if p.is_file()), None)
+                have = part.stat().st_size if part and part.exists() else 0
+                if have >= need or (st.done and have):
+                    break
+                progress(f"Getting a preview… {min(99, int(100 * have / max(need, 1)))}%")
+                _time.sleep(0.4)
+            progress("Cutting the preview…")
+            ff = find_tool("ffmpeg", self.settings.ffmpeg_path)
+            for s0 in (start, 0.0):                          # partial FLAC/MP3 decode from the start; if the seek
+                run([ff, "-v", "error", "-nostdin", "-y", "-i", str(part), "-ss", f"{s0:.2f}", "-t", f"{seconds:.2f}",
+                     "-vn", "-ac", "2", "-ar", "44100", str(wav)], timeout=60)
+                if wav.exists() and wav.stat().st_size > 44100 * 4 * 2:    # at least ~2 s of audio
+                    return wav, s0
+            raise ActionBlocked("Couldn't cut a preview from that copy. Try another one.")
+        finally:
+            try:
+                adapter.cancel(t)                            # stop the rest of the download
+            except Exception:
+                pass
+            for p in {part} | {q for root in roots if root.is_dir() for q in root.rglob(name) if q.is_file()}:
+                if p is not None and p.exists() and p.stat().st_mtime >= began - 5:   # only what THIS preview wrote
+                    try:
+                        p.unlink()                           # the partial file never stays on disk
+                    except OSError:
+                        pass
+
     def request_download(self, cand: Candidate, playlist: str = "") -> dict:
         """User picked a search result: ask the client to download it and track it as a QUEUED job."""
         adapter = self._adapter_or_block()
@@ -451,6 +521,23 @@ class ArchiveService:
             self._keep_cover(job_id, analysis)
             shutil.rmtree(staged.parent, ignore_errors=True)
             return target
+
+    def remove_from_library(self, job_id: str, trash=None) -> Path | None:
+        """Take a track out of the library. The file goes to the Trash/Recycle Bin (recoverable) via `trash`
+        (a callable that returns True on success); the history row is kept but hidden, and crates forget it."""
+        job = self._require(job_id)
+        if job["state"] != J.PROMOTED:
+            raise ActionBlocked("That track isn't in your library.")
+        final = Path(job["final_path"]) if job.get("final_path") else None
+        if final and final.exists():
+            if trash is None or not trash(final):
+                raise ActionBlocked("Couldn't move the file to the Trash. Is it open in another app?")
+        with self._lock:
+            self.db.update_job(job_id, state=J.REJECTED, disposition="removed_from_library", hidden=1)
+            for cid in self.db.crates_of(job_id):
+                self.db.remove_from_crate(cid, job_id)
+            self.db.event(job_id, "removed_from_library", str(final or ""))
+        return final
 
     def _tag_for_library(self, path: Path, analysis: dict, ext: str) -> None:
         """Best effort: a tagging problem never blocks the save (the audio was already verified)."""

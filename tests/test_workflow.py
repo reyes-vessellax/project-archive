@@ -259,3 +259,26 @@ def test_batch_track_saves_into_its_playlist_folder(service, fixtures):
     target = service.promote(job["id"])
     assert target.parent.name == "Friday warm-up"
     assert target.parent.parent == service.settings.downloads_dir()
+
+
+@needs_ffmpeg
+def test_remove_from_library_trashes_file_and_forgets_crates(service, fixtures, tmp_path):
+    job = service.stage(fixtures["mp3_320"]); service.analyze(job["id"])
+    target = service.promote(job["id"])
+    cid = service.db.create_crate("Warm-up")
+    service.db.add_to_crate(cid, job["id"])
+    assert service.db.crates()[0]["n"] == 1
+    trashed = []
+    service.remove_from_library(job["id"], trash=lambda p: (trashed.append(p), p.rename(tmp_path / p.name), True)[-1])
+    assert trashed == [target] and not target.exists()
+    assert job["id"] not in [j["id"] for j in service.db.jobs(states=(J.PROMOTED,))]
+    assert service.db.crate_jobs(cid) == set()
+
+
+def test_crates_basics(service):
+    a = service.db.create_crate("  Peak   time ")
+    assert service.db.create_crate("peak time") == a              # same name (any case) -> same crate
+    service.db.rename_crate(a, "Peak")
+    assert [c["name"] for c in service.db.crates()] == ["Peak"]
+    service.db.delete_crate(a)
+    assert service.db.crates() == []

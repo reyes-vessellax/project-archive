@@ -35,6 +35,8 @@ def reveal_in_folder(path: Path) -> None:
 
 class LibraryPage(QWidget):
     open_job = Signal(str)
+    delete_job = Signal(str)          # move the file to the Trash and take it out of the library
+    crates_changed = Signal()
     COLS = ["Title", "Artist", "Mix", "BPM", "Key", "Format", "Bitrate", "Length", "Checked", "Added", "File"]
     WIDTHS = [210, 150, 100, 60, 50, 64, 84, 56, 80, 110, 160]
     C_BPM, C_KEY, C_FMT, C_KBPS, C_LEN, C_GRADE, C_ADDED, C_FILE = 3, 4, 5, 6, 7, 8, 9, 10
@@ -96,6 +98,8 @@ class LibraryPage(QWidget):
         self.empty = label("Nothing downloaded yet. Approved tracks show up here.", "faint")
         lay.addWidget(self.empty)
         self._open_id: str | None = None
+        self.crate_id: str | None = None
+        self._crate_members: set[str] = set()
         self._just_expanded = False
 
     # ---------------------------------------------------------------- data
@@ -115,6 +119,50 @@ class LibraryPage(QWidget):
         self.pl_box.blockSignals(False)
         self.pl_box.setVisible(bool(names)); self.pl_label.setVisible(bool(names))
         self._filter(self.q.text())
+
+    def set_crate(self, crate_id: str | None, name: str = ""):
+        """Show one crate (None = the whole library)."""
+        self.crate_id = crate_id
+        self._crate_members = self.svc.db.crate_jobs(crate_id) if crate_id else set()
+        self.title.setText(name or "Library")
+        self._key = None
+        self.refresh()
+
+    def _crate_menu(self):
+        from PySide6.QtWidgets import QInputDialog, QMenu
+        it = self._selected()
+        if not it:
+            return
+        job_id = it.data(0, Qt.UserRole)
+        m = QMenu(self)
+        inside = self.svc.db.crates_of(job_id)
+        for c in self.svc.db.crates():
+            a = m.addAction(("✓  " if c["id"] in inside else "     ") + c["name"])
+            a.triggered.connect(lambda _=False, cid=c["id"]: (self.svc.db.add_to_crate(cid, job_id), self.crates_changed.emit()))
+        if self.svc.db.crates():
+            m.addSeparator()
+        new = m.addAction("New crate…")
+
+        def make():
+            name, ok = QInputDialog.getText(self, "New crate", "Crate name:")
+            if ok and name.strip():
+                cid = self.svc.db.create_crate(name)
+                self.svc.db.add_to_crate(cid, job_id)
+                self.crates_changed.emit()
+        new.triggered.connect(make)
+        m.exec(self.btn_crate.mapToGlobal(self.btn_crate.rect().bottomLeft()))
+
+    def _remove_from_crate(self):
+        it = self._selected()
+        if it and self.crate_id:
+            self.svc.db.remove_from_crate(self.crate_id, it.data(0, Qt.UserRole))
+            self.crates_changed.emit()
+            self.set_crate(self.crate_id, self.title.text())
+
+    def _delete(self):
+        it = self._selected()
+        if it:
+            self.delete_job.emit(it.data(0, Qt.UserRole))
 
     def _filter(self, text: str):
         words = [w for w in text.lower().split() if w]
@@ -137,6 +185,8 @@ class LibraryPage(QWidget):
             bpm, cam = mu.get("bpm"), mu.get("camelot") or ""
             lo_hi = self._bpm_range()
             if lo_hi and (not bpm or not (lo_hi[0] <= bpm <= lo_hi[1])):
+                continue
+            if self.crate_id and job["id"] not in self._crate_members:
                 continue
             want_pl = self.pl_box.currentData() if hasattr(self, "pl_box") else ""
             if want_pl and job.get("playlist") != want_pl:
@@ -225,10 +275,11 @@ class LibraryPage(QWidget):
         pl.addLayout(left, 3)
         right = vbox(spacing=10)
         grid = QGridLayout(); grid.setHorizontalSpacing(18); grid.setVerticalSpacing(6)
+        grid.setColumnStretch(0, 0); grid.setColumnStretch(1, 1)     # values sit right next to their labels
         self.facts = {}
         for i, name in enumerate(("Verdict", "BPM", "Key", "Format", "Bitrate", "Rate", "Length", "Added", "File")):
             k = label(name.upper(), "tag"); v = label("", "monotext"); v.setWordWrap(True)
-            grid.addWidget(k, i, 0, Qt.AlignTop); grid.addWidget(v, i, 1)
+            k.setFixedWidth(84); grid.addWidget(k, i, 0, Qt.AlignTop); grid.addWidget(v, i, 1)
             self.facts[name] = v
         right.addLayout(grid)
         self.checks_host = vbox(spacing=4); right.addLayout(self.checks_host)
@@ -236,7 +287,12 @@ class LibraryPage(QWidget):
         acts = hbox(spacing=10)
         self.btn_reveal = button("Show in folder", "primary", self._reveal)
         self.btn_close = button("Close", "ghost", self._collapse)
-        acts.addWidget(self.btn_reveal); acts.addStretch(1); acts.addWidget(self.btn_close)
+        self.btn_crate = button("Add to crate ▾", "ghost", self._crate_menu)
+        self.btn_uncrate = button("Remove from crate", "ghost", self._remove_from_crate)
+        self.btn_delete = button("Delete from library", "danger", self._delete)
+        self.btn_delete.setToolTip("Moves the file to the Trash (you can still get it back from there)")
+        acts.addWidget(self.btn_reveal); acts.addWidget(self.btn_crate); acts.addWidget(self.btn_uncrate)
+        acts.addStretch(1); acts.addWidget(self.btn_delete); acts.addWidget(self.btn_close)
         right.addLayout(acts)
         pl.addLayout(right, 2)
         return panel
@@ -362,6 +418,7 @@ class LibraryPage(QWidget):
             self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
                                    audio=final if exists else None, duration_s=f.get("duration_s"))
             self.spectrum.set_preview(mu.get("drop_s"), None)
+            self.spectrum.set_track(it.text(0), it.text(1))
         elif exists:
             self.spectrum.clear_view("Drawing the spectrogram again…")
             self._redraw(job_id)
@@ -382,6 +439,8 @@ class LibraryPage(QWidget):
 
         self.facts["File"].setText(Path(final).name + ("" if exists else "  (moved or deleted)"))
         self.facts["File"].setToolTip(final)
+        self.btn_uncrate.setVisible(bool(self.crate_id))
+        self.btn_delete.setEnabled(True)
         while self.checks_host.count():
             w = self.checks_host.takeAt(0).widget()
             if w:
