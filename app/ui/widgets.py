@@ -460,7 +460,7 @@ class LevelStrip(QWidget):
             else:
                 c = off
             p.setPen(Qt.NoPen); p.setBrush(c)
-            p.drawRoundedRect(QRectF(i * (w + gap), 2, w, 8), 2, 2)
+            p.drawRect(QRectF(i * (w + gap), 2, w, 8))
         p.end()
 
 
@@ -663,11 +663,12 @@ class SpectrumView(QLabel):
             p.fillRect(r.right() - 112, ly, 108, 16, QColor(0, 0, 0, 140))
             p.drawText(r.right() - 108, ly + 12, f"cutoff {self._cutoff / 1000:.1f} kHz")
         # preview window + drop marker
-        if self._prev_start is not None and self._duration_ms > 0:
+        if self._duration_ms > 0 and (self._prev_start is not None or self._drop_s is not None):
             dur = self._duration_ms / 1000
-            x0 = r.left() + int(r.width() * self._prev_start / dur)
-            x1 = r.left() + int(r.width() * min(dur, self._prev_start + self._prev_len) / dur)
-            p.fillRect(x0, r.top(), max(2, x1 - x0), r.height(), QColor(255, 255, 255, 46))
+            if self._prev_start is not None:
+                x0 = r.left() + int(r.width() * self._prev_start / dur)
+                x1 = r.left() + int(r.width() * min(dur, self._prev_start + self._prev_len) / dur)
+                p.fillRect(x0, r.top(), max(2, x1 - x0), r.height(), QColor(255, 255, 255, 46))
             if self._drop_s is not None:
                 xd = r.left() + int(r.width() * self._drop_s / dur)
                 pen = QPen(QColor("#ffffff")); pen.setWidth(2); p.setPen(pen)

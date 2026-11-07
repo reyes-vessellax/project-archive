@@ -80,14 +80,14 @@ class TourOverlay(QWidget):
         self.body = label("", "muted", wrap=True); self.body.setStyleSheet("font-size: 14px; line-height: 1.5;"); cl.addWidget(self.body)
         row = hbox(spacing=8)
         self.back = button("Back", "ghost", self._back); self.back.setStyleSheet("min-height: 36px; padding: 0 14px;")
-        self.next = button("Next", "primary", self._next); self.next.setStyleSheet("min-height: 36px; padding: 0 18px; border-radius: 18px;")
+        self.next = button("Next", "primary", self._next); self.next.setStyleSheet("min-height: 36px; padding: 0 18px; border-radius: 3px;")
         row.addWidget(self.back); row.addStretch(1); row.addWidget(self.next)
         cl.addLayout(row)
 
         # skip: small, bottom-right, always visible
         self.skip = button("Skip tour", "ghost", lambda: self._end(False))
         self.skip.setParent(self)
-        self.skip.setStyleSheet("QPushButton { min-height: 32px; padding: 0 14px; border-radius: 16px; font-size: 12px; "
+        self.skip.setStyleSheet("QPushButton { min-height: 32px; padding: 0 14px; border-radius: 3px; font-size: 12px; "
                                 "background: rgba(255,255,255,0.92); color: #1b1b1a; border: 1px solid rgba(0,0,0,0.15); }"
                                 "QPushButton:hover { background: #ffffff; }")
         self.skip.setToolTip("You can replay the tour any time from the avatar menu")
@@ -173,7 +173,7 @@ class TourOverlay(QWidget):
             dim = dim.subtracted(hole)
             p.setPen(QColor(210, 114, 30)); p.setBrush(Qt.NoBrush)
             pen = p.pen(); pen.setWidth(2); p.setPen(pen)
-            p.drawRoundedRect(QRectF(r), 12, 12)
+            p.drawRoundedRect(QRectF(r), 3, 3)
         p.fillPath(dim, QColor(0, 0, 0, 150))
         p.end()
 

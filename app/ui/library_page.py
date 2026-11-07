@@ -217,7 +217,7 @@ class LibraryPage(QWidget):
         names.addWidget(self.p_title); names.addWidget(self.p_artist); names.addWidget(self.p_meta)
         top.addLayout(names, 1)
         self.p_preview = button("▶  Preview the drop", "small", lambda: self.spectrum and self.spectrum.play_preview())
-        top.addWidget(self.p_preview, 0, Qt.AlignTop)
+        self.p_preview.setVisible(False)                   # downloaded tracks play in full
         left.addLayout(top)
         self.spectrum = SpectrumView(170); self.spectrum.set_accent(self._accent); left.addWidget(self.spectrum)
         self.p_note = label("", "faint"); left.addWidget(self.p_note)
@@ -361,7 +361,7 @@ class LibraryPage(QWidget):
         if a.get("spectrogram_path") and Path(a["spectrogram_path"]).exists():
             self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
                                    audio=final if exists else None, duration_s=f.get("duration_s"))
-            self.spectrum.set_preview(mu.get("drop_s"), mu.get("preview_start_s"), mu.get("preview_len_s") or 20.0)
+            self.spectrum.set_preview(mu.get("drop_s"), None)
         elif exists:
             self.spectrum.clear_view("Drawing the spectrogram again…")
             self._redraw(job_id)
@@ -379,8 +379,7 @@ class LibraryPage(QWidget):
         self.facts["BPM"].setText(f"{mu['bpm']:g}" if mu.get("bpm") else "–")
         self.facts["Key"].setText(f"{mu['camelot']}  ({mu['key']})" if mu.get("camelot") else "–")
         self.facts["Added"].setText(it.text(self.C_ADDED))
-        self.p_preview.setVisible(exists and mu.get("preview_start_s") is not None)
-        self.p_preview.setText("▶  Preview the drop" if mu.get("drop_s") is not None else "▶  Preview the liveliest part")
+
         self.facts["File"].setText(Path(final).name + ("" if exists else "  (moved or deleted)"))
         self.facts["File"].setToolTip(final)
         while self.checks_host.count():

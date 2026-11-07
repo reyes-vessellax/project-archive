@@ -169,6 +169,9 @@ class MainWindow(QMainWindow):
         self.home.review_all.connect(lambda: self._tab("ready")); self.home.add_files.connect(self._pick_files)
         self.searchp.pick.connect(self._pick_candidate)
         self.searchp.filters_changed.connect(lambda: self._save_session())
+        self.searchp.preview.connect(self._preview_candidate); self.searchp.stop_preview.connect(self._stop_preview)
+        self._preview_jobs: set[str] = set()
+        self.signals.done.connect(self._maybe_play_preview)
         self.review.select.connect(self._open_job)
         self.review.promote.connect(self._promote); self.review.reject.connect(self._reject)
         self.review.cancel.connect(self._cancel); self.review.rerun.connect(self._recheck)
@@ -868,6 +871,52 @@ class MainWindow(QMainWindow):
             self.signals.done.emit(job["id"])
         self.io.start(Task(work, self.signals))
         self.statusBar().showMessage(f"Requested “{cand.title or cand.display_name}”. It goes to quarantine first.", 6000)
+
+    # ---------------------------------------------------------------- preview (Search only)
+    def _preview_candidate(self, cand: Candidate):
+        """Download into quarantine like Check, then play 20 s from the drop once it's checked."""
+        name = cand.title or cand.display_name
+        self.searchp.set_preview_state("loading", f"Getting “{name}” for a preview: downloading, then a quick check…")
+
+        def work():
+            job = self.svc.request_download(cand)
+            self._preview_jobs.add(job["id"])
+            self.signals.done.emit(job["id"])
+        self.io.start(Task(work, self.signals))
+
+    def _maybe_play_preview(self, job_id: str):
+        if job_id not in self._preview_jobs:
+            return
+        job = self.svc.db.job(job_id)
+        if not job:
+            return
+        if job["state"] == J.ERROR or job["state"] in J.FINAL:
+            self._preview_jobs.discard(job_id)
+            self.searchp.set_preview_state("", "That copy didn't come through for a preview. Try another one.")
+            return
+        if job["state"] != J.READY or not job.get("staged_path"):
+            return                                                  # still downloading / checking
+        self._preview_jobs.discard(job_id)
+        a = self.svc.db.analysis(job_id) or {}
+        mu = a.get("music") or {}
+        start = float(mu.get("preview_start_s") or 0.0)
+        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+        if not hasattr(self, "_pv"):
+            self._pv = QMediaPlayer(self); self._pv_out = QAudioOutput(self); self._pv.setAudioOutput(self._pv_out)
+            self._pv_timer = QTimer(self, singleShot=True, timeout=self._stop_preview)
+        self._pv.setSource(QUrl.fromLocalFile(job["staged_path"]))
+        self._pv.setPosition(int(start * 1000)); self._pv.play()
+        QTimer.singleShot(200, lambda: self._pv.setPosition(int(start * 1000)) if self._pv.position() < start * 1000 - 500 else None)
+        self._pv_timer.start(20_000)                                   # stops by itself after 20 s
+        where = f"from the drop at {int(mu['drop_s']) // 60}:{int(mu['drop_s']) % 60:02d}" if mu.get("drop_s") is not None \
+            else f"from {int(start) // 60}:{int(start) % 60:02d}"
+        title = row_data(job, a, self.steps)["title"]
+        self.searchp.set_preview_state("playing", f"Playing “{title}” {where} (20 s). It's waiting under Ready if you want it.")
+
+    def _stop_preview(self):
+        if hasattr(self, "_pv"):
+            self._pv.stop(); self._pv_timer.stop()
+        self.searchp.set_preview_state("")
 
     def _poll_downloads(self):
         if self.svc.adapter is None or self._polling:

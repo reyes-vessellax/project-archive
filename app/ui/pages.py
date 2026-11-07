@@ -215,6 +215,8 @@ PAGE_ROWS = 100
 class SearchPage(QWidget):
     search = Signal(str)
     filters_changed = Signal()
+    preview = Signal(object)          # Candidate: download it and play 20 s from the drop
+    stop_preview = Signal()
 
     def _theme(self) -> str:
         return getattr(self.svc.settings, "theme", "light")
@@ -284,8 +286,13 @@ class SearchPage(QWidget):
         self.tree.viewport().installEventFilter(self)
         row = hbox(spacing=12)
         self.btn = button("Check this file", "primary", self._pick); self.btn.setEnabled(False)
-        row.addWidget(self.btn)
-        row.addWidget(label("Lands in quarantine, gets checked, then waits for your decision.", "faint"))
+        self.btn_pv = button("▶  Preview", "ghost", self._preview_clicked); self.btn_pv.setEnabled(False)
+        self.btn_pv.setToolTip("Downloads it into quarantine, then plays 20 seconds from the drop")
+        row.addWidget(self.btn); row.addWidget(self.btn_pv)
+        self.pv_note = label("Preview and Check both download into quarantine first; nothing reaches your library "
+                             "until you decide.", "faint")
+        row.addWidget(self.pv_note)
+        self._previewing = False
         row.addStretch(1)
         lay.addLayout(row)
 
@@ -502,6 +509,22 @@ class SearchPage(QWidget):
         items = self.tree.selectedItems()
         c = items[0].data(0, Qt.UserRole) if items else None
         self.btn.setEnabled(isinstance(c, Candidate) and not c.note and not c.locked)
+        self.btn_pv.setEnabled(self._previewing or self.btn.isEnabled())
+
+    def _preview_clicked(self):
+        if self._previewing:
+            self.stop_preview.emit(); return
+        items = self.tree.selectedItems()
+        if items and isinstance(items[0].data(0, Qt.UserRole), Candidate):
+            self.preview.emit(items[0].data(0, Qt.UserRole))
+
+    def set_preview_state(self, state: str, text: str = ""):
+        """state: '' (idle), 'loading' (downloading + checking), 'playing'."""
+        self._previewing = state == "playing"
+        self.btn_pv.setText({"loading": "Getting preview…", "playing": "■  Stop"}.get(state, "▶  Preview"))
+        self.btn_pv.setEnabled(state != "loading" and (state == "playing" or self.btn.isEnabled()))
+        self.pv_note.setText(text or "Preview and Check both download into quarantine first; nothing reaches your "
+                                     "library until you decide.")
 
     def _pick(self):
         items = self.tree.selectedItems()
@@ -615,7 +638,8 @@ class ReviewPage(QWidget):
         sh = hbox(spacing=12); sh.addWidget(label("Spectrogram", "h2"))
         self.btn_preview = button("▶  Preview the drop", "small", lambda: self.spectrum.play_preview())
         self.btn_preview.setToolTip("Plays 20 seconds starting just before the drop")
-        sh.addWidget(self.btn_preview); sh.addStretch(1)
+        self.btn_preview.setVisible(False)                 # downloaded tracks play in full; preview lives in Search
+        sh.addStretch(1)
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
         det.addLayout(sh)
         self.spectrum = SpectrumView(180); det.addWidget(self.spectrum)
@@ -788,9 +812,7 @@ class ReviewPage(QWidget):
             if a.get("spectrogram_path") and Path(a["spectrogram_path"]).exists():
                 self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
                                        audio=_audio_path(job), duration_s=f.get("duration_s"))
-                self.spectrum.set_preview(mu.get("drop_s"), mu.get("preview_start_s"), mu.get("preview_len_s") or 20.0)
-                self.btn_preview.setVisible(mu.get("preview_start_s") is not None and _audio_path(job) is not None)
-                self.btn_preview.setText("▶  Preview the drop" if mu.get("drop_s") is not None else "▶  Preview the liveliest part")
+                self.spectrum.set_preview(mu.get("drop_s"), None)        # mark the drop; no preview window here
             else:
                 self.spectrum.clear_view("Spectrogram unavailable." if job["state"] not in J.FINAL else "Staged copy removed.")
             cut = a.get("cutoff_hz")
