@@ -180,10 +180,10 @@ def page(margins=(48, 28, 48, 40), spacing=24, max_width: int = 1180) -> tuple[Q
     """A centred, width-capped content column — the v5 page grid."""
     outer = QWidget(); outer.setObjectName("page")
     row = hbox(outer)
-    row.addStretch(1)
     col = QWidget(); col.setObjectName("page"); col.setMaximumWidth(max_width)
     col.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-    lay = vbox(col, margins, spacing)
+    m = (min(margins[0], 36), margins[1], min(margins[2], 36), margins[3])
+    lay = vbox(col, m, spacing)
     row.addWidget(col, 20)
     row.addStretch(1)
     return outer, lay
@@ -286,7 +286,8 @@ class Sidebar(QWidget):
 
     def set_status(self, message: str, colour: str, detail: str = "") -> None:
         self.dot.setStyleSheet(f"color: {colour};")
-        self.status.setText(message.lower() if len(message) < 40 else message)
+        short = message.split(":")[0].split(". ")[0].strip()
+        self.status.setText((short if len(short) <= 26 else short[:24] + "…").lower())
         self.status.setToolTip(message)
         self.counts.setText(detail)
         self.counts.setVisible(bool(detail))
@@ -612,8 +613,9 @@ class SpectrumView(QLabel):
             pen = p.pen(); pen.setColor(QColor(self._accent)); pen.setWidth(2); pen.setStyle(Qt.DashLine); p.setPen(pen)
             p.drawLine(r.left(), y, r.right(), y)
             p.setPen(QColor("#ffffff"))
-            p.fillRect(r.right() - 112, y - 18, 108, 16, QColor(0, 0, 0, 120))
-            p.drawText(r.right() - 108, y - 6, f"cutoff {self._cutoff / 1000:.1f} kHz")
+            ly = y - 18 if y - 18 >= r.top() + 2 else y + 4
+            p.fillRect(r.right() - 112, ly, 108, 16, QColor(0, 0, 0, 140))
+            p.drawText(r.right() - 108, ly + 12, f"cutoff {self._cutoff / 1000:.1f} kHz")
         # preview window + drop marker
         if self._prev_start is not None and self._duration_ms > 0:
             dur = self._duration_ms / 1000

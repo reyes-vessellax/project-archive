@@ -585,12 +585,15 @@ class ReviewPage(QWidget):
         det.addLayout(head)
 
         det.addWidget(rule())
-        facts = QGridLayout(); facts.setHorizontalSpacing(14); facts.setVerticalSpacing(4)
+        facts = QGridLayout(); facts.setHorizontalSpacing(28); facts.setVerticalSpacing(2)
         self.facts = {}
-        for i, k in enumerate(("BPM", "Key", "Format", "Bitrate", "Rate", "Length", "Channels", "Plays")):
+        for i, k in enumerate(("BPM", "Key", "Length", "Format")):
             facts.addWidget(label(k.upper(), "tag"), 0, i)
-            v = label("–", "monotext"); facts.addWidget(v, 1, i); self.facts[k] = v
+            v = label("–", "tilekey" if k == "Key" else "tile"); facts.addWidget(v, 1, i); self.facts[k] = v
+        for k in ("Bitrate", "Rate", "Channels", "Plays"):           # shown together on one quiet line below
+            self.facts[k] = label("")
         det.addLayout(facts)
+        self.facts_detail = label("", "muted"); det.addWidget(self.facts_detail)
         det.addWidget(rule())
 
         # download progress (only while the track is still coming in)
@@ -704,11 +707,15 @@ class ReviewPage(QWidget):
             self.meta_line.setText(""); self.cover.clear(); self.cover.setVisible(False); self.btn_preview.setVisible(False)
             self.verdict.setText(""); self.verdict_sub.setText("")
             for v in self.facts.values(): v.setText("–")
+            self.facts_detail.setText("")
             self.spectrum.clear_view(""); self.spec_note.setText("")
             return
         d = row_data(job, a, steps or {})
-        src = "from a soulseek user" if job.get("remote_user") else job.get("source_kind", "")
-        self.source.setText(f"{(a or {}).get('facts', {}).get('tags', {}).get('album') or ''}  ·  {src}".strip(" ·").upper())
+        src = "from a soulseek user" if job.get("remote_user") else {"manual": "added by you", "watched": "from your incoming folder"}.get(
+            job.get("source_kind", ""), job.get("source_kind", ""))
+        when = (job.get("updated_at") or "")[11:16]
+        where = {"PROMOTED": "in your library"}.get(job["state"], "in quarantine")
+        self.source.setText(f"{where}  ·  {'checked ' + when if when and a else 'checking'}  ·  {src}".upper())
         self.h1.setText(d["title"]); self.artist.setText(d["artist"])
         busy = job["state"] in (J.STAGING, J.ANALYZING, J.QUEUED)
         if job["state"] == J.QUEUED:
@@ -743,8 +750,12 @@ class ReviewPage(QWidget):
             self.facts["Channels"].setText({1: "Mono", 2: "Stereo"}.get(f.get("channels"), str(f.get("channels") or "?")))
             mu, me = a.get("music") or {}, a.get("meta") or {}
             self.facts["BPM"].setText(f"{mu['bpm']:.2f}".rstrip("0").rstrip(".") if mu.get("bpm") else "–")
-            self.facts["Key"].setText(f"{mu['camelot']}  {mu['key']}" if mu.get("camelot") else "–")
-            self.facts["Key"].setToolTip("Estimated from the audio")
+            muted = T.colours(getattr(self.svc.settings, "theme", "light"))["muted"]
+            self.facts["Key"].setText(f"{mu['camelot']} <span style='font-family: Sora; font-size: 13px; font-weight: 500; color: {muted}'>"
+                                      f"{html.escape(mu.get('key', ''))}</span>" if mu.get("camelot") else "–")
+            self.facts["Key"].setToolTip(mu.get("key", ""))
+            self.facts_key_name = mu.get("key", "")
+            self.facts["Key"].setToolTip("Estimated from the audio (Camelot code and key name)")
             bits = [me.get("label"), me.get("year"), me.get("genre")]
             self.meta_line.setText("  ·  ".join(b for b in bits if b))
             self.meta_line.setToolTip("From " + ", ".join(me.get("sources") or ["the file"]) if me else "")
@@ -756,6 +767,10 @@ class ReviewPage(QWidget):
             played = dec.get("decoded_s")
             dec_ok = a.get("decode_ok") and next((c for c in a["checks"] if c["id"] == "decode"), {}).get("status") != "FAIL"
             self.facts["Plays"].setText("–" if played is None else ("All the way" if dec_ok else f"Stops at {fmt_time(played)}"))
+            self.facts_detail.setText("  ·  ".join(x for x in (self.facts["Bitrate"].text(), self.facts["Rate"].text(),
+                                                             self.facts["Channels"].text(),
+                                                             "plays all the way through" if dec_ok else self.facts["Plays"].text().lower())
+                                                    if x and x not in ("?", "–")))
             if a.get("spectrogram_path") and Path(a["spectrogram_path"]).exists():
                 self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
                                        audio=_audio_path(job), duration_s=f.get("duration_s"))
@@ -770,7 +785,8 @@ class ReviewPage(QWidget):
                 row = QWidget(); hl = hbox(row, (0, 10, 0, 10), 14)
                 word = T.GRADE_WORD[c["status"]]
                 t = label(word.upper(), "tag", word); t.setFixedWidth(56); t.setAlignment(Qt.AlignTop)
-                txt = label(f"<b>{html.escape(c['title'])}</b> — <span style='color: palette(mid)'>{html.escape(c['message'])}</span>", wrap=True)
+                muted = T.colours(getattr(self.svc.settings, "theme", "light"))["muted"]
+                txt = label(f"<b>{html.escape(c['title'])}</b> — <span style='color: {muted}'>{html.escape(c['message'])}</span>", wrap=True)
                 txt.setTextFormat(Qt.RichText)
                 hl.addWidget(t); hl.addWidget(txt, 1)
                 self.checks.addWidget(row); self.checks.addWidget(rule())

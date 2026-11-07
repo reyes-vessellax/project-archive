@@ -41,8 +41,7 @@ class BatchPage(QWidget):
                             "are read. Each track is searched once, then every pick is downloaded into quarantine and checked "
                             "like any other.", "muted", wrap=True))
         self.input = QPlainTextEdit()
-        self.input.setPlaceholderText("https://www.youtube.com/playlist?list=…\n\nor\n\nKessler Avenue - Night Bus (Extended Mix)\n"
-                                      "Mira Vale - Low Tide")
+        self.input.setPlaceholderText("Paste a playlist link, or one track per line:  Artist - Title (Mix)")
         self.input.setFixedHeight(120)
         lay.addWidget(self.input)
         acts = hbox(spacing=10)
@@ -66,6 +65,10 @@ class BatchPage(QWidget):
         for col, w in ((1, 200), (2, 170), (3, 150)):
             h.setSectionResizeMode(col, QHeaderView.Interactive); h.resizeSection(col, w)
         lay.addWidget(self.tree, 1)
+        self.empty = label("Your list shows up here: what we found for each track, how soon it can start, and what "
+                           "you already have.", "faint", wrap=True)
+        lay.addWidget(self.empty)
+        self.tree.setVisible(False)
 
     # ------------------------------------------------------------------ view updates
     def set_running(self, running: bool) -> None:
@@ -79,6 +82,7 @@ class BatchPage(QWidget):
     def set_items(self, name: str, items: list) -> None:
         self.items = items
         self.name.setText(name)
+        self.tree.setVisible(bool(items)); self.empty.setVisible(not items)
         self.tree.clear()
         for it in items:
             self.tree.addTopLevelItem(QTreeWidgetItem(["", "", "", ""]))

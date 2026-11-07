@@ -36,7 +36,7 @@ def reveal_in_folder(path: Path) -> None:
 class LibraryPage(QWidget):
     open_job = Signal(str)
     COLS = ["Title", "Artist", "Mix", "BPM", "Key", "Format", "Bitrate", "Length", "Checked", "Added", "File"]
-    WIDTHS = [220, 150, 110, 64, 56, 70, 90, 60, 90, 130, 260]
+    WIDTHS = [210, 150, 100, 60, 50, 64, 84, 56, 80, 110, 160]
     C_BPM, C_KEY, C_FMT, C_KBPS, C_LEN, C_GRADE, C_ADDED, C_FILE = 3, 4, 5, 6, 7, 8, 9, 10
 
     def __init__(self, svc: ArchiveService):
@@ -46,15 +46,12 @@ class LibraryPage(QWidget):
         outer, lay = page(spacing=18)
         root = vbox(self); root.addWidget(outer)
 
-        srow = hbox(spacing=16)
-        self.q = QLineEdit(); self.q.setObjectName("hero"); self.q.setPlaceholderText("Search your downloads…")
-        self.q.textChanged.connect(self._filter)
-        srow.addWidget(self.q, 1)
-        lay.addLayout(srow)
-
         head = hbox(spacing=12)
-        self.title = label("Library", "h2"); head.addWidget(self.title)
-        self.sub = label("", "faint"); head.addWidget(self.sub); head.addStretch(1)
+        self.title = label("Library", "h1"); head.addWidget(self.title, 0, Qt.AlignBottom)
+        self.sub = label("", "mono"); head.addWidget(self.sub, 0, Qt.AlignBottom); head.addStretch(1)
+        self.q = QLineEdit(); self.q.setObjectName("filter"); self.q.setPlaceholderText("Filter by title, artist, label…")
+        self.q.setFixedWidth(300); self.q.textChanged.connect(self._filter)
+        head.addWidget(self.q)
         self.folder_btn = button("Open downloads folder", "ghost", self._open_folder); head.addWidget(self.folder_btn)
         lay.addLayout(head)
         fl = hbox(spacing=10)
@@ -76,6 +73,7 @@ class LibraryPage(QWidget):
         self.tree.setIndentation(0)                          # the drop-down row sits flush with its track
         self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
         hdr = self.tree.header(); hdr.setSectionResizeMode(QHeaderView.Interactive); hdr.setStretchLastSection(True)
+        self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)       # the File column just clips; full path on hover
         for i, w in enumerate(self.WIDTHS):
             self.tree.setColumnWidth(i, w)
         self.tree.sortByColumn(self.C_ADDED, Qt.DescendingOrder)
@@ -136,12 +134,18 @@ class LibraryPage(QWidget):
             if words and not all(w in hay for w in words):
                 continue
             grade = T.GRADE_LONG.get((a or {}).get("overall_status", ""), "")
-            added = (job.get("updated_at") or "")[:16].replace("T", " ")
+            added = (job.get("updated_at") or "")[:10]
             kbps = f"{round(f['bitrate_bps'] / 1000)} {f.get('bitrate_mode') if f.get('bitrate_mode') in ('CBR','VBR') else 'kbps'}" if f.get("bitrate_bps") else ("lossless" if f.get("lossless") else "")
             it = QTreeWidgetItem([title, artist, mix, "", cam, (f.get("container") or "").upper(), kbps,
                                   fmt_time(f["duration_s"]) if f.get("duration_s") else "", grade, added, Path(final).name])
             if bpm:
                 it.setData(self.C_BPM, Qt.DisplayRole, round(float(bpm), 1))      # sorts as a number
+            from PySide6.QtGui import QColor
+            pal = T.colours(getattr(self.svc.settings, "theme", "light"))
+            it.setForeground(self.C_KEY, QColor(pal["accent"]))
+            st = (a or {}).get("overall_status", "")
+            if st:
+                it.setForeground(self.C_GRADE, QColor(pal[{"PASS": "pass_", "WARN": "warn", "FAIL": "fail"}.get(st, "muted")]))
             it.setData(0, Qt.UserRole, job["id"]); it.setData(0, Qt.UserRole + 1, final)
             it.setToolTip(self.C_FILE, final)
             if not Path(final).exists():
@@ -348,7 +352,8 @@ class LibraryPage(QWidget):
         self.p_note.setText(f"Energy reaches about {cut / 1000:.1f} kHz" if cut else "")
         status = a.get("overall_status", "")
         self.facts["Verdict"].setText(T.GRADE_LONG.get(status, "–"))
-        self.facts["Format"].setText((f.get("container") or "?").upper() + (f" ({f['codec']})" if f.get("codec") else ""))
+        fmt = (f.get("container") or "?").upper()
+        self.facts["Format"].setText(fmt if (f.get("codec") or "").upper().startswith(fmt[:3]) or not f.get("codec") else f"{fmt} ({f['codec']})")
         self.facts["Bitrate"].setText(it.text(self.C_KBPS) or "–")
         self.facts["Rate"].setText(f"{f['sample_rate_hz'] / 1000:g} kHz" if f.get("sample_rate_hz") else "–")
         self.facts["Length"].setText(it.text(self.C_LEN) or "–")
@@ -357,7 +362,8 @@ class LibraryPage(QWidget):
         self.facts["Added"].setText(it.text(self.C_ADDED))
         self.p_preview.setVisible(exists and mu.get("preview_start_s") is not None)
         self.p_preview.setText("▶  Preview the drop" if mu.get("drop_s") is not None else "▶  Preview the liveliest part")
-        self.facts["File"].setText(final + ("" if exists else "  (moved or deleted)"))
+        self.facts["File"].setText(Path(final).name + ("" if exists else "  (moved or deleted)"))
+        self.facts["File"].setToolTip(final)
         while self.checks_host.count():
             w = self.checks_host.takeAt(0).widget()
             if w:
@@ -366,7 +372,9 @@ class LibraryPage(QWidget):
             row = QWidget(); hl = hbox(row, (0, 2, 0, 2), 10)
             word = T.GRADE_WORD.get(c["status"], c["status"])
             tag = label(word.upper(), "tag", word); tag.setFixedWidth(56); tag.setAlignment(Qt.AlignTop)
-            txt = label(f"<b>{c['title']}</b> — <span style='color: palette(mid)'>{c['message']}</span>", wrap=True)
+            import html as _h
+            muted = T.colours(getattr(self.svc.settings, "theme", "light"))["muted"]
+            txt = label(f"<b>{_h.escape(c['title'])}</b> — <span style='color: {muted}'>{_h.escape(c['message'])}</span>", wrap=True)
             hl.addWidget(tag); hl.addWidget(txt, 1)
             self.checks_host.addWidget(row)
         self.btn_reveal.setEnabled(exists)

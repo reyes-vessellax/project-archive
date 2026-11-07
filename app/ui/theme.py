@@ -77,6 +77,8 @@ QLabel#big {{ font-family: {display}; font-size: 34px; font-weight: 800; }}
 QLabel#muted {{ color: {c['muted']}; }}
 QLabel#faint {{ color: {c['faint']}; }}
 QLabel#mono {{ font-family: {mono}; font-size: 12px; color: {c['muted']}; }}
+QLabel#tile {{ font-family: {mono}; font-size: 24px; font-weight: 600; }}
+QLabel#tilekey {{ font-family: {mono}; font-size: 24px; font-weight: 600; color: {c['accent']}; }}
 QLabel#monotext {{ font-family: {mono}; font-size: 13px; }}
 QLabel#steplight {{ font-size: 18px; font-weight: 800; color: {c['faint']}; }}
 QLabel#steplight[tag="Good"] {{ color: {c['pass_']}; }}
@@ -102,9 +104,11 @@ QLabel#verdict[tag="Broken"] {{ color: {c['fail']}; }}
 QLineEdit {{ background: transparent; border: none; border-bottom: 1px solid {c['line']}; padding: 8px 2px; font-size: 15px; selection-background-color: {c['accent']}; }}
 QLineEdit:focus {{ border-bottom: 1px solid {c['accent']}; }}
 QLineEdit#hero {{ font-family: {display}; font-size: 28px; font-weight: 600; padding: 12px 2px; }}
+QLineEdit#filter {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 10px; padding: 8px 12px; font-size: 14px; }}
+QLineEdit#filter:focus {{ border: 1px solid {c['accent']}; }}
 QLineEdit#monoinput {{ font-family: {mono}; font-size: 13px; }}
-QPlainTextEdit {{ background: transparent; border: none; border-bottom: 1px solid {c['line']}; padding: 6px 2px; font-size: 15px; }}
-QPlainTextEdit:focus {{ border-bottom: 1px solid {c['accent']}; }}
+QPlainTextEdit {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 10px; padding: 10px 12px; font-size: 14px; }}
+QPlainTextEdit:focus {{ border: 1px solid {c['accent']}; }}
 QSpinBox {{ background: transparent; border: none; border-bottom: 1px solid {c['line']}; padding: 6px 2px; font-size: 15px; }}
 QCheckBox {{ spacing: 10px; font-size: 14px; }}
 QCheckBox::indicator {{ width: 18px; height: 18px; border: 1px solid {c['faint']}; border-radius: 4px; background: {c['panel']}; }}
@@ -114,18 +118,19 @@ QComboBox QAbstractItemView {{ background: {c['panel']}; border: 1px solid {c['l
 
 /* buttons */
 QPushButton {{ font-weight: 700; font-size: 14px; border-radius: 22px; padding: 0 20px; min-height: 44px; }}
-QPushButton#primary {{ background: {c['text']}; color: {c['on_text']}; border: none; }}
-QPushButton#primary:hover {{ background: {c['accent']}; color: {c['accent_text']}; }}
+QPushButton#primary {{ background: {c['accent']}; color: {c['accent_text']}; border: none; }}
+QPushButton#primary:hover {{ background: {c['text']}; color: {c['on_text']}; }}
 QPushButton#primary:disabled {{ background: {c['bar']}; color: {c['faint']}; }}
 QPushButton#accent {{ background: {c['accent']}; color: {c['accent_text']}; border: none; }}
 QPushButton#accent:hover {{ background: {c['text']}; color: {c['on_text']}; }}
-QPushButton#ghost {{ background: transparent; color: {c['muted']}; border: 1px solid {c['line']}; min-height: 40px; font-size: 13px; }}
-QPushButton#ghost:hover {{ color: {c['text']}; }}
-QPushButton#danger {{ background: transparent; color: {c['fail']}; border: 1px solid {c['line']}; }}
+QPushButton#ghost {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['line']}; border-radius: 20px; min-height: 40px; max-height: 40px; font-size: 13px; }}
+QPushButton#ghost:hover {{ border-color: {c['accent']}; }}
+QPushButton#danger {{ background: {c['panel']}; color: {c['fail']}; border: 1px solid {c['line']}; }}
 QPushButton#danger:hover {{ border-color: {c['fail']}; }}
 QPushButton#link {{ background: none; border: none; color: {c['text']}; font-weight: 600; font-size: 13px; min-height: 0; padding: 4px 0; text-align: left; }}
 QPushButton#link:hover {{ color: {c['muted']}; }}
-QPushButton#small {{ min-height: 30px; padding: 0 12px; font-size: 12px; border-radius: 15px; background: {c['text']}; color: {c['on_text']}; border: none; }}
+QPushButton#small {{ min-height: 30px; max-height: 30px; padding: 0 14px; font-size: 12px; border-radius: 15px; background: {c['accent']}; color: {c['accent_text']}; border: none; }}
+QPushButton#small:hover {{ background: {c['text']}; color: {c['on_text']}; }}
 QPushButton#play {{ background: {c['accent']}; color: {c['accent_text']}; border: none; border-radius: 13px; font-size: 10px; padding: 0; min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; }}
 QPushButton#play:hover {{ background: {c['text']}; color: {c['bg']}; }}
 QPushButton#x {{ min-height: 0; padding: 0; border: none; background: none; color: {c['faint']}; font-size: 15px; font-weight: 500; min-width: 18px; max-width: 18px; max-height: 18px; }}
