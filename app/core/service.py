@@ -229,7 +229,7 @@ class ArchiveService:
                 c.note = "Extension mismatch"
         return res
 
-    def request_download(self, cand: Candidate) -> dict:
+    def request_download(self, cand: Candidate, playlist: str = "") -> dict:
         """User picked a search result: ask the client to download it and track it as a QUEUED job."""
         adapter = self._adapter_or_block()
         with self._lock:
@@ -247,7 +247,7 @@ class ArchiveService:
             expires = (datetime.now(timezone.utc) + timedelta(hours=s.retention_hours)).isoformat(timespec="seconds")
             self.db.insert_job(id=job_id, source_kind=cand.source_kind, source_path=None, original_name=name,
                                state=J.QUEUED, expires_at=expires, remote_user=cand.user, remote_path=cand.remote_path,
-                               remote_size=cand.size, progress=0.0, message="Requested")
+                               remote_size=cand.size, progress=0.0, message="Requested", playlist=playlist or None)
         try:
             t = adapter.request_download(cand)
         except ConnectorError as e:
@@ -422,6 +422,8 @@ class ArchiveService:
                 raise ActionBlocked("The staged file changed after it was checked. Re-run the analysis.")
 
             library = self.settings.downloads_dir()              # <library>/<app name>, made on first download
+            if job.get("playlist") and self.settings.playlist_folders:
+                library = library / safe_filename(job["playlist"])  # one folder per batch playlist
             library.mkdir(parents=True, exist_ok=True)
             target = unique_path(library, safe_filename(job["original_name"]))
             self._transition(job, J.PROMOTING)

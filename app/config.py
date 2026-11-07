@@ -58,6 +58,7 @@ class Settings:
     extensions: list[str] = field(default_factory=lambda: ["mp3", "wav", "flac", "aiff", "aif"])
     ffmpeg_path: str = ""                     # empty = bundled copy, then PATH
     max_concurrent_analyses: int = 5
+    playlist_folders: bool = True             # batch downloads go to <library>/<app>/<playlist name>/
     online_lookup: bool = True                # look up cover art / label / genre by artist + title
     keep_spectrograms: int = 100              # library spectrograms kept on disk (~0.8 MB each); older ones are redrawn on demand          # analysis slots; further tracks wait in the queue
     setup_done: bool = False                  # first-run setup (library folder + sharing) completed

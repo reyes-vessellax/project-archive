@@ -249,3 +249,13 @@ def test_deleted_track_leaves_ready_list(service, fixtures):
     service.analyze(job["id"])
     service.reject(job["id"])
     assert job["id"] not in [j["id"] for j in service.jobs()]
+
+
+@needs_ffmpeg
+def test_batch_track_saves_into_its_playlist_folder(service, fixtures):
+    job = service.stage(fixtures["mp3_320"])
+    service.db.update_job(job["id"], playlist="Friday warm-up")
+    service.analyze(job["id"])
+    target = service.promote(job["id"])
+    assert target.parent.name == "Friday warm-up"
+    assert target.parent.parent == service.settings.downloads_dir()
