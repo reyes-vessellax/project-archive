@@ -433,6 +433,37 @@ class PlayButton(QPushButton):
         p.end()
 
 
+class LevelStrip(QWidget):
+    """A row of LED segments (green -> amber -> red) showing the level while a track plays."""
+    SEGMENTS = 40
+
+    def __init__(self):
+        super().__init__()
+        self.setFixedHeight(12)
+        self._level, self._shown = 0.0, 0.0
+
+    def set_level(self, v: float):
+        self._level = max(0.0, min(1.0, v))
+        # fast attack, slower release, like a real meter
+        self._shown = self._level if self._level > self._shown else self._shown * 0.86 + self._level * 0.14
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
+        n, gap = self.SEGMENTS, 3
+        w = (self.width() - gap * (n - 1)) / n
+        lit = int(round(self._shown * n))
+        off = QColor(T.colours(getattr(self, "_theme", "light"))["bar"])
+        for i in range(n):
+            if i < lit:
+                c = QColor("#2fb562") if i < n * 0.55 else QColor("#ffb000") if i < n * 0.75 else QColor("#dc143c")
+            else:
+                c = off
+            p.setPen(Qt.NoPen); p.setBrush(c)
+            p.drawRoundedRect(QRectF(i * (w + gap), 2, w, 8), 2, 2)
+        p.end()
+
+
 class SpectrumView(QLabel):
     """The PNG from the analysis with a kHz axis and the cutoff line, drawn in the theme's accent.
     When given the audio file, a small play button appears: press it and a playhead crawls across the
@@ -481,12 +512,27 @@ class SpectrumView(QLabel):
         if audio != self._audio:
             self.stop()
         self._pix, self._nyq, self._cutoff = pix, (sample_rate or 44100) / 2, cutoff_hz
+        self._levels = None                                   # per-column loudness, computed on first use
         self._audio = audio if audio and Path(audio).exists() else None
         self._duration_ms = int((duration_s or 0) * 1000)
         self.setText("")
         self.play_btn.setVisible(self._audio is not None)
         self._place_button()
         self.update()
+
+    def current_level(self) -> float:
+        """0..1 loudness at the playhead, read from the spectrogram's brightness (what the level strip shows)."""
+        if self._pix is None or not self.is_playing() or self._duration_ms <= 0:
+            return 0.0
+        if self._levels is None:
+            import numpy as np
+            img = self._pix.toImage().convertToFormat(self._pix.toImage().Format.Format_Grayscale8)
+            a = np.frombuffer(img.constBits(), np.uint8).reshape(img.height(), img.bytesPerLine())[:, :img.width()]
+            col = a.astype(float).mean(axis=0)
+            lo, hi = np.percentile(col, 5), np.percentile(col, 99)
+            self._levels = np.clip((col - lo) / max(1.0, hi - lo), 0, 1)
+        i = int(len(self._levels) * min(0.999, self.position_ms() / self._duration_ms))
+        return float(self._levels[i])
 
     def set_preview(self, drop_s: float | None, start_s: float | None, length_s: float = 20.0):
         """Mark the drop and the 20-second preview window on the picture."""

@@ -15,7 +15,7 @@ from ..core import jobs as J
 from ..core.rules import fmt_time
 from ..core.service import ArchiveService
 from . import theme as T
-from .widgets import keep_scroll, smooth, QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
+from .widgets import keep_scroll, smooth, LevelStrip, QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
 
 
 # ------------------------------------------------------------------ shared: a job -> row data
@@ -585,11 +585,19 @@ class ReviewPage(QWidget):
         det.addLayout(head)
 
         det.addWidget(rule())
-        facts = QGridLayout(); facts.setHorizontalSpacing(28); facts.setVerticalSpacing(2)
-        self.facts = {}
-        for i, k in enumerate(("BPM", "Key", "Length", "Format")):
-            facts.addWidget(label(k.upper(), "tag"), 0, i)
-            v = label("–", "tilekey" if k == "Key" else "tile"); facts.addWidget(v, 1, i); self.facts[k] = v
+        facts = hbox(spacing=12)
+        self.facts, self.fact_subs = {}, {}
+        from PySide6.QtWidgets import QFrame, QGraphicsDropShadowEffect
+        for k in ("BPM", "Key", "Length", "Format"):
+            tile = QFrame(); tile.setObjectName("display")
+            tl = vbox(tile, (16, 12, 16, 12), 2)
+            tl.addWidget(label(k.upper(), "disptag"))
+            v = label("–", "tile"); tl.addWidget(v)
+            glow = QGraphicsDropShadowEffect(v); glow.setOffset(0, 0); glow.setBlurRadius(14)
+            glow.setColor(QColor(255, 176, 0, 110)); v.setGraphicsEffect(glow)             # the amber readout glow
+            sub = label("", "dispsub"); tl.addWidget(sub)
+            self.facts[k], self.fact_subs[k] = v, sub
+            facts.addWidget(tile, 1)
         for k in ("Bitrate", "Rate", "Channels", "Plays"):           # shown together on one quiet line below
             self.facts[k] = label("")
         det.addLayout(facts)
@@ -611,6 +619,11 @@ class ReviewPage(QWidget):
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
         det.addLayout(sh)
         self.spectrum = SpectrumView(180); det.addWidget(self.spectrum)
+        lv = hbox(spacing=12); lv.addWidget(label("LEVEL", "disptag"))
+        self.level = LevelStrip(); lv.addWidget(self.level, 1)
+        det.addLayout(lv)
+        self._level_timer = QTimer(self, interval=50, timeout=lambda: self.level.set_level(self.spectrum.current_level()))
+        self._level_timer.start()
 
         self.checks_host = QWidget(); self.checks_host.setObjectName("page")
         self.checks = vbox(self.checks_host, spacing=0)
@@ -704,6 +717,7 @@ class ReviewPage(QWidget):
                 item.widget().deleteLater()
         if not job:
             self.source.setText(""); self.h1.setText("Pick a track from the list"); self.artist.setText("")
+            for v in self.fact_subs.values(): v.setText("")
             self.meta_line.setText(""); self.cover.clear(); self.cover.setVisible(False); self.btn_preview.setVisible(False)
             self.verdict.setText(""); self.verdict_sub.setText("")
             for v in self.facts.values(): v.setText("–")
@@ -750,9 +764,8 @@ class ReviewPage(QWidget):
             self.facts["Channels"].setText({1: "Mono", 2: "Stereo"}.get(f.get("channels"), str(f.get("channels") or "?")))
             mu, me = a.get("music") or {}, a.get("meta") or {}
             self.facts["BPM"].setText(f"{mu['bpm']:.2f}".rstrip("0").rstrip(".") if mu.get("bpm") else "–")
-            muted = T.colours(getattr(self.svc.settings, "theme", "light"))["muted"]
-            self.facts["Key"].setText(f"{mu['camelot']} <span style=\"font-family: Open Sans; font-size: 13px; font-weight: 500; color: {muted}\">"
-                                      f"{html.escape(mu.get('key', ''))}</span>" if mu.get("camelot") else "–")
+            self.facts["Key"].setText(mu["camelot"] if mu.get("camelot") else "–")
+            self.fact_subs["Key"].setText(mu.get("key", "") if mu.get("camelot") else "")
             self.facts["Key"].setToolTip(mu.get("key", ""))
             self.facts_key_name = mu.get("key", "")
             self.facts["Key"].setToolTip("Estimated from the audio (Camelot code and key name)")
@@ -767,6 +780,7 @@ class ReviewPage(QWidget):
             played = dec.get("decoded_s")
             dec_ok = a.get("decode_ok") and next((c for c in a["checks"] if c["id"] == "decode"), {}).get("status") != "FAIL"
             self.facts["Plays"].setText("–" if played is None else ("All the way" if dec_ok else f"Stops at {fmt_time(played)}"))
+            self.fact_subs["Format"].setText(self.facts["Rate"].text() if self.facts["Rate"].text() not in ("?", "–") else "")
             self.facts_detail.setText("  ·  ".join(x for x in (self.facts["Bitrate"].text(), self.facts["Rate"].text(),
                                                              self.facts["Channels"].text(),
                                                              "plays all the way through" if dec_ok else self.facts["Plays"].text().lower())

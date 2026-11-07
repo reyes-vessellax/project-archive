@@ -8,9 +8,10 @@ from pathlib import Path
 import numpy as np
 
 HEIGHT = 512
-# dark blue -> purple -> orange -> pale yellow
-STOPS = np.array([[0, 0, 4], [40, 11, 84], [101, 21, 110], [159, 42, 99],
-                  [212, 72, 66], [245, 125, 21], [250, 193, 39], [252, 255, 164]], dtype=np.float32)
+# warm "amber readout" map (design v7): black -> deep brown -> orange -> amber -> pale gold.
+# Monotonic in brightness, so quiet vs loud and the frequency cutoff stay easy to read.
+STOPS = np.array([[8, 5, 3], [42, 18, 4], [98, 40, 3], [168, 78, 0], [222, 128, 6],
+                  [255, 176, 0], [255, 214, 92], [255, 244, 200]], dtype=np.float32)
 
 
 def _colormap(v: np.ndarray) -> np.ndarray:

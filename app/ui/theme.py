@@ -19,12 +19,16 @@ MONO = "IBM Plex Mono"        # measured values and labels
 # Light: crimson leads (yellow text on white is unreadable). Dark: true black with yellow leading, like the logo.
 # Verdict colours stay green / amber / red so Good / Have a look / Broken read at a glance.
 PALETTES = {
-    "light": dict(bg="#fafafa", panel="#ffffff", line="#e6e6e6", text="#0a0a0a", muted="#5c5c5c", faint="#8f8f8f",
-                  accent="#dc143c", soft="#fdedf0", pass_="#1f8a4c", warn="#a8650f", fail="#a3162f", bar="#ececec",
-                  on_text="#ffffff", accent_text="#ffffff", brand_yellow="#ffd700"),
+    "light": dict(bg="#f6f4ef", panel="#fbfaf7", line="#e4e0d7", text="#141414", muted="#5f5a50", faint="#8a857a",
+                  accent="#dc143c", soft="#fdedf0", pass_="#1f8a4c", warn="#a8650f", fail="#a3162f", bar="#ebe7de",
+                  on_text="#ffffff", accent_text="#ffffff", brand_yellow="#ffd700",
+                  nav_bg="#151515", nav_text="#ffd24a", cta_bg="#151515", cta_text="#ffd24a",
+                  disp_bg="#161616", disp_line="#2c2c2c", disp_text="#ffb000", disp_label="#8a8476", disp_sub="#b08d4a"),
     "dark": dict(bg="#000000", panel="#0f0f0f", line="#262626", text="#ffffff", muted="#a3a3a3", faint="#6e6e6e",
                  accent="#ffd700", soft="#211c00", pass_="#4cc38a", warn="#f0a742", fail="#ff5a6e", bar="#1f1f1f",
-                 on_text="#000000", accent_text="#000000", brand_yellow="#ffd700"),
+                 on_text="#000000", accent_text="#000000", brand_yellow="#ffd700",
+                 nav_bg="#1c1c1c", nav_text="#ffd24a", cta_bg="#ffd700", cta_text="#000000",
+                 disp_bg="#141414", disp_line="#2e2e2e", disp_text="#ffb000", disp_label="#8a8476", disp_sub="#b08d4a"),
 }
 
 # Word tags shown on queue rows and checks (design v5 wording).
@@ -47,6 +51,7 @@ def colours(theme: str) -> dict:
 
 def stylesheet(theme: str) -> str:
     c = colours(theme)
+    grain = (Path(__file__).resolve().parent / "brand_assets" / f"grain-{'dark' if theme == 'dark' else 'light'}.png").as_posix()
     sans = f'"{SANS}", "Segoe UI", system-ui, sans-serif'
     display = f'"{DISPLAY}", "{SANS}", "Segoe UI", system-ui, sans-serif'
     mono = f'"{MONO}", "Consolas", monospace'
@@ -56,7 +61,8 @@ def stylesheet(theme: str) -> str:
     )
     return f"""
 * {{ font-family: {sans}; font-size: 13px; color: {c['text']}; }}
-QMainWindow, QDialog, QWidget#page, QWidget#root {{ background: {c['bg']}; }}
+QMainWindow, QDialog {{ background-color: {c['bg']}; background-image: url("{grain}"); }}
+QWidget#page, QWidget#root {{ background: transparent; }}
 QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
 QToolTip {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['line']}; padding: 4px 8px; }}
 
@@ -79,7 +85,7 @@ QLabel#pill[tone="accent"] {{ background: {c['soft']}; color: {c['accent']}; }}
 QLabel#pill[tone="fail"] {{ color: {c['fail']}; }}
 
 /* sidebar (design v6) */
-QWidget#sidebar {{ background: {c['panel']}; border-right: 1px solid {c['line']}; }}
+QWidget#sidebar {{ background: transparent; border-right: 1px solid {c['line']}; }}
 
 /* top bar */
 QWidget#topbar {{ background: {c['bg']}; }}
@@ -98,8 +104,11 @@ QLabel#big {{ font-family: {display}; font-size: 34px; font-weight: 700; }}
 QLabel#muted {{ color: {c['muted']}; }}
 QLabel#faint {{ color: {c['faint']}; }}
 QLabel#mono {{ font-family: {mono}; font-size: 12px; color: {c['muted']}; }}
-QLabel#tile {{ font-family: {mono}; font-size: 24px; font-weight: 600; }}
-QLabel#tilekey {{ font-family: {mono}; font-size: 24px; font-weight: 600; color: {c['accent']}; }}
+QFrame#display {{ background: {c['disp_bg']}; border: 1px solid {c['disp_line']}; border-radius: 12px; }}
+QFrame#display QLabel {{ background: transparent; }}
+QLabel#disptag {{ font-family: {mono}; font-size: 10px; letter-spacing: 2px; color: {c['disp_label']}; }}
+QLabel#tile, QLabel#tilekey {{ font-family: {mono}; font-size: 28px; font-weight: 500; color: {c['disp_text']}; }}
+QLabel#dispsub {{ font-family: {mono}; font-size: 11px; color: {c['disp_sub']}; }}
 QLabel#monotext {{ font-family: {mono}; font-size: 13px; }}
 QLabel#steplight {{ font-size: 18px; font-weight: 800; color: {c['faint']}; }}
 QLabel#steplight[tag="Good"] {{ color: {c['pass_']}; }}
@@ -139,8 +148,8 @@ QComboBox QAbstractItemView {{ background: {c['panel']}; border: 1px solid {c['l
 
 /* buttons */
 QPushButton {{ font-weight: 700; font-size: 14px; border-radius: 22px; padding: 0 20px; min-height: 44px; }}
-QPushButton#primary {{ background: {c['accent']}; color: {c['accent_text']}; border: none; }}
-QPushButton#primary:hover {{ background: {c['text']}; color: {c['on_text']}; }}
+QPushButton#primary {{ background: {c['cta_bg']}; color: {c['cta_text']}; border: none; }}
+QPushButton#primary:hover {{ background: {c['accent']}; color: {c['accent_text']}; }}
 QPushButton#primary:disabled {{ background: {c['bar']}; color: {c['faint']}; }}
 QPushButton#accent {{ background: {c['accent']}; color: {c['accent_text']}; border: none; }}
 QPushButton#accent:hover {{ background: {c['text']}; color: {c['on_text']}; }}
@@ -160,7 +169,7 @@ QPushButton#chip {{ background: {c['panel']}; border: 1px solid {c['line']}; bor
 QPushButton#chip:checked {{ background: {c['soft']}; border-color: {c['accent']}; color: {c['accent']}; }}
 QPushButton#navitem {{ background: none; border: none; border-radius: 8px; text-align: left; padding: 9px 12px; min-height: 0; color: {c['muted']}; font-weight: 600; font-size: 14px; }}
 QPushButton#navitem:hover {{ color: {c['text']}; }}
-QPushButton#navitem[active="true"] {{ background: {c['soft']}; color: {c['text']}; }}
+QPushButton#navitem[active="true"] {{ background: {c['nav_bg']}; color: {c['nav_text']}; }}
 
 /* rows and lists */
 QWidget#row {{ background: transparent; border-bottom: 1px solid {c['line']}; }}

@@ -191,6 +191,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "home"):
             accent = T.colours(self.svc.settings.theme)["accent"]
             self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent); self.library.set_accent(accent)
+            self.review.level._theme = self.svc.settings.theme; self.review.level.update()
         if hasattr(self, "topbar"):
             self._brand_theme()
 
