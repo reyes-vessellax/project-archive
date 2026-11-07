@@ -4,6 +4,27 @@ All notable changes to DEADWAX (working name; formerly Project Archive). Dates a
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.6.0 (2026-11-07)
+
+- **New look:** sidebar navigation (Home, Search, Ready, Library, Batch), light and dark.
+- **BPM, key and the drop:** measured from the audio during the check. Key shown in Camelot (8A) and
+  classic notation; "Preview the drop" plays 20 seconds starting 2 s before the first big drop (or the
+  liveliest stretch when there isn't one). The drop is marked on the spectrogram.
+- **Cover art and details:** the file's own tags first, then Deezer, MusicBrainz/Cover Art Archive and
+  iTunes fill the gaps (artist + title only are sent; weak matches are ignored).
+- **Rekordbox-ready tags** on Download to Library: title with mix, artist, album, label, genre, year,
+  BPM, key, comment, embedded cover. Existing tags are never overwritten.
+- **Search:** filters (Lossless, MP3 320, Ready now, mix kind, show private) and plain-English
+  availability: Ready now · ~30 sec, Short wait · few min, Long wait · 10+ min, Very long wait, Busy.
+- **Library:** BPM and Key columns, BPM range and "mixes with" (Camelot-compatible) filters, cover and
+  drop preview in the drop-down; no more jumping to the review page.
+- **Ready list:** saved or deleted tracks leave by themselves; the next waiting track opens.
+- **Batch:** paste a YouTube / SoundCloud / Spotify / Apple Music playlist link or a list, or pick a
+  folder of files to upgrade; one spaced search per track; download and check all picks.
+- **Auto save:** reopens where you left off (page, selection, search + filters, batch list, window).
+- **Updater:** signed updates (Ed25519), verified downloads, install on restart, old copy kept until
+  the new one starts. Off until the download location is set.
+
 ## Unreleased
 
 

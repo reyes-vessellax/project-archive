@@ -166,6 +166,7 @@ class MainWindow(QMainWindow):
         self.home.open_job.connect(self._open_job); self.home.remove_job.connect(self._remove_entry)
         self.home.review_all.connect(lambda: self._tab("ready")); self.home.add_files.connect(self._pick_files)
         self.searchp.pick.connect(self._pick_candidate)
+        self.searchp.filters_changed.connect(lambda: self._save_session())
         self.review.select.connect(self._open_job)
         self.review.promote.connect(self._promote); self.review.reject.connect(self._reject)
         self.review.cancel.connect(self._cancel); self.review.rerun.connect(self._recheck)
@@ -515,6 +516,9 @@ class MainWindow(QMainWindow):
         s.selected_job = self.selected or ""
         g = self.normalGeometry() if self.isMaximized() else self.geometry()
         s.window, s.maximized = [g.x(), g.y(), g.width(), g.height()], self.isMaximized()
+        s.search_text = self.searchp.q.text()
+        from dataclasses import asdict
+        s.filters = asdict(self.searchp.filters)
         s.batch_name = self.batchp.name.text()
         s.batch_items = [it.to_dict() for it in self.batchp.items]
         self.sessions.save(s, now=now)
@@ -530,6 +534,8 @@ class MainWindow(QMainWindow):
                              detail="" if st in ("searching", "found") else d.get("detail", ""))
                 items.append(it)
             self.batchp.set_items(s.batch_name, items)
+        self.searchp.q.setText(s.search_text or "")
+        self.searchp.set_filters(s.filters or {})
         if s.selected_job and self.svc.db.job(s.selected_job):
             self.selected = s.selected_job
         if s.page in ("queue", "search", "ready", "library", "batch"):

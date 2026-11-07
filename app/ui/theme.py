@@ -130,6 +130,8 @@ QPushButton#play {{ background: {c['accent']}; color: {c['accent_text']}; border
 QPushButton#play:hover {{ background: {c['text']}; color: {c['bg']}; }}
 QPushButton#x {{ min-height: 0; padding: 0; border: none; background: none; color: {c['faint']}; font-size: 15px; font-weight: 500; min-width: 18px; max-width: 18px; max-height: 18px; }}
 QPushButton#x:hover {{ color: {c['fail']}; }}
+QPushButton#chip {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 15px; padding: 0 12px; min-height: 30px; max-height: 30px; font-size: 12px; font-weight: 600; color: {c['text']}; }}
+QPushButton#chip:checked {{ background: {c['soft']}; border-color: {c['accent']}; color: {c['accent']}; }}
 QPushButton#navitem {{ background: none; border: none; border-radius: 8px; text-align: left; padding: 9px 12px; min-height: 0; color: {c['muted']}; font-weight: 600; font-size: 14px; }}
 QPushButton#navitem:hover {{ color: {c['text']}; }}
 QPushButton#navitem[active="true"] {{ background: {c['soft']}; color: {c['text']}; }}

@@ -21,6 +21,8 @@ def self_test() -> int:
                 raise RuntimeError(f"{tool} didn't run")
             say(f"{tool} -> {exe}")
         import app.ui.main_window  # noqa: F401  (imports Qt and the whole UI)
+        import cryptography, mutagen, yt_dlp  # noqa: F401,E401  (tags, signed updates, playlist links)
+        say(f"components: mutagen {mutagen.version_string}, yt-dlp {yt_dlp.version.__version__}, cryptography {cryptography.__version__}")
         say("audio playback: " + _audio_probe(exe_ffmpeg=find_tool("ffmpeg")))
         # The bundled Soulseek engine: generate a throwaway config, start it, make sure the API answers, stop it.
         import tempfile

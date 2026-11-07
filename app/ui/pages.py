@@ -214,12 +214,13 @@ PAGE_ROWS = 100
 
 class SearchPage(QWidget):
     search = Signal(str)
+    filters_changed = Signal()
 
     def _theme(self) -> str:
         return getattr(self.svc.settings, "theme", "light")
     pick = Signal(object)        # Candidate
-    COLS = ["#", "Title", "Mix", "Artist", "Folder", "User", "Size", "Rate", "Length", "Speed"]
-    WIDTHS = [40, 240, 120, 150, 150, 100, 70, 60, 60, 190]
+    COLS = ["#", "Title", "Mix", "Artist", "Folder", "User", "Size", "Rate", "Length", "Availability"]
+    WIDTHS = [36, 180, 110, 140, 90, 80, 70, 56, 56, 170]
 
     def __init__(self, svc: ArchiveService):
         super().__init__()
@@ -238,6 +239,24 @@ class SearchPage(QWidget):
         self.state = label("", "faint"); head.addWidget(self.state); head.addStretch(1)
         head.addWidget(label("What you see is what each source reports. Every file is checked before it can reach your library.", "faint"))
         lay.addLayout(head)
+        # filters (design v6): format, ready now, mix kind, private
+        from ..core.availability import Filters
+        self.filters = Filters()
+        fr = hbox(spacing=8)
+        self._fbtns = {}
+        for key, text in (("lossless", "Lossless"), ("mp3_320", "MP3 320"), ("ready_now", "Ready now"), ("show_private", "Show private")):
+            b = button(text, "chip", lambda _=False, k=key: self._toggle_filter(k)); b.setCheckable(True)
+            self._fbtns[key] = b; fr.addWidget(b)
+        from PySide6.QtWidgets import QComboBox
+        self.mix_box = QComboBox()
+        for text, val in (("Any mix", ""), ("Extended", "extended"), ("Original", "original"), ("Radio edit", "radio"),
+                          ("Dub", "dub"), ("Remix", "remix"), ("Edit", "edit")):
+            self.mix_box.addItem(text, val)
+        self.mix_box.currentIndexChanged.connect(lambda _: self._set_mix(self.mix_box.currentData()))
+        fr.addWidget(self.mix_box); fr.addStretch(1)
+        self.hidden_note = label("", "faint"); fr.addWidget(self.hidden_note)
+        lay.addLayout(fr)
+        self._last_res = None; self._last_searching = False
         self.tree = QTreeWidget(); self.tree.setColumnCount(len(self.COLS)); self.tree.setHeaderLabels(self.COLS)
         self.tree.setRootIsDecorated(False); self.tree.setSortingEnabled(False); self.tree.setAlternatingRowColors(False)
         self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
@@ -333,9 +352,39 @@ class SearchPage(QWidget):
         self.search_btn.setText("Search"); self.search_btn.setEnabled(self.q.isEnabled())
         self._set_foot()
 
-    def show_results(self, res: SearchResult, searching: bool, idle: str = ""):
-        if not searching:
+    # ------------------------------------------------------------------ filters
+    def _toggle_filter(self, key: str):
+        setattr(self.filters, key, self._fbtns[key].isChecked())
+        self._refilter()
+
+    def _set_mix(self, kind: str):
+        self.filters.mix = kind or ""
+        self._refilter()
+
+    def set_filters(self, d: dict):
+        from ..core.availability import Filters
+        self.filters = Filters(**{k: v for k, v in (d or {}).items() if k in Filters.__dataclass_fields__})
+        for k, b in self._fbtns.items():
+            b.blockSignals(True); b.setChecked(bool(getattr(self.filters, k))); b.blockSignals(False)
+        i = self.mix_box.findData(self.filters.mix)
+        self.mix_box.blockSignals(True); self.mix_box.setCurrentIndex(max(0, i)); self.mix_box.blockSignals(False)
+
+    def _refilter(self):
+        if self._last_res is not None:
+            self.show_results(self._last_res, self._last_searching, _refilter=True)
+        self.filters_changed.emit()
+
+    def show_results(self, res: SearchResult, searching: bool, idle: str = "", _refilter: bool = False):
+        if not searching and not _refilter:
             self.end_search()
+        if not idle:
+            self._last_res, self._last_searching = res, searching
+            from dataclasses import replace
+            from ..core.availability import apply as apply_filters
+            kept, hidden, private = apply_filters(res.candidates, self.filters)
+            bits = ([f"{hidden} hidden by filters"] if hidden else []) + ([f"{private} private hidden"] if private else [])
+            self.hidden_note.setText(" · ".join(bits))
+            res = replace(res, candidates=kept)
         n = len(res.candidates)
         if idle:
             self.title.setText("Search"); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
@@ -461,6 +510,11 @@ class SearchPage(QWidget):
 
 
 def _speed(c: Candidate) -> str:
+    from ..core.availability import availability
+    return availability(c).label
+
+
+def _speed_raw(c: Candidate) -> str:
     if c.locked:
         return "Locked"
     rate = f"{c.upload_speed / 1e6:.1f} MB/s" if (c.upload_speed or 0) >= 1e6 else (f"{c.upload_speed / 1e3:.0f} kB/s" if c.upload_speed else "")
