@@ -4,7 +4,10 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
-## 0.6.1 (2026-11-07) — one master copy: Reyes's 0.6.0 + Chris's beta work + Windows fixes
+## 0.7.0 (2026-11-07) — one master copy: Reyes's 0.6.0 + Chris's beta work + Windows fixes
+
+(Numbered 0.7.0 so it reads as newer than both 0.6.x lines: Chris's Pied Piper beta went to 0.6.5,
+Reyes's DigMart was 0.6.0.)
 
 Built on Reyes's DigMart 0.6.0 (his design and features unchanged), with what Chris's `beta` branch had
 that 0.6.0 didn't (0.5.9 to 0.6.5 came after the 0.5.8 handoff), and a Windows pass.
