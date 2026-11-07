@@ -505,11 +505,36 @@ class SearchPage(QWidget):
         if self._more_item is not None and bar.maximum() > 0 and value >= bar.maximum():
             self.load_more()
 
+    PV_NOTE = "Preview and Check both download into quarantine first; nothing reaches your library until you decide."
+
     def _selection(self):
         items = self.tree.selectedItems()
         c = items[0].data(0, Qt.UserRole) if items else None
-        self.btn.setEnabled(isinstance(c, Candidate) and not c.note and not c.locked)
+        ok = isinstance(c, Candidate) and not c.note and not c.locked
+        self.btn.setEnabled(ok)
         self.btn_pv.setEnabled(self._previewing or self.btn.isEnabled())
+        # already have it? (same remote file, or same artist + title in the library or the queue)
+        self._armed_key = None
+        have = None
+        if ok and hasattr(self.svc, "already_have"):
+            try:
+                have = self.svc.already_have(c)
+            except Exception:
+                have = None
+        self._have = have
+        if have:
+            kb = "lossless" if have["lossless"] else (f"{have['kbps']} kbps" if have["kbps"] else "")
+            where = "in your library" if have["where"] == "library" else "already in the queue"
+            self.pv_note.setText(f"You may already have this: “{_short(have['name'])}” is {where}"
+                                 + (f" · {kb}" if kb else "") + (f" · {have['when']}" if have["when"] else "")
+                                 + ". Click again to check this one anyway.")
+            self.btn.setObjectName("ghost")
+        else:
+            if not self._previewing:
+                self.pv_note.setText(self.PV_NOTE)
+            self.btn.setObjectName("primary")
+        self.btn.setText("Check this file")
+        T.repolish(self.btn)
 
     def _preview_clicked(self):
         if self._previewing:
@@ -528,8 +553,20 @@ class SearchPage(QWidget):
 
     def _pick(self):
         items = self.tree.selectedItems()
-        if items and isinstance(items[0].data(0, Qt.UserRole), Candidate):
-            self.pick.emit(items[0].data(0, Qt.UserRole))
+        if not (items and isinstance(items[0].data(0, Qt.UserRole), Candidate)):
+            return
+        c = items[0].data(0, Qt.UserRole)
+        if getattr(self, "_have", None) and getattr(self, "_armed_key", None) != c.key:
+            self._armed_key = c.key                           # first click: the note is the answer; second sends
+            self.btn.setText("Check it anyway")
+            return
+        self.btn.setText("Check this file")
+        self.pick.emit(c)
+
+
+def _short(name: str, n: int = 48) -> str:
+    base = name.rsplit(".", 1)[0] if "." in name else name
+    return base if len(base) <= n else base[: n - 1] + "…"
 
 
 def _speed(c: Candidate) -> str:

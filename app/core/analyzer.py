@@ -35,6 +35,11 @@ def analyze(path: Path, settings: Settings, progress: Progress = lambda s: None)
     facts = probe(path, settings.ffmpeg_path)
     magic = sniff_magic(path)
 
+    progress("Quick checks")
+    pre = rules.prechecks(path, path.suffix, facts, magic, settings)
+    if any(c.status == rules.FAIL for c in pre):
+        return _result(digest, facts, magic, None, None, None, pre)   # not worth decoding
+
     decode = None
     cutoff = None
     spec_path = None
@@ -61,7 +66,7 @@ def analyze(path: Path, settings: Settings, progress: Progress = lambda s: None)
         d.frames = None                             # tens of MB per track: release before the next slot starts
         del d
 
-    checks = rules.evaluate(path.suffix, facts, decode, cutoff, settings)
+    checks = pre + rules.evaluate(path.suffix, facts, decode, cutoff, settings)
     out = _result(digest, facts, magic, decode, cutoff, spec_path, checks)
     if facts.readable and out["decode_ok"]:
         progress("Finding BPM, key and the drop")

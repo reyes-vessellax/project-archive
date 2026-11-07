@@ -33,6 +33,7 @@ from .slskd_manager import BackendUnavailable, SlskdManager
 MSG_LOCAL = "Local mode: drag tracks in to check them. Soulseek search is off."
 MSG_STARTING = "Connecting to the server…"
 MSG_TROUBLE = "Having trouble connecting to the server."
+MSG_RECONNECT = "Reconnecting…"
 
 
 class ActionBlocked(RuntimeError):
@@ -165,6 +166,32 @@ class ArchiveService:
             except OSError:
                 pass
 
+    def watchdog(self) -> bool:
+        """Call from a timer (off the UI thread): if the engine process died, start it again.
+        Returns True when a restart was attempted."""
+        if not self.managed_mode or self.backend_state not in ("running", "failed"):
+            return False
+        if self.manager.running:
+            return False
+        import time as _t
+        last = getattr(self, "_last_restart", 0.0)
+        if _t.monotonic() - last < 20:
+            return False                                      # don't thrash
+        self._last_restart = _t.monotonic()
+        self.backend_state = "restarting"
+        try:
+            self.manager.stop()
+        except Exception:
+            pass
+        self.start_backend()
+        try:
+            with open(self.db.path.parent / "app.log", "a", encoding="utf-8") as f:
+                from datetime import datetime as _dt
+                f.write(f"{_dt.now().isoformat(timespec='seconds')} watchdog: engine was down; restarted -> {self.backend_state} {self.backend_error}\n")
+        except OSError:
+            pass
+        return True
+
     def stop_backend(self) -> None:
         self.manager.stop()
         if self.managed_mode:
@@ -175,6 +202,8 @@ class ArchiveService:
         if self.managed_mode:
             if self.backend_state == "starting":
                 return ConnectorStatus(available=False, message=MSG_STARTING)
+            if self.backend_state == "restarting":
+                return ConnectorStatus(available=False, message=MSG_RECONNECT)
             if self.backend_state in ("failed", "stopped") or not self.manager.running:
                 return ConnectorStatus(available=False, message=MSG_TROUBLE)
             st = self.adapter.health_check() if self.adapter else ConnectorStatus(available=False, message=MSG_TROUBLE)
@@ -200,6 +229,57 @@ class ArchiveService:
 
     def search_status(self, search_id: str) -> tuple[bool, int, int, str]:
         return self._adapter_or_block().search_status(search_id)
+
+    # already-have-it ------------------------------------------------------------------------
+    def have_index(self) -> dict:
+        """What's already here, keyed for quick matching: the same remote file, or the same artist+title
+        (mix words ignored). Cached per DB change."""
+        key = self.db.jobs_version() if hasattr(self.db, "jobs_version") else None
+        cache = getattr(self, "_have", None)
+        if cache and cache[0] == key and key is not None:
+            return cache[1]
+        from ..adapters.base import parse_track
+        from .fuzzy import words
+        idx = {"remote": {}, "title": {}}
+        for j in self.db.jobs(include_hidden=True, limit=5000):
+            if j["state"] in (J.REJECTED, J.CANCELLED, J.EXPIRED):
+                continue
+            where = "library" if j["state"] == J.PROMOTED else ("queue" if j["state"] not in J.FINAL else None)
+            if where is None:
+                continue
+            a = self.db.analysis(j["id"]) if j["state"] == J.PROMOTED else None
+            f = (a or {}).get("facts", {}) or {}
+            kbps = round(f["bitrate_bps"] / 1000) if f.get("bitrate_bps") else None
+            when = (j.get("updated_at") or "")[:10]
+            entry = {"where": where, "name": j["original_name"], "kbps": kbps, "lossless": bool(f.get("lossless")),
+                     "when": when, "job_id": j["id"]}
+            if j.get("remote_user") and j.get("remote_path"):
+                idx["remote"][(j["remote_user"], j["remote_path"])] = entry
+            artist, title, _mix = parse_track(j["original_name"])
+            tkey = " ".join(words(title))
+            if tkey:
+                idx["title"].setdefault(tkey, []).append((" ".join(words(artist)), entry))
+        self._have = (key, idx)
+        return idx
+
+    def already_have(self, cand) -> dict | None:
+        """The library/queue entry that looks like this candidate, or None."""
+        from ..adapters.base import parse_track
+        from .fuzzy import edit_distance, words
+        idx = self.have_index()
+        hit = idx["remote"].get((cand.user, cand.remote_path))
+        if hit:
+            return hit
+        artist, title, _mix = parse_track(cand.display_name or cand.remote_path.rsplit("\\", 1)[-1])
+        tkey = " ".join(words(title)); akey = " ".join(words(artist))
+        if not tkey:
+            return None
+        for key, entries in idx["title"].items():
+            if key == tkey or (len(tkey) > 6 and edit_distance(key, tkey, 2) <= 2):
+                for a, entry in entries:
+                    if not akey or not a or akey == a or akey in a or a in akey:
+                        return entry
+        return None
 
     def stop_search(self, search_id: str) -> None:
         try:

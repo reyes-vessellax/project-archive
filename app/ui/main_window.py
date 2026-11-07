@@ -482,7 +482,11 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl(SUPPORT_URL))
 
     def _poll_status(self):
-        self.io.start(Task(lambda: self.signals.status.emit(self.svc.connector_status()), self.signals))
+        def work():
+            if self.svc.watchdog():                          # the engine died: start it again, no app restart
+                self.signals.notice.emit("The engine stopped; starting it again.")
+            self.signals.status.emit(self.svc.connector_status())
+        self.io.start(Task(work, self.signals))
 
     def _on_status(self, st):
         c = T.colours(self.svc.settings.theme)

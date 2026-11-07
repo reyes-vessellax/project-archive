@@ -282,3 +282,17 @@ def test_crates_basics(service):
     assert [c["name"] for c in service.db.crates()] == ["Peak"]
     service.db.delete_crate(a)
     assert service.db.crates() == []
+@needs_ffmpeg
+def test_prechecks_stop_non_audio_before_decoding(service, tmp_path):
+    exe = tmp_path / "Artist - Track.mp3"
+    exe.write_bytes(b"MZ" + b"\x00" * 200_000)                 # a Windows program wearing an .mp3 name
+    j = service.stage(exe); a = service.analyze(j["id"])
+    assert a["overall_status"] == "FAIL"
+    assert any(c["title"] == "Not an audio file" and "Windows program" in c["message"] for c in a["checks"])
+    assert a.get("decode") is None                            # never decoded
+
+
+@needs_ffmpeg
+def test_prechecks_pass_real_audio(service, fixtures):
+    j = service.stage(fixtures["mp3_320"]); a = service.analyze(j["id"])
+    assert not any(c["id"] == "precheck" and c["status"] == "FAIL" for c in a["checks"])

@@ -74,3 +74,27 @@ def test_ripe_stops_on_plateau_but_waits_for_rare_queries():
     r = [(1, 0), (5, 0), (9, 0), (20, 0)]
     assert not ripe(r, 20, 40)
     assert ripe(r + [(40, 0)], 40, 40)
+
+
+def test_already_have_it_greys_the_button_and_needs_a_second_click(window, connected, fixtures):
+    """A track already in the library: first click shows the note, second click sends anyway."""
+    import time as _t
+    w, app = window
+    # put "Artist - Real Track" in the library, then search for it
+    j = connected.stage(fixtures["mp3_320"]); connected.analyze(j["id"]); connected.promote(j["id"], override_warning=True)
+    connected.db.update_job(j["id"], original_name="Artist - Real Track (Original Mix).mp3")
+    spin(app, 0.3)
+    w._search("real track")
+    for _ in range(150):
+        spin(app, 0.1)
+        if w.searchp.tree.topLevelItemCount() > 0 and not w.search_running:
+            break
+    it = w.searchp.tree.topLevelItem(0); it.setSelected(True); spin(app, 0.1)
+    assert "already have" in w.searchp.pv_note.text(), w.searchp.pv_note.text()
+    assert w.searchp.btn.objectName() == "ghost"
+    picked = []
+    w.searchp.pick.connect(lambda c: picked.append(c))
+    w.searchp.btn.click(); spin(app, 0.05)
+    assert picked == [] and w.searchp.btn.text() == "Check it anyway"
+    w.searchp.btn.click(); spin(app, 0.05)
+    assert len(picked) == 1

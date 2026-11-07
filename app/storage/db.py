@@ -91,6 +91,12 @@ class Database:
         with self._lock, self._con:
             self._con.execute(f"INSERT INTO jobs ({cols}) VALUES ({', '.join('?' * len(job))})", tuple(job.values()))
 
+    def jobs_version(self) -> str:
+        """Changes whenever any job row changes: cheap cache key."""
+        with self._lock:
+            row = self._con.execute("SELECT COUNT(*), MAX(updated_at) FROM jobs").fetchone()
+        return f"{row[0]}:{row[1]}"
+
     def update_job(self, job_id: str, **fields) -> None:
         fields["updated_at"] = now()
         sets = ", ".join(f"{k} = ?" for k in fields)
