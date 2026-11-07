@@ -86,6 +86,7 @@ def _audio_probe(exe_ffmpeg: str) -> str:
             subprocess.run([exe_ffmpeg, "-v", "error", "-f", "lavfi", "-i", "sine=f=440:d=3", "-c:a", "libmp3lame",
                             "-b:a", "128k", str(f)], check=True, timeout=60)
             out = QAudioOutput(); player = QMediaPlayer(); player.setAudioOutput(out)
+            out.setMuted(True)                      # prove the pipeline moves, without a tone out of anyone's speakers
             player.setSource(QUrl.fromLocalFile(str(f))); player.play()
             loop = QEventLoop(); QTimer.singleShot(1500, loop.quit); loop.exec()
             pos, err = player.position(), player.errorString()

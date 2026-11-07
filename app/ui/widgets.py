@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QEvent, QPropertyAnimation, QRectF, QTimer, QUrl, QObject, QPoint, QRunnable, Qt, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QSize, QPropertyAnimation, QRectF, QTimer, QUrl, QObject, QPoint, QRunnable, Qt, Signal
 from PySide6.QtGui import QPainterPath, QPen, QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QVBoxLayout, QWidget)
@@ -56,8 +56,44 @@ class Task(QRunnable):
 
 
 # ------------------------------------------------------------------ small helpers
+class WrapLabel(QLabel):
+    """A word-wrapping label that always asks for the height its text needs at its current width.
+
+    Plain QLabel + setWordWrap inside nested layouts reports a stale height when the window is
+    resized, and the last line of a two-line description gets clipped (seen on the review page's
+    check rows at some window widths). Pinning the minimum height on every resize fixes it.
+
+    Its minimum WIDTH is kept small on purpose: a fresh wrapped label reports its unwrapped text width
+    as the minimum until the first layout pass, and inside a scroll area that made the whole column
+    jump wider (and taller) for one frame on every refresh — the 0.6.0–0.6.3 "UI glitch"."""
+    MIN_W = 80
+
+    def __init__(self, text: str = ""):
+        super().__init__(text)
+        self.setWordWrap(True)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+    def minimumSizeHint(self):
+        base = super().minimumSizeHint()
+        w = self.width() if self.width() > self.MIN_W else 0
+        return QSize(min(self.MIN_W, base.width()), self.heightForWidth(w) if w else base.height())
+
+    def sizeHint(self):
+        base = super().sizeHint()
+        return QSize(min(base.width(), 600), base.height())
+
+    def _fit(self):
+        w = self.width()
+        if w > self.MIN_W:
+            self.setMinimumHeight(self.heightForWidth(w))
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._fit()
+
+
 def label(text: str = "", role: str = "", tag: str = "", wrap: bool = False, tip: str = "") -> QLabel:
-    w = QLabel(text)
+    w = WrapLabel(text) if wrap else QLabel(text)
     if role:
         w.setObjectName(role)
     if tag:
@@ -114,8 +150,8 @@ class SmoothWheel(QObject):
     (like Chrome's ~100 px), an ease-out glide, and momentum — notches that arrive mid-glide add to the
     distance and lengthen the glide instead of restarting it. Trackpads send pixel deltas and are left
     to Qt, which already handles them natively."""
-    PX_PER_NOTCH = 110
-    MIN_MS, MAX_MS = 260, 700
+    PX_PER_NOTCH = 72
+    MIN_MS, MAX_MS = 240, 600
 
     def __init__(self, area):
         super().__init__(area)

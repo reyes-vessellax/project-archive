@@ -275,6 +275,10 @@ class SearchPage(QWidget):
         hdr = self.tree.header(); hdr.setSectionResizeMode(QHeaderView.Interactive); hdr.setStretchLastSection(True)
         for i, w in enumerate(self.WIDTHS):
             self.tree.setColumnWidth(i, w)
+        # click a heading to sort by it (again to flip); # puts the list back to best first
+        self._sort: tuple[int, bool] | None = None
+        hdr = self.tree.header(); hdr.setSectionsClickable(True); hdr.setSortIndicatorShown(True)
+        hdr.setSortIndicator(0, Qt.AscendingOrder); hdr.sectionClicked.connect(self.sort_by)
         self.tree.itemDoubleClicked.connect(lambda *_: self._pick())
         self.tree.itemSelectionChanged.connect(self._selection)
         self.tree.itemClicked.connect(self._clicked)
@@ -414,9 +418,9 @@ class SearchPage(QWidget):
         if res.error:
             self.state.setText("")
         elif searching:
-            self.state.setText("fastest first · still collecting…" + tail)
+            self.state.setText(f"{self._order_name()} · still collecting…" + tail)
         else:
-            self.state.setText(("fastest first" + tail) if n else "")
+            self.state.setText((self._order_name() + tail) if n else "")
         if n == 0:
             if res.error:
                 self._show_empty(res.error)
@@ -430,7 +434,7 @@ class SearchPage(QWidget):
         selected = self.tree.selectedItems()
         keep = selected[0].data(0, Qt.UserRole).key if selected and isinstance(selected[0].data(0, Qt.UserRole), Candidate) else None
         self._dropped = res.dropped
-        self._ranked = sorted(res.candidates, key=lambda c: _rank(c, res.dropped))
+        self._ranked = self._sorted(sorted(res.candidates, key=lambda c: _rank(c, res.dropped)))
         if res.dropped:
             self.state.setText(f'Nothing matched “{res.query}” — showing results for “{res.sent}” (without “{res.dropped}”)'
                                + (" · still collecting…" if searching else ""))
@@ -498,6 +502,62 @@ class SearchPage(QWidget):
             if keep is not None and it.data(0, Qt.UserRole).key == keep:
                 it.setSelected(True); break
         self.tree.setUpdatesEnabled(True)
+
+    # ---- column sorting -----------------------------------------------------------------
+    NUMERIC = {"Size", "Rate", "Length"}           # big-first on the first click; text columns A→Z first
+
+    def _order_name(self) -> str:
+        if not getattr(self, "_sort", None):
+            return "fastest first"
+        col, desc = self._sort
+        name = self.COLS[col].lower()
+        if name == "availability":
+            return "readiest first" if not desc else "slowest first"
+        return f"by {name}" + (" ↓" if desc else " ↑")
+
+    @staticmethod
+    def _col_key(name: str):
+        from ..core.availability import LOSSLESS, availability
+        lossless = lambda c: (c.extension or "").lower() in LOSSLESS
+        return {
+            "Title": lambda c: (c.title or c.display_name or "").lower(),
+            "Mix": lambda c: (c.mix or "").lower(),
+            "Artist": lambda c: (c.artist or "").lower(),
+            "Folder": lambda c: (c.folder or "").lower(),
+            "User": lambda c: (c.user or "").lower(),
+            "Size": lambda c: c.size or 0,
+            # lossless above lossy, grouped by format (all the WAVs together), then by bitrate
+            "Rate": lambda c: (1, (c.extension or "").lower(), 0) if lossless(c) else (0, "", c.bitrate_kbps or 0),
+            "Length": lambda c: c.length_s or 0,
+            "Availability": lambda c: (availability(c).rank, -(c.upload_speed or 0)),
+        }.get(name)
+
+    def _sorted(self, ranked: list) -> list:
+        """The chosen column's order over the best-first list. Greyed rows (locked, ad bots, other formats)
+        stay at the bottom whatever the sort."""
+        if not getattr(self, "_sort", None):
+            return ranked
+        col, desc = self._sort
+        key = self._col_key(self.COLS[col])
+        if key is None:
+            return ranked
+        ok = [c for c in ranked if not (c.locked or c.note)]
+        grey = [c for c in ranked if c.locked or c.note]
+        return sorted(ok, key=key, reverse=desc) + sorted(grey, key=key, reverse=desc)
+
+    def sort_by(self, col: int):
+        """Header click. # = best first; the same heading again flips the direction."""
+        hdr = self.tree.header()
+        if col <= 0 or col >= len(self.COLS) or self._col_key(self.COLS[col]) is None:
+            self._sort = None
+            hdr.setSortIndicator(0, Qt.AscendingOrder)
+        else:
+            desc = (not self._sort[1]) if (self._sort and self._sort[0] == col) else (self.COLS[col] in self.NUMERIC)
+            self._sort = (col, desc)
+            hdr.setSortIndicator(col, Qt.DescendingOrder if desc else Qt.AscendingOrder)
+        if self._last_res is not None:
+            self.show_results(self._last_res, self._last_searching, _refilter=True)
+            self.tree.verticalScrollBar().setValue(0)
 
     def load_more(self):
         if self._shown < len(self._ranked):
@@ -794,8 +854,11 @@ class ReviewPage(QWidget):
 
     def show_job(self, job: dict | None, a: dict | None, steps: dict[str, str] | None = None):
         self.job_id = job["id"] if job else None
-        for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel, self.btn_rerun, self.btn_open, self.btn_reveal, self.btn_remove, self.btn_retry):
-            b.setVisible(bool(job))
+        if not job:
+            for b in (self.btn_save, self.btn_anyway, self.btn_delete, self.btn_cancel, self.btn_rerun, self.btn_open, self.btn_reveal, self.btn_remove, self.btn_retry):
+                b.hide()
+        # (with a job, every button is decided below; showing them all first made the row ~1300 px wide for a
+        #  frame on every refresh and the column jumped)
         self.dl_host.setVisible(bool(job) and job["state"] == J.QUEUED)
         self._dots.stop()
         while self.checks.count():

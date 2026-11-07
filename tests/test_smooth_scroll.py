@@ -51,6 +51,7 @@ def test_rapid_ticks_build_momentum_and_stay_monotonic():
             app.sendEvent(tree.viewport(), ev); sent += 1
         app.processEvents(); values.append(bar.value()); time.sleep(0.005)
     assert all(b >= a for a, b in zip(values, values[1:])), "scrolled backwards at some point"
-    assert bar.value() >= 25 * 100 * 0.9, bar.value()                       # momentum carried most of the distance
+    from app.ui.widgets import SmoothWheel
+    assert bar.value() >= 25 * SmoothWheel.PX_PER_NOTCH * 0.9, bar.value()   # momentum carried most of the distance
     assert len(set(values)) > 30, "it jumped instead of gliding"
     tree.close()

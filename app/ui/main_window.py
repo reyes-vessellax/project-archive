@@ -579,8 +579,9 @@ class MainWindow(QMainWindow):
                 if not self.svc.settings.upnp:
                     c.mark("port", "skip", "off in Settings")
                 else:
-                    c.mark("port", "done" if self.svc.port_open else "fail",
-                           f"port {port} open" if self.svc.port_open else "router said no; using the slow route")
+                    # a router that won't open the port isn't a failure of ours: a quiet dash, not a red cross
+                    c.mark("port", "done" if self.svc.port_open else "skip",
+                           f"port {port} open" if self.svc.port_open else "no answer from the router; downloads still work")
             if st.logged_in:
                 c.mark("shares", "done" if self.svc.settings.share_folder else "skip",
                        "" if self.svc.settings.share_folder else "nothing shared yet")

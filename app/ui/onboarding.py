@@ -245,6 +245,11 @@ class ConnectingPage(QWidget):
             dot = label("○", "steplight"); dot.setProperty("tag", ""); dot.setFixedWidth(26); txt = label(text, "muted")
             r.addWidget(dot); r.addWidget(txt); r.addStretch(1)
             lay.addLayout(r); self.rows[key] = (dot, txt)
+        # sharing is a first-run question (asked on the setup screen); later starts don't re-announce it
+        self.first_run = not svc.settings.setup_done
+        if not self.first_run:
+            for w in self.rows["shares"]:
+                w.hide()
         self.note = label("This takes a few seconds the first time. If your firewall asks to allow incoming connections, "
                           "choose Allow — that's how other users send you files.", "faint", wrap=True)
         lay.addWidget(self.note)
@@ -263,6 +268,8 @@ class ConnectingPage(QWidget):
 
     def mark(self, key: str, state: str, note: str = ""):
         dot, txt = self.rows[key]
+        if key == "shares" and not self.first_run:
+            return
         dot.setText({"done": "✓", "busy": "●", "fail": "✕", "skip": "–"}.get(state, "○"))
         set_tag(dot, {"done": "Good", "busy": "Down", "fail": "Broken", "skip": "Wait"}.get(state, ""))
         base = txt.property("base") or txt.text()
