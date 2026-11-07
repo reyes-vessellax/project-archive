@@ -28,7 +28,7 @@ from .pages import HomePage, ReviewPage, SearchPage, row_data
 from .library_page import LibraryPage, reveal_in_folder
 from .settings_page import SettingsPage
 from .tour import TourOverlay, default_steps
-from .widgets import AvatarMenu, Sidebar, Signals, Task, hbox, vbox
+from .widgets import AvatarMenu, CurrentStack, Sidebar, Signals, Task, hbox, vbox
 from .wishlist_page import WishlistPage
 from .batch_page import Batch, BatchPage, BatchSignals
 from ..core import batch as B
@@ -137,7 +137,7 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- build
     def _build(self):
-        self.root = QStackedWidget(); self.setCentralWidget(self.root)
+        self.root = CurrentStack(); self.setCentralWidget(self.root)
         self.onboarding = Onboarding(self.svc); self.onboarding.finished.connect(self._enter_app)
         self.root.addWidget(self.onboarding)
 
@@ -148,7 +148,7 @@ class MainWindow(QMainWindow):
         self.topbar.crate_menu.connect(self._crate_menu)
         sl.addWidget(self.topbar)
         right = QWidget(); right.setObjectName("root"); rl = vbox(right)
-        self.pages = QStackedWidget(); rl.addWidget(self.pages, 1)
+        self.pages = CurrentStack(); rl.addWidget(self.pages, 1)
         from .player import NowPlayingBar
         self.nowbar = NowPlayingBar(); rl.addWidget(self.nowbar)
         self.nowbar.set_volume(self.svc.settings.volume or 0.8)
@@ -427,6 +427,7 @@ class MainWindow(QMainWindow):
     def _refresh_review(self):
         job = self.svc.db.job(self.selected) if self.selected else None
         a = self._analyses.get(self.selected) if job else None
+        self.review.job_id = job["id"] if job else None       # so the list highlights the track being opened, not the last one
         self.review.set_rail(self._jobs, self._analyses, self.steps)
         self.review.show_job(job, a, self.steps)
 

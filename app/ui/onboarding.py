@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLine
 from ..config import APP_NAME
 from ..core.account import AccountError
 from ..core.service import ArchiveService
-from .widgets import button, hbox, label, rule, set_tag, vbox
+from .widgets import CurrentStack, button, hbox, label, rule, set_tag, vbox
 
 STEPS = ("Account", "Your library", "Ready")
 
@@ -286,7 +286,7 @@ class ConnectingPage(QWidget):
         self.done.emit()
 
 
-class Onboarding(QStackedWidget):
+class Onboarding(CurrentStack):
     """Owns the four screens and emits `finished` when the user reaches the app."""
     finished = Signal()
 

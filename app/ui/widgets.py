@@ -114,6 +114,27 @@ def button(text: str, role: str = "ghost", on_click=None, parent=None) -> QPushB
     return b
 
 
+from PySide6.QtWidgets import QStackedWidget as _QStackedWidget
+
+
+class CurrentStack(_QStackedWidget):
+    """A stack that is only as big as the page showing. QStackedWidget asks for the largest page's size, so a
+    tall sign-up screen kept the whole window 896 px tall long after sign-up: on a 768 px laptop the bottom
+    of every page (Download / Delete) was off the screen."""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.currentChanged.connect(lambda _i: self.updateGeometry())
+
+    def minimumSizeHint(self):
+        w = self.currentWidget()
+        return w.minimumSizeHint() if w is not None else super().minimumSizeHint()
+
+    def sizeHint(self):
+        w = self.currentWidget()
+        return w.sizeHint() if w is not None else super().sizeHint()
+
+
 def rule() -> QFrame:
     f = QFrame()
     f.setObjectName("rule")
@@ -445,12 +466,15 @@ class QueueRow(QWidget):
         self.title = label(title); self.title.setStyleSheet("font-weight: 600; font-size: 15px;")
         self.title.setToolTip(title)
         self.artist = label(artist or " ", "muted")
+        for lbl in (self.title, self.artist):                # long names clip instead of pushing the row wider than the list
+            lbl.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         names.addWidget(self.title); names.addWidget(self.artist)
         lay.addLayout(names, 1)
         self.bar = QProgressBar(self); self.bar.setTextVisible(False); self.bar.setFixedWidth(150); self.bar.setRange(0, 100)
         self.bar.setValue(int(pct) if pct is not None else 0); self.bar.setProperty("tag", tag)
         lay.addWidget(self.bar)
-        self.bar.setVisible(pct is not None)
+        # a full bar on a finished track says nothing: hidden, and its room goes to the title
+        self.bar.setVisible(pct is not None and pct < 100)
         self.meta = label(meta, "mono"); self.meta.setFixedWidth(120); self.meta.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lay.addWidget(self.meta)
         for w in (self.tag, self.title, self.artist, self.meta, self.bar, self.x_space):

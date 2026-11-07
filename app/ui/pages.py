@@ -101,17 +101,18 @@ class HomePage(QWidget):
         self.list_host = QWidget(); self.list_host.setObjectName("page")
         self.list = vbox(self.list_host, spacing=0); self.list.addStretch(1)
         self.list_scroll = scroll(self.list_host); qcol.addWidget(self.list_scroll, 1)
+        self.list_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)     # the list never scrolls sideways
         self.empty = label("Nothing in the queue. Search above, or drop tracks onto the window.", "faint", wrap=True)
         qcol.addWidget(self.empty)
         qw = QWidget(); qw.setLayout(qcol); qw.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         body.addWidget(qw, 3)
 
         # right rail: scope + counts
-        rail = vbox(spacing=28)
+        rail = vbox(spacing=18)
         scope_head = hbox(); scope_head.addWidget(label("Last checked", "h2")); scope_head.addStretch(1)
         self.scope_name = label("", "muted"); scope_head.addWidget(self.scope_name)
         rail.addLayout(scope_head)
-        self.scope = SpectrumView(170); rail.addWidget(self.scope)
+        self.scope = SpectrumView(150); rail.addWidget(self.scope)
         facts = QGridLayout(); facts.setHorizontalSpacing(12); facts.setVerticalSpacing(2)
         self.fact_vals = {}
         for i, k in enumerate(("Format", "Bitrate", "Rate", "Length")):
@@ -122,7 +123,7 @@ class HomePage(QWidget):
         counts = hbox(spacing=10)
         self.counts = {}
         for word, long in (("Good", "Good"), ("Look", "Have a look"), ("Broken", "Broken")):
-            card = QFrame(); card.setObjectName("card")
+            card = QFrame(); card.setObjectName("card"); card.setProperty("tag", word)   # coloured edge per verdict
             cl = vbox(card, (14, 12, 14, 12), 6)
             n = label("0", "count", word); cl.addWidget(n)
             cl.addWidget(label(long, "muted"))
@@ -223,7 +224,7 @@ class SearchPage(QWidget):
         return getattr(self.svc.settings, "theme", "light")
     pick = Signal(object)        # Candidate
     COLS = ["#", "Title", "Mix", "Artist", "Folder", "User", "Size", "Rate", "Length", "Availability"]
-    WIDTHS = [36, 180, 110, 140, 90, 80, 70, 56, 56, 170]
+    WIDTHS = [36, 170, 110, 130, 80, 125, 70, 56, 56, 170]
 
     def __init__(self, svc: ArchiveService):
         super().__init__()
@@ -304,11 +305,11 @@ class SearchPage(QWidget):
         self.btn_pv.setToolTip("Downloads it into quarantine, then plays 20 seconds from the drop")
         row.addWidget(self.btn); row.addWidget(self.btn_pv)
         self.pv_note = label("Preview and Check both download into quarantine first; nothing reaches your library "
-                             "until you decide.", "faint")
-        row.addWidget(self.pv_note)
+                             "until you decide.", "faint", wrap=True)
+        row.addWidget(self.pv_note, 1)
         self._previewing = False
-        row.addStretch(1)
-        lay.addLayout(row)
+        # the actions sit right above the results, next to what you picked, not at the far bottom of the page
+        lay.insertLayout(lay.indexOf(self.tree), row)
 
     def set_connected(self, on: bool):
         self.q.setEnabled(on); self.search_btn.setEnabled(on and not self._anim.isActive())
@@ -457,6 +458,12 @@ class SearchPage(QWidget):
             ])
             it.setData(0, Qt.UserRole, c)
             it.setToolTip(1, c.display_name)
+            it.setToolTip(5, c.user)
+            if not (c.locked or c.note):                        # wait in colour: green ready, amber a wait, red hours
+                from ..core.availability import availability
+                tone = availability(c).tone
+                if tone in ("pass_", "warn", "fail"):
+                    it.setForeground(9, QColor(T.colours(self._theme())[tone]))
             problem = getattr(self, "_problems", {}).get(c.key)
             if problem:
                 red = QColor(T.colours(self._theme())["fail"])
@@ -702,8 +709,8 @@ class ReviewPage(QWidget):
         self.rail = vbox(self.rail_host, spacing=2); self.rail.addStretch(1)
         self.rail_scroll = scroll(self.rail_host); rail.addWidget(self.rail_scroll, 1)
         rail.addWidget(label("↑↓ move · ⏎ download · ⌫ delete", "mono"))
-        rw = QWidget(); rw.setLayout(rail); rw.setMinimumWidth(240); rw.setMaximumWidth(300)
-        body.addWidget(rw, 1)
+        rw = QWidget(); rw.setLayout(rail); rw.setMinimumWidth(280); rw.setMaximumWidth(360)
+        body.addWidget(rw, 2)
 
         # detail
         det = vbox(spacing=22)
@@ -717,11 +724,6 @@ class ReviewPage(QWidget):
         self.meta_line = label("", "muted")
         names.addWidget(self.source); names.addWidget(self.h1); names.addWidget(self.artist); names.addWidget(self.meta_line)
         head.addLayout(names, 1)
-        verdict = vbox(spacing=4); verdict.setAlignment(Qt.AlignRight)
-        self.verdict = label("", "verdict"); self.verdict.setAlignment(Qt.AlignRight)
-        self.verdict_sub = label("", "faint"); self.verdict_sub.setAlignment(Qt.AlignRight)
-        verdict.addWidget(self.verdict); verdict.addWidget(self.verdict_sub)
-        head.addLayout(verdict)
         det.addLayout(head)
 
         det.addWidget(rule())
@@ -760,12 +762,13 @@ class ReviewPage(QWidget):
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
         det.addLayout(sh)
         self.spectrum = SpectrumView(180); det.addWidget(self.spectrum)
-        lv = hbox(spacing=12); lv.addWidget(label("LEVEL", "disptag"))
+        self.level_host = QWidget(); lv = hbox(self.level_host, spacing=12); lv.addWidget(label("LEVEL", "disptag"))
         self.level = LevelStrip(); lv.addWidget(self.level, 1)
-        det.addLayout(lv)
+        det.addWidget(self.level_host)
+        self.level_host.setVisible(False)                  # an empty meter is noise: it shows while a track plays
         # the meter only ticks while something plays (an always-on timer steals time from animations)
         self._level_timer = QTimer(self, interval=50, timeout=self._tick_level)
-        self.spectrum.on_playing = lambda on: self._level_timer.start() if on else None
+        self.spectrum.on_playing = self._on_playing
 
         self.checks_host = QWidget(); self.checks_host.setObjectName("page")
         self.checks = vbox(self.checks_host, spacing=0)
@@ -789,10 +792,22 @@ class ReviewPage(QWidget):
             actions.addWidget(b)
         actions.addStretch(1)
         actions.addWidget(self.btn_rerun); actions.addWidget(self.btn_reveal); actions.addWidget(self.btn_open)
-        det.addWidget(self.actions_host)
-        dw = QWidget(); dw.setLayout(det)
-        body.addWidget(dw, 3)
+        # the verdict sits right where the decision is made, above Download / Delete
+        self.verdict = label("", "verdict"); self.verdict_sub = label("", "faint")
+        vrow = hbox(spacing=12); vrow.addWidget(self.verdict, 0, Qt.AlignBottom)
+        vrow.addWidget(self.verdict_sub, 0, Qt.AlignBottom); vrow.addStretch(1)
+        # the details scroll on short screens; the verdict and buttons stay pinned at the bottom
+        dw = QWidget(); dw.setObjectName("page"); dw.setLayout(det)
+        self.det_scroll = scroll(dw)
+        col = vbox(spacing=12); col.addWidget(self.det_scroll, 1); col.addWidget(rule())
+        col.addLayout(vrow); col.addWidget(self.actions_host)
+        cw = QWidget(); cw.setLayout(col)
+        body.addWidget(cw, 5)
         self.show_job(None, None)
+
+    def _on_playing(self, on: bool):
+        if on:
+            self.level_host.setVisible(True); self._level_timer.start()
 
     def _tick_dots(self):
         self._dot_n = (self._dot_n + 1) % 4
@@ -809,6 +824,7 @@ class ReviewPage(QWidget):
         self.level.set_level(self.spectrum.current_level())
         if not self.spectrum.is_playing() and self.level._shown < 0.01:
             self._level_timer.stop()                       # fell back to zero after playback stopped
+            self.level_host.setVisible(False)
 
     def set_rail(self, jobs: list[dict], analyses: dict[str, dict | None], steps: dict[str, str]):
         rows = [(j["id"], row_data(j, analyses.get(j["id"]), steps)) for j in jobs]

@@ -27,6 +27,16 @@ that 0.6.0 didn't (0.5.9 to 0.6.5 came after the 0.5.8 handoff), and a Windows p
   files too small to be a track, and sizes that can't fit the length stop at once with the reason.
 - **Engine watchdog:** if the engine dies it's started again (status: Reconnecting…), no app restart.
 - **Volume** slider in the now-playing bar, remembered between sessions.
+- **Fits a laptop screen.** The window could never be shorter than the 896 px sign-up screen, even after
+  sign-up, so on a 768 px laptop Download / Delete fell off the bottom. Screens now size to the page showing;
+  the tallest (Home) needs 597 px. On Ready the details scroll and the verdict + buttons stay pinned.
+- **Ready:** the verdict (Good / Have a look / Broken) sits right above Download / Delete instead of a corner;
+  wider list so names show; the LEVEL meter appears only while a track plays; the list highlights the track
+  you opened (it lagged one behind).
+- **Search:** Check this file / Preview sit just above the results instead of the bottom of the page; the
+  wait column is coloured (green ready, amber a wait, red hours); user names have room; the note wraps.
+- **Home:** Good / Have a look / Broken cards with a coloured edge; no full bar on finished tracks; long
+  titles clip instead of pushing the row wider (that was the stray scrollbar and the cut-off bitrate).
 - **No grain texture** behind the pages (it made text harder to read); plain off-white in light, black in dark.
 - Gentler wheel scrolling (the 0.5.9 change that missed the handoff).
 - **Fix: text painted over text on Ready.** Switching tracks left the previous track's check lines drawn under

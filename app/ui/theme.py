@@ -192,6 +192,9 @@ QProgressBar[tag="Broken"]::chunk {{ background: {c['fail']}; }}
 QProgressBar[tag="Wait"]::chunk {{ background: {c['bar']}; }}
 QFrame#rule {{ background: {c['line']}; max-height: 1px; min-height: 1px; border: none; }}
 QFrame#card {{ background: {c['soft']}; border-radius: 3px; }}
+QFrame#card[tag="Good"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['pass_']}; }}
+QFrame#card[tag="Look"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['warn']}; }}
+QFrame#card[tag="Broken"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['fail']}; }}
 QFrame#menu {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 3px; }}
 QPushButton#menuitem {{ background: none; border: none; border-radius: 3px; text-align: left; padding: 10px 14px; min-height: 0; font-weight: 600; font-size: 14px; }}
 QPushButton#menuitem:hover {{ background: {c['soft']}; }}
