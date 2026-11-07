@@ -26,6 +26,8 @@ class Session:
     library_scroll: int = 0
     batch_name: str = ""
     batch_items: list = field(default_factory=list)   # [{artist, title, mix, source, status, job_id}]
+    batches: list = field(default_factory=list)       # [{id, name, service, items: [...]}], newest first
+    batch_selected: str = ""
     window: list = field(default_factory=list)        # [x, y, w, h]
     maximized: bool = False
     saved_at: float = 0.0

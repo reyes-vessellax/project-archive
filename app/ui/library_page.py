@@ -65,7 +65,11 @@ class LibraryPage(QWidget):
             for l in ("A", "B"):
                 self.key_box.addItem(f"{n}{l}", f"{n}{l}")
         self.key_box.currentIndexChanged.connect(lambda _: self._filter(self.q.text()))
-        fl.addWidget(self.key_box); fl.addStretch(1)
+        fl.addWidget(self.key_box); fl.addSpacing(16)
+        fl.addWidget(label("PLAYLIST", "tag"))
+        self.pl_box = QComboBox(); self.pl_box.addItem("All tracks", "")
+        self.pl_box.currentIndexChanged.connect(lambda _: self._filter(self.q.text()))
+        fl.addWidget(self.pl_box); fl.addStretch(1)
         lay.addLayout(fl)
 
         self.tree = QTreeWidget(); self.tree.setColumnCount(len(self.COLS)); self.tree.setHeaderLabels(self.COLS)
@@ -102,6 +106,14 @@ class LibraryPage(QWidget):
             return                                           # nothing changed: don't rebuild (that closed the drop-down)
         self._key = key
         self._rows = [(j, self.svc.db.analysis(j["id"])) for j in jobs]
+        names = sorted({j["playlist"] for j in jobs if j.get("playlist")}, key=str.lower)
+        current = self.pl_box.currentData()
+        self.pl_box.blockSignals(True); self.pl_box.clear(); self.pl_box.addItem("All tracks", "")
+        for n in names:
+            self.pl_box.addItem(n, n)
+        self.pl_box.setCurrentIndex(max(0, self.pl_box.findData(current)))
+        self.pl_box.blockSignals(False)
+        self.pl_box.setVisible(bool(names))
         self._filter(self.q.text())
 
     def _filter(self, text: str):
@@ -125,6 +137,9 @@ class LibraryPage(QWidget):
             bpm, cam = mu.get("bpm"), mu.get("camelot") or ""
             lo_hi = self._bpm_range()
             if lo_hi and (not bpm or not (lo_hi[0] <= bpm <= lo_hi[1])):
+                continue
+            want_pl = self.pl_box.currentData() if hasattr(self, "pl_box") else ""
+            if want_pl and job.get("playlist") != want_pl:
                 continue
             want_key = self.key_box.currentData() if hasattr(self, "key_box") else ""
             if want_key and cam not in compatible_keys(want_key):

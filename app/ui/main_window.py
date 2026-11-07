@@ -29,7 +29,7 @@ from .library_page import LibraryPage, reveal_in_folder
 from .settings_page import SettingsPage
 from .tour import TourOverlay, default_steps
 from .widgets import AvatarMenu, Sidebar, Signals, Task, hbox, vbox
-from .batch_page import BatchPage, BatchSignals
+from .batch_page import Batch, BatchPage, BatchSignals
 from ..core import batch as B
 from ..core import batch_runner as BR
 from ..core import updater as U
@@ -152,9 +152,11 @@ class MainWindow(QMainWindow):
         self.library.open_job.connect(self._open_job)
         self.batchp.start.connect(self._batch_start); self.batchp.choose_folder.connect(self._batch_folder)
         self.batchp.stop.connect(self._batch_stop); self.batchp.download_all.connect(self._batch_download_all)
+        self.batchp.removed.connect(lambda _id: self._save_session())
         self.bsig = BatchSignals(); self.bsig.loaded.connect(self._batch_loaded); self.bsig.item.connect(self.batchp.update_item)
         self.bsig.item.connect(lambda *_: self._save_session()); self.bsig.error.connect(self._batch_error)
-        self.bsig.finished.connect(lambda: (self.batchp.set_running(False), self._save_session()))
+        self.bsig.finished.connect(self._batch_finished)
+        self._batches_running = 0
         self.batch_pool = QThreadPool(); self.batch_pool.setMaxThreadCount(1)
         self._batch_stop_flag = False
         self.home.clear_finished.connect(self._clear_finished)
@@ -460,7 +462,11 @@ class MainWindow(QMainWindow):
         slots = self.svc.settings.max_concurrent_analyses
         detail = f"{min(chk, slots)}/{slots} checking · {down} downloading" if (chk or down) else ""
         self.topbar.set_status(st.message, colour, detail)
+        was = self._connected
         self._connected = bool(st.logged_in) or not self.svc.managed_mode
+        if self._connected and not was and self.svc.adapter is not None and not getattr(self, "_batches_resumed", False):
+            self._batches_resumed = True
+            QTimer.singleShot(3000, self._batch_resume_all)      # unfinished playlists carry on once connected
         self.home.set_connected(self._connected, st.message)
         self.searchp.set_connected(self._connected)
         if self._waiting_screen():
@@ -519,21 +525,29 @@ class MainWindow(QMainWindow):
         s.search_text = self.searchp.q.text()
         from dataclasses import asdict
         s.filters = asdict(self.searchp.filters)
-        s.batch_name = self.batchp.name.text()
-        s.batch_items = [it.to_dict() for it in self.batchp.items]
+        s.batches = [b.to_dict() for b in self.batchp.batches]
+        s.batch_selected = self.batchp.selected or ""
+        s.batch_name, s.batch_items = "", []
         self.sessions.save(s, now=now)
 
     def _restore_session(self):
         s = self.session
-        if s.batch_items:
+        saved = list(s.batches)
+        if s.batch_items:                                   # 0.6.0-dev sessions had a single list
+            saved.append({"name": s.batch_name or "Batch", "service": "List", "items": s.batch_items})
+        for d in reversed(saved):                           # stored newest first; add oldest first
             items = []
-            for d in s.batch_items:
-                st = d.get("status", "waiting")
-                it = BR.Item(B.Wanted(d.get("artist", ""), d.get("title", ""), d.get("mix", ""), d.get("source", "")),
-                             status="waiting" if st in ("searching", "found") else st,   # picks aren't kept: find again
-                             detail="" if st in ("searching", "found") else d.get("detail", ""))
-                items.append(it)
-            self.batchp.set_items(s.batch_name, items)
+            for x in d.get("items", []):
+                st = x.get("status", "waiting")
+                items.append(BR.Item(B.Wanted(x.get("artist", ""), x.get("title", ""), x.get("mix", ""), x.get("source", "")),
+                                     status="waiting" if st in ("searching", "found") else st,   # picks aren't kept: find again
+                                     detail="" if st in ("searching", "found") else x.get("detail", "")))
+            b = Batch(name=d.get("name", "Batch"), service=d.get("service", "List"), items=items)
+            if d.get("id"):
+                b.id = d["id"]
+            self.batchp.add_batch(b, select=False)
+        if s.batch_selected and self.batchp.batch(s.batch_selected):
+            self.batchp.select(s.batch_selected)
         self.searchp.q.setText(s.search_text or "")
         self.searchp.set_filters(s.filters or {})
         if s.selected_job and self.svc.db.job(s.selected_job):
@@ -565,76 +579,102 @@ class MainWindow(QMainWindow):
         if not text:
             self.batchp.show_message("Paste a playlist link or some track names first.")
             return
-        self.batchp.show_message("Reading the list…")
-        self.batchp.set_running(True)
+        self.batchp.show_message("Reading the playlist…")
 
         def work():
             try:
-                if text.lower().startswith(("https://", "http://")) and "\n" not in text.strip():
-                    name, wanted = B.from_link(text.split()[0])
+                first = text.split()[0]
+                if first.lower().startswith(("https://", "http://")) and len(text.split()) == 1:
+                    name, wanted = B.from_link(first)
+                    svc = B.service_of(first) or "List"
                 else:
-                    name, wanted = "Pasted list", B.parse_text(text)
+                    wanted = B.parse_text(text)
+                    svc = "CSV" if wanted and wanted[0].source == "CSV" else "List"
+                    name = f"Pasted list · {len(wanted)} tracks"
             except B.LinkUnreadable as e:
                 self.bsig.error.emit(str(e)); return
-            self.bsig.loaded.emit(name, [BR.Item(w) for w in wanted])
-        self.batch_pool.start(Task(work, self.signals))
+            self.bsig.loaded.emit(name, svc, [BR.Item(w) for w in wanted])
+        self.io.start(Task(work, self.signals))
 
     def _batch_folder(self):
         from PySide6.QtWidgets import QFileDialog
         d = QFileDialog.getExistingDirectory(self, "Choose a folder of tracks to upgrade")
         if not d:
             return
-        self.batchp.set_running(True)
 
         def work():
             wanted = B.from_folder(Path(d))
-            self.bsig.loaded.emit(f"Upgrade: {Path(d).name}", [BR.Item(w) for w in wanted])
-        self.batch_pool.start(Task(work, self.signals))
+            self.bsig.loaded.emit(f"Upgrade · {Path(d).name}", "Folder", [BR.Item(w) for w in wanted])
+        self.io.start(Task(work, self.signals))
 
     def _batch_error(self, msg: str):
-        self.batchp.set_running(False)
         self.batchp.show_message(msg)
 
-    def _batch_loaded(self, name: str, items: list):
-        self.batchp.set_items(name, items)
-        self._save_session()
+    def _batch_loaded(self, name: str, service: str, items: list):
         if not items:
-            self.batchp.set_running(False); return
-        if self.svc.adapter is None:
-            self.batchp.set_running(False)
-            self.batchp.show_message("Not connected yet. The list is saved; press Find again once you're connected.")
+            self.batchp.show_message("No tracks found in that. Check the link, or paste the track names instead.")
             return
-        self.batchp.show_message(f"Searching one track every {int(BR.GAP_S)} seconds so the network doesn't slow your "
-                                 "account down. You can keep using the app meanwhile.")
+        self.batchp.show_message("")
+        self.batchp.take_input()
+        b = Batch(name=name, service=service, items=items)
+        self.batchp.add_batch(b)
+        self._tab("batch")
+        self._save_session()
+        self._batch_run(b)
+
+    def _batch_run(self, b: Batch):
+        if self.svc.adapter is None:
+            self.batchp.set_running(False, "Not connected yet. The playlist is saved; it's searched as soon as you're connected.")
+            return
         self._batch_stop_flag = False
+        self._batches_running += 1
+        self.batchp.set_running(True, f"Searching one track every {int(BR.GAP_S)} seconds so the network doesn't slow your "
+                                      "account down. Playlists are searched one after another; keep using the app meanwhile.")
         library = self._library_names()
 
         def work():
             try:
-                BR.run(items, self.svc, library, lambda i, it: self.bsig.item.emit(i, it),
+                BR.run(b.items, self.svc, library, lambda i, it: self.bsig.item.emit(b.id, i, it),
                        should_stop=lambda: self._batch_stop_flag)
             finally:
-                self.bsig.finished.emit()
-        self.batch_pool.start(Task(work, self.signals))
+                self.bsig.finished.emit(b.id)
+        self.batch_pool.start(Task(work, self.signals))      # one thread: playlists run one after another
+
+    def _batch_finished(self, _batch_id: str):
+        self._batches_running = max(0, self._batches_running - 1)
+        if not self._batches_running:
+            self.batchp.set_running(False, "")
+        self._save_session()
 
     def _batch_stop(self):
         self._batch_stop_flag = True
-        self.batchp.show_message("Stopped. Press Find these tracks to carry on where it left off.")
+        self.batchp.set_running(False, "Paused. Add a playlist or reopen the app to carry on where it left off.")
 
-    def _batch_download_all(self):
-        picks = [(i, it) for i, it in enumerate(self.batchp.items) if it.status == "found" and it.pick is not None]
+    def _batch_resume_all(self):
+        """On start-up (once connected): finish any playlist that still has tracks to search."""
+        for b in reversed(self.batchp.batches):
+            if b.count("waiting"):
+                self._batch_run(b)
+
+    def _batch_download_all(self, batch_id: str):
+        b = self.batchp.batch(batch_id)
+        if not b:
+            return
+        picks = [(i, it) for i, it in enumerate(b.items) if it.status == "found" and it.pick is not None]
 
         def work():
             for i, it in picks:
                 try:
-                    job = self.svc.request_download(it.pick)
-                    it.status, it.detail = "queued", it.detail
+                    job = self.svc.request_download(it.pick, playlist=b.name)
+                    it.status = "queued"
                     self.signals.done.emit(job["id"])
                 except ActionBlocked as e:
                     it.status, it.detail = "error", str(e)[:120]
-                self.bsig.item.emit(i, it)
+                self.bsig.item.emit(b.id, i, it)
         self.io.start(Task(work, self.signals))
-        self.batchp.show_message(f"Downloading {len(picks)} track(s) into quarantine. Each one shows up under Ready once checked.")
+        self.batchp.set_running(self._batches_running > 0,
+                                f"Downloading {len(picks)} track(s) from “{b.name}” into quarantine. Each shows up under Ready "
+                                f"once checked; the ones you keep go into a “{b.name}” folder in your library.")
 
     # ---------------------------------------------------------------- updates
     def _check_updates(self):
@@ -993,11 +1033,17 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- drag & drop / keys
     def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls():
+        if e.mimeData().hasUrls() or e.mimeData().hasText():
             e.acceptProposedAction()
 
     def dropEvent(self, e):
-        self._enqueue_paths([Path(u.toLocalFile()) for u in e.mimeData().urls() if u.isLocalFile()])
+        md = e.mimeData()
+        web = [u.toString() for u in md.urls() if u.scheme() in ("http", "https")]
+        if not web and md.hasText() and md.text().strip().lower().startswith("https://"):
+            web = [md.text().strip().split()[0]]
+        if web and B.service_of(web[0]):                    # a playlist link dragged from the browser
+            self._tab("batch"); self._batch_start(web[0]); return
+        self._enqueue_paths([Path(u.toLocalFile()) for u in md.urls() if u.isLocalFile()])
 
     def keyPressEvent(self, e):
         if self.pages.currentWidget() is self.review and self.selected:

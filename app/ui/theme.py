@@ -57,6 +57,24 @@ QMainWindow, QDialog, QWidget#page, QWidget#root {{ background: {c['bg']}; }}
 QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
 QToolTip {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['line']}; padding: 4px 8px; }}
 
+/* batch (design v6) */
+QFrame#dropzone {{ background: {c['panel']}; border: 1px dashed {c['faint']}; border-radius: 14px; }}
+QPlainTextEdit#bare {{ background: transparent; border: none; padding: 4px 2px; font-size: 14px; }}
+QFrame#bcard {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 12px; }}
+QFrame#bcard:hover {{ border-color: {c['faint']}; }}
+QFrame#bcard[selected="true"] {{ background: {c['soft']}; border: 1px solid {c['accent']}; }}
+QLabel#svc {{ font-family: {mono}; font-size: 10px; font-weight: 600; letter-spacing: 1.5px; }}
+QLabel#cardtitle {{ font-family: {display}; font-size: 15px; font-weight: 700; }}
+QFrame#stat {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 12px; }}
+QLabel#statnum {{ font-family: {mono}; font-size: 26px; font-weight: 600; }}
+QFrame#trow {{ border: none; border-bottom: 1px solid {c['line']}; }}
+QLabel#rowtitle {{ font-weight: 600; font-size: 14px; }}
+QLabel#fmt {{ font-family: {mono}; font-size: 11px; border: 1px solid {c['line']}; border-radius: 5px; padding: 2px 7px; }}
+QLabel#pill {{ font-size: 12px; font-weight: 700; border-radius: 11px; padding: 3px 10px; background: {c['bar']}; color: {c['muted']}; }}
+QLabel#pill[tone="pass_"] {{ background: {c['soft']}; color: {c['pass_']}; }}
+QLabel#pill[tone="accent"] {{ background: {c['soft']}; color: {c['accent']}; }}
+QLabel#pill[tone="fail"] {{ color: {c['fail']}; }}
+
 /* sidebar (design v6) */
 QWidget#sidebar {{ background: {c['panel']}; border-right: 1px solid {c['line']}; }}
 
