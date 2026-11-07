@@ -68,6 +68,7 @@ class Settings:
     keep_spectrograms: int = 100              # library spectrograms kept on disk (~0.8 MB each); older ones are redrawn on demand          # analysis slots; further tracks wait in the queue
     setup_done: bool = False                  # first-run setup (library folder + sharing) completed
     theme: str = "light"                      # light | dark
+    volume: float = 0.8                       # player volume 0..1, remembered across sessions
     firewall_notice_shown: bool = False       # legacy flag (0.2/0.3.0-0.3.3); kept so old settings still load
     firewall_done_for: str = ""               # engine path we last confirmed a firewall rule for (or the user declined)
     tour_done: bool = False                   # first-launch walkthrough finished or skipped

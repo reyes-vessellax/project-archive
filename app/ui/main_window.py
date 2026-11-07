@@ -150,6 +150,8 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget(); rl.addWidget(self.pages, 1)
         from .player import NowPlayingBar
         self.nowbar = NowPlayingBar(); rl.addWidget(self.nowbar)
+        self.nowbar.set_volume(self.svc.settings.volume or 0.8)
+        self.nowbar.on_volume = self._save_volume
         sl.addWidget(right, 1)
         self.home = HomePage(self.svc); self.searchp = SearchPage(self.svc); self.review = ReviewPage(self.svc)
         self.settings = SettingsPage(self.svc); self.library = LibraryPage(self.svc); self.batchp = BatchPage()
@@ -845,6 +847,11 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         return known
+
+    def _save_volume(self, v: float):
+        s = self.svc.settings
+        if abs((s.volume or 0) - v) >= 0.01:
+            s.volume = round(v, 2); self.svc.save_settings(s)
 
     def _take_search_token(self) -> None:
         """Token bucket for network searches; blocks (off the UI thread) until one is available."""

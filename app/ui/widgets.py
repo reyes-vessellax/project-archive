@@ -588,6 +588,8 @@ class SpectrumView(QLabel):
         try:
             from .player import Player
             pl = Player.get()
+            if not pl._ensure():                 # no audio device: play buttons do nothing rather than crash
+                return False
             self._player = pl.media
             self._player.positionChanged.connect(lambda _: self.update() if self._mine() else None)
             self._player.durationChanged.connect(lambda ms: self._got_duration(ms) if self._mine() else None)

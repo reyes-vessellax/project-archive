@@ -23,18 +23,51 @@ class Player(QObject):
 
     def __init__(self):
         super().__init__()
-        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-        self.media = QMediaPlayer(self)
-        self.out = QAudioOutput(self)
-        self.media.setAudioOutput(self.out)
+        # The audio device is opened on the first play, not at start-up: creating QAudioOutput with no
+        # output device (remote desktop, an unplugged interface, a headless test box) crashes Qt.
+        self.media = None
+        self.out = None
+        self.volume = 0.8                      # 0..1, one volume for the whole app (Settings.volume)
         self.title, self.subtitle, self.path = "", "", ""
         self._stop_at = QTimer(self, singleShot=True, timeout=self.stop)
-        self.media.playbackStateChanged.connect(lambda *_: self.changed.emit())
-        self.media.errorOccurred.connect(lambda *_: self.changed.emit())
+
+    def _ensure(self) -> bool:
+        if self.media is not None:
+            return True
+        try:
+            from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+            self.media = QMediaPlayer(self)
+            self.out = QAudioOutput(self)
+            self.out.setVolume(self.volume)
+            self.media.setAudioOutput(self.out)
+            self.media.playbackStateChanged.connect(lambda *_: self.changed.emit())
+            self.media.errorOccurred.connect(lambda *_: self.changed.emit())
+            return True
+        except Exception:
+            self.media = self.out = None
+            return False
+
+    def set_volume(self, v: float) -> None:
+        self.volume = max(0.0, min(1.0, float(v)))
+        if self.out is not None:
+            self.out.setVolume(self.volume)
+        self.changed.emit()
+
+    def duration(self) -> int:
+        return self.media.duration() if self.media is not None else 0
+
+    def position(self) -> int:
+        return self.media.position() if self.media is not None else 0
+
+    def seek(self, ms: int) -> None:
+        if self.media is not None:
+            self.media.setPosition(int(ms))
 
     def play(self, path: str, title: str, subtitle: str = "", start_s: float = 0.0, stop_after_s: float | None = None):
         """Play `path` (replacing whatever was playing). `stop_after_s` stops it by itself (previews)."""
         self._stop_at.stop()
+        if not self._ensure():
+            return
         if self.media.source().toLocalFile() != path:
             self.media.stop()
             self.media.setSource(QUrl.fromLocalFile(path))
@@ -49,23 +82,26 @@ class Player(QObject):
         self.changed.emit()
 
     def owns(self, path: str | None) -> bool:
-        return bool(path) and self.media.source().toLocalFile() == path
+        return bool(path) and self.media is not None and self.media.source().toLocalFile() == path
 
     def playing(self) -> bool:
+        if self.media is None:
+            return False
         from PySide6.QtMultimedia import QMediaPlayer
         return self.media.playbackState() == QMediaPlayer.PlayingState
 
     def toggle(self):
         if self.playing():
             self.media.pause()
-        elif self.path:
+        elif self.path and self._ensure():
             self.media.play()
         self.changed.emit()
 
     def stop(self):
         self._stop_at.stop()
-        self.media.stop()
-        self.media.setSource(QUrl())
+        if self.media is not None:
+            self.media.stop()
+            self.media.setSource(QUrl())
         self.title = self.subtitle = self.path = ""
         self.changed.emit()
 
@@ -89,12 +125,28 @@ class NowPlayingBar(QFrame):
         self.title = label("", "rowtitle"); self.sub = label("", "faint")
         names.addWidget(self.title); names.addWidget(self.sub)
         self.pos = QSlider(Qt.Horizontal); self.pos.setRange(0, 1000)
-        self.pos.sliderMoved.connect(lambda v: self.p.media.duration() and self.p.media.setPosition(int(v / 1000 * self.p.media.duration())))
+        self.pos.sliderMoved.connect(lambda v: self.p.duration() and self.p.seek(v / 1000 * self.p.duration()))
         self.time = label("", "mono")
+        self.vol = QSlider(Qt.Horizontal); self.vol.setObjectName("vol"); self.vol.setRange(0, 100)
+        self.vol.setFixedWidth(90); self.vol.setValue(int(round(self.p.volume * 100))); self.vol.setToolTip("Volume")
+        self.vol.valueChanged.connect(self._vol_moved)
+        self.on_volume = None                  # the window sets this to remember the volume in Settings
         lay.addWidget(self.btn); lay.addWidget(self.stop_btn); lay.addLayout(names, 2); lay.addWidget(self.pos, 3); lay.addWidget(self.time)
+        lay.addWidget(label("vol", "faint")); lay.addWidget(self.vol)
         self.tick = QTimer(self, interval=250, timeout=self._refresh)
         self.p.changed.connect(self._refresh)
         self.setVisible(False)
+
+    def _vol_moved(self, value: int):
+        self.p.set_volume(value / 100)
+        self.vol.setToolTip(f"Volume · {value}%")
+        if self.on_volume:
+            self.on_volume(value / 100)
+
+    def set_volume(self, v: float):
+        """Seed from Settings at start-up (does not call on_volume back)."""
+        self.p.set_volume(v)
+        self.vol.blockSignals(True); self.vol.setValue(int(round(v * 100))); self.vol.blockSignals(False)
 
     def _refresh(self):
         has = bool(self.p.path)
@@ -104,7 +156,7 @@ class NowPlayingBar(QFrame):
         self.tick.start()
         self.title.setText(self.p.title); self.sub.setText(self.p.subtitle)
         self.btn.setText("❚❚" if self.p.playing() else "▶")
-        d, t = self.p.media.duration(), self.p.media.position()
+        d, t = self.p.duration(), self.p.position()
         if not self.pos.isSliderDown():
             self.pos.setValue(int(1000 * t / d) if d > 0 else 0)
         self.time.setText(f"{_mmss(t)} / {_mmss(d)}" if d > 0 else _mmss(t))
