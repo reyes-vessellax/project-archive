@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLineEdit, QSizePolicy, QStackedWidget, QWidget
+from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QStackedWidget, QWidget
 
 from ..config import APP_NAME
 from ..core.account import AccountError
@@ -42,6 +42,16 @@ def _centered(inner_max: int = 480) -> tuple[QWidget, "vbox"]:
     return outer, lay
 
 
+def _logo(svc) -> QLabel:
+    """The brand-kit main logo (burst + smiley, DigMart underneath) at the top of every first-run screen."""
+    from .brand import _asset
+    dark = getattr(svc.settings, "theme", "light") == "dark"
+    pm = _asset("digmart-logo-dark.png" if dark else "digmart-logo.png").scaledToHeight(140 * 3, Qt.SmoothTransformation)
+    pm.setDevicePixelRatio(3.0)
+    lab = QLabel(); lab.setPixmap(pm); lab.setFixedSize(pm.deviceIndependentSize().toSize()); lab.setToolTip(APP_NAME)
+    return lab
+
+
 class SignUpPage(QWidget):
     done = Signal()
     switch = Signal()             # go to sign-in
@@ -51,7 +61,7 @@ class SignUpPage(QWidget):
         self.svc = svc
         outer, lay = _centered()
         root = vbox(self); root.addWidget(outer)
-        lay.addWidget(label(APP_NAME, "h2"))
+        lay.addWidget(_logo(svc))
         lay.addWidget(_steps(0))
         lay.addWidget(label("Create your account", "big"))
         lay.addWidget(label("Your account is how you sign in on any computer. Your music stays on your machine.", "muted", wrap=True))
@@ -101,7 +111,7 @@ class SignInPage(QWidget):
         self.svc = svc
         outer, lay = _centered()
         root = vbox(self); root.addWidget(outer)
-        lay.addWidget(label(APP_NAME, "h2"))
+        lay.addWidget(_logo(svc))
         lay.addWidget(label("Welcome back", "big"))
         self.email = QLineEdit(); self.email.setPlaceholderText("Email")
         self.pw = QLineEdit(); self.pw.setPlaceholderText("Password"); self.pw.setEchoMode(QLineEdit.Password)
@@ -132,7 +142,7 @@ class LibraryPage(QWidget):
         s = svc.settings
         outer, lay = _centered(520)
         root = vbox(self); root.addWidget(outer)
-        lay.addWidget(label(APP_NAME, "h2"))
+        lay.addWidget(_logo(svc))
         lay.addWidget(_steps(1))
         lay.addWidget(label("Where does your music live?", "big"))
         lay.addWidget(label(f"Pick the folder your DJ software already uses. Approved downloads go into a {APP_NAME} "
@@ -205,7 +215,7 @@ class ReadyPage(QWidget):
         super().__init__()
         outer, lay = _centered()
         root = vbox(self); root.addWidget(outer)
-        lay.addWidget(label(APP_NAME, "h2"))
+        lay.addWidget(_logo(svc))
         lay.addWidget(_steps(2))
         lay.addWidget(label("You're set.", "big"))
         lay.addWidget(label("Search for a track, pick a source, and it lands in quarantine where it's checked before "
@@ -224,7 +234,7 @@ class ConnectingPage(QWidget):
         self.svc = svc
         outer, lay = _centered()
         root = vbox(self); root.addWidget(outer)
-        lay.addWidget(label(APP_NAME, "h2"))
+        lay.addWidget(_logo(svc))
         lay.addWidget(_steps(2))
         self.title = label("Getting things ready…", "big"); lay.addWidget(self.title)
         self.spinner = label("", "h1"); self.spinner.setStyleSheet("font-size: 28px; color: palette(mid);"); lay.addWidget(self.spinner)

@@ -6,8 +6,8 @@ import html
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QProgressBar, QFrame, QGridLayout, QHeaderView, QLineEdit, QSizePolicy, QTreeWidget, QTreeWidgetItem,
+from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtWidgets import (QLabel, QProgressBar, QFrame, QGridLayout, QHeaderView, QLineEdit, QSizePolicy, QTreeWidget, QTreeWidgetItem,
                                QWidget)
 
 from ..adapters.base import Candidate, SearchResult
@@ -15,7 +15,7 @@ from ..core import jobs as J
 from ..core.rules import fmt_time
 from ..core.service import ArchiveService
 from . import theme as T
-from .widgets import keep_scroll, smooth, QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
+from .widgets import keep_scroll, smooth, LevelStrip, QueueRow, SpectrumView, button, hbox, label, page, rule, scroll, set_tag, vbox
 
 
 # ------------------------------------------------------------------ shared: a job -> row data
@@ -214,12 +214,15 @@ PAGE_ROWS = 100
 
 class SearchPage(QWidget):
     search = Signal(str)
+    filters_changed = Signal()
+    preview = Signal(object)          # Candidate: download it and play 20 s from the drop
+    stop_preview = Signal()
 
     def _theme(self) -> str:
         return getattr(self.svc.settings, "theme", "light")
     pick = Signal(object)        # Candidate
-    COLS = ["#", "Title", "Mix", "Artist", "Folder", "User", "Size", "Rate", "Length", "Speed"]
-    WIDTHS = [40, 240, 120, 150, 150, 100, 70, 60, 60, 190]
+    COLS = ["#", "Title", "Mix", "Artist", "Folder", "User", "Size", "Rate", "Length", "Availability"]
+    WIDTHS = [36, 180, 110, 140, 90, 80, 70, 56, 56, 170]
 
     def __init__(self, svc: ArchiveService):
         super().__init__()
@@ -238,6 +241,24 @@ class SearchPage(QWidget):
         self.state = label("", "faint"); head.addWidget(self.state); head.addStretch(1)
         head.addWidget(label("What you see is what each source reports. Every file is checked before it can reach your library.", "faint"))
         lay.addLayout(head)
+        # filters (design v6): format, ready now, mix kind, private
+        from ..core.availability import Filters
+        self.filters = Filters()
+        fr = hbox(spacing=8)
+        self._fbtns = {}
+        for key, text in (("lossless", "Lossless"), ("mp3_320", "MP3 320"), ("ready_now", "Ready now"), ("show_private", "Show private")):
+            b = button(text, "chip", lambda _=False, k=key: self._toggle_filter(k)); b.setCheckable(True)
+            self._fbtns[key] = b; fr.addWidget(b)
+        from PySide6.QtWidgets import QComboBox
+        self.mix_box = QComboBox()
+        for text, val in (("Any mix", ""), ("Extended", "extended"), ("Original", "original"), ("Radio edit", "radio"),
+                          ("Dub", "dub"), ("Remix", "remix"), ("Edit", "edit")):
+            self.mix_box.addItem(text, val)
+        self.mix_box.currentIndexChanged.connect(lambda _: self._set_mix(self.mix_box.currentData()))
+        fr.addWidget(self.mix_box); fr.addStretch(1)
+        self.hidden_note = label("", "faint"); fr.addWidget(self.hidden_note)
+        lay.addLayout(fr)
+        self._last_res = None; self._last_searching = False
         self.tree = QTreeWidget(); self.tree.setColumnCount(len(self.COLS)); self.tree.setHeaderLabels(self.COLS)
         self.tree.setRootIsDecorated(False); self.tree.setSortingEnabled(False); self.tree.setAlternatingRowColors(False)
         self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
@@ -265,8 +286,13 @@ class SearchPage(QWidget):
         self.tree.viewport().installEventFilter(self)
         row = hbox(spacing=12)
         self.btn = button("Check this file", "primary", self._pick); self.btn.setEnabled(False)
-        row.addWidget(self.btn)
-        row.addWidget(label("Lands in quarantine, gets checked, then waits for your decision.", "faint"))
+        self.btn_pv = button("▶  Preview", "ghost", self._preview_clicked); self.btn_pv.setEnabled(False)
+        self.btn_pv.setToolTip("Downloads it into quarantine, then plays 20 seconds from the drop")
+        row.addWidget(self.btn); row.addWidget(self.btn_pv)
+        self.pv_note = label("Preview and Check both download into quarantine first; nothing reaches your library "
+                             "until you decide.", "faint")
+        row.addWidget(self.pv_note)
+        self._previewing = False
         row.addStretch(1)
         lay.addLayout(row)
 
@@ -333,9 +359,39 @@ class SearchPage(QWidget):
         self.search_btn.setText("Search"); self.search_btn.setEnabled(self.q.isEnabled())
         self._set_foot()
 
-    def show_results(self, res: SearchResult, searching: bool, idle: str = ""):
-        if not searching:
+    # ------------------------------------------------------------------ filters
+    def _toggle_filter(self, key: str):
+        setattr(self.filters, key, self._fbtns[key].isChecked())
+        self._refilter()
+
+    def _set_mix(self, kind: str):
+        self.filters.mix = kind or ""
+        self._refilter()
+
+    def set_filters(self, d: dict):
+        from ..core.availability import Filters
+        self.filters = Filters(**{k: v for k, v in (d or {}).items() if k in Filters.__dataclass_fields__})
+        for k, b in self._fbtns.items():
+            b.blockSignals(True); b.setChecked(bool(getattr(self.filters, k))); b.blockSignals(False)
+        i = self.mix_box.findData(self.filters.mix)
+        self.mix_box.blockSignals(True); self.mix_box.setCurrentIndex(max(0, i)); self.mix_box.blockSignals(False)
+
+    def _refilter(self):
+        if self._last_res is not None:
+            self.show_results(self._last_res, self._last_searching, _refilter=True)
+        self.filters_changed.emit()
+
+    def show_results(self, res: SearchResult, searching: bool, idle: str = "", _refilter: bool = False):
+        if not searching and not _refilter:
             self.end_search()
+        if not idle:
+            self._last_res, self._last_searching = res, searching
+            from dataclasses import replace
+            from ..core.availability import apply as apply_filters
+            kept, hidden, private = apply_filters(res.candidates, self.filters)
+            bits = ([f"{hidden} hidden by filters"] if hidden else []) + ([f"{private} private hidden"] if private else [])
+            self.hidden_note.setText(" · ".join(bits))
+            res = replace(res, candidates=kept)
         n = len(res.candidates)
         if idle:
             self.title.setText("Search"); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
@@ -453,6 +509,22 @@ class SearchPage(QWidget):
         items = self.tree.selectedItems()
         c = items[0].data(0, Qt.UserRole) if items else None
         self.btn.setEnabled(isinstance(c, Candidate) and not c.note and not c.locked)
+        self.btn_pv.setEnabled(self._previewing or self.btn.isEnabled())
+
+    def _preview_clicked(self):
+        if self._previewing:
+            self.stop_preview.emit(); return
+        items = self.tree.selectedItems()
+        if items and isinstance(items[0].data(0, Qt.UserRole), Candidate):
+            self.preview.emit(items[0].data(0, Qt.UserRole))
+
+    def set_preview_state(self, state: str, text: str = ""):
+        """state: '' (idle), 'loading' (downloading + checking), 'playing'."""
+        self._previewing = state == "playing"
+        self.btn_pv.setText({"loading": "Getting preview…", "playing": "■  Stop"}.get(state, "▶  Preview"))
+        self.btn_pv.setEnabled(state != "loading" and (state == "playing" or self.btn.isEnabled()))
+        self.pv_note.setText(text or "Preview and Check both download into quarantine first; nothing reaches your "
+                                     "library until you decide.")
 
     def _pick(self):
         items = self.tree.selectedItems()
@@ -461,6 +533,11 @@ class SearchPage(QWidget):
 
 
 def _speed(c: Candidate) -> str:
+    from ..core.availability import availability
+    return availability(c).label
+
+
+def _speed_raw(c: Candidate) -> str:
     if c.locked:
         return "Locked"
     rate = f"{c.upload_speed / 1e6:.1f} MB/s" if (c.upload_speed or 0) >= 1e6 else (f"{c.upload_speed / 1e3:.0f} kB/s" if c.upload_speed else "")
@@ -514,10 +591,14 @@ class ReviewPage(QWidget):
         # detail
         det = vbox(spacing=22)
         head = hbox(spacing=20)
+        self.cover = QLabel(); self.cover.setFixedSize(104, 104); self.cover.setObjectName("cover")
+        self.cover.setAlignment(Qt.AlignCenter); self.cover.setScaledContents(False)
+        head.addWidget(self.cover, 0, Qt.AlignTop)
         names = vbox(spacing=4)
         self.source = label("", "tag"); self.h1 = label("", "h1"); self.h1.setWordWrap(True); self.artist = label("", "muted")
         self.artist.setStyleSheet("font-size: 15px;")
-        names.addWidget(self.source); names.addWidget(self.h1); names.addWidget(self.artist)
+        self.meta_line = label("", "muted")
+        names.addWidget(self.source); names.addWidget(self.h1); names.addWidget(self.artist); names.addWidget(self.meta_line)
         head.addLayout(names, 1)
         verdict = vbox(spacing=4); verdict.setAlignment(Qt.AlignRight)
         self.verdict = label("", "verdict"); self.verdict.setAlignment(Qt.AlignRight)
@@ -527,12 +608,23 @@ class ReviewPage(QWidget):
         det.addLayout(head)
 
         det.addWidget(rule())
-        facts = QGridLayout(); facts.setHorizontalSpacing(14); facts.setVerticalSpacing(4)
-        self.facts = {}
-        for i, k in enumerate(("Format", "Bitrate", "Rate", "Length", "Channels", "Plays")):
-            facts.addWidget(label(k.upper(), "tag"), 0, i)
-            v = label("–", "monotext"); facts.addWidget(v, 1, i); self.facts[k] = v
+        facts = hbox(spacing=12)
+        self.facts, self.fact_subs = {}, {}
+        from PySide6.QtWidgets import QFrame, QGraphicsDropShadowEffect
+        for k in ("BPM", "Key", "Length", "Format"):
+            tile = QFrame(); tile.setObjectName("display")
+            tl = vbox(tile, (16, 12, 16, 12), 2)
+            tl.addWidget(label(k.upper(), "disptag"))
+            v = label("–", "tile"); tl.addWidget(v)
+            glow = QGraphicsDropShadowEffect(v); glow.setOffset(0, 0); glow.setBlurRadius(14)
+            glow.setColor(QColor(255, 176, 0, 110)); v.setGraphicsEffect(glow)             # the amber readout glow
+            sub = label("", "dispsub"); tl.addWidget(sub)
+            self.facts[k], self.fact_subs[k] = v, sub
+            facts.addWidget(tile, 1)
+        for k in ("Bitrate", "Rate", "Channels", "Plays"):           # shown together on one quiet line below
+            self.facts[k] = label("")
         det.addLayout(facts)
+        self.facts_detail = label("", "muted"); det.addWidget(self.facts_detail)
         det.addWidget(rule())
 
         # download progress (only while the track is still coming in)
@@ -543,10 +635,20 @@ class ReviewPage(QWidget):
         self.dl_bar.setProperty("tag", "Down"); dl.addWidget(self.dl_bar)
         self.dl_note = label("", "muted"); dl.addWidget(self.dl_note)
         det.addWidget(self.dl_host); self.dl_host.hide()
-        sh = hbox(); sh.addWidget(label("Spectrogram", "h2")); sh.addStretch(1)
+        sh = hbox(spacing=12); sh.addWidget(label("Spectrogram", "h2"))
+        self.btn_preview = button("▶  Preview the drop", "small", lambda: self.spectrum.play_preview())
+        self.btn_preview.setToolTip("Plays 20 seconds starting just before the drop")
+        self.btn_preview.setVisible(False)                 # downloaded tracks play in full; preview lives in Search
+        sh.addStretch(1)
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
         det.addLayout(sh)
         self.spectrum = SpectrumView(180); det.addWidget(self.spectrum)
+        lv = hbox(spacing=12); lv.addWidget(label("LEVEL", "disptag"))
+        self.level = LevelStrip(); lv.addWidget(self.level, 1)
+        det.addLayout(lv)
+        # the meter only ticks while something plays (an always-on timer steals time from animations)
+        self._level_timer = QTimer(self, interval=50, timeout=self._tick_level)
+        self.spectrum.on_playing = lambda on: self._level_timer.start() if on else None
 
         self.checks_host = QWidget(); self.checks_host.setObjectName("page")
         self.checks = vbox(self.checks_host, spacing=0)
@@ -585,6 +687,11 @@ class ReviewPage(QWidget):
         for b in (self.btn_save, self.btn_anyway, self.btn_remove, self.btn_retry):
             b.setEnabled(not on)
         self.btn_delete.setEnabled(not on and self.btn_delete.property("can") is True)
+
+    def _tick_level(self):
+        self.level.set_level(self.spectrum.current_level())
+        if not self.spectrum.is_playing() and self.level._shown < 0.01:
+            self._level_timer.stop()                       # fell back to zero after playback stopped
 
     def set_rail(self, jobs: list[dict], analyses: dict[str, dict | None], steps: dict[str, str]):
         rows = [(j["id"], row_data(j, analyses.get(j["id"]), steps)) for j in jobs]
@@ -640,13 +747,19 @@ class ReviewPage(QWidget):
                 item.widget().deleteLater()
         if not job:
             self.source.setText(""); self.h1.setText("Pick a track from the list"); self.artist.setText("")
+            for v in self.fact_subs.values(): v.setText("")
+            self.meta_line.setText(""); self.cover.clear(); self.cover.setVisible(False); self.btn_preview.setVisible(False)
             self.verdict.setText(""); self.verdict_sub.setText("")
             for v in self.facts.values(): v.setText("–")
+            self.facts_detail.setText("")
             self.spectrum.clear_view(""); self.spec_note.setText("")
             return
         d = row_data(job, a, steps or {})
-        src = "from a soulseek user" if job.get("remote_user") else job.get("source_kind", "")
-        self.source.setText(f"{(a or {}).get('facts', {}).get('tags', {}).get('album') or ''}  ·  {src}".strip(" ·").upper())
+        src = "from a soulseek user" if job.get("remote_user") else {"manual": "added by you", "watched": "from your incoming folder"}.get(
+            job.get("source_kind", ""), job.get("source_kind", ""))
+        when = (job.get("updated_at") or "")[11:16]
+        where = {"PROMOTED": "in your library"}.get(job["state"], "in quarantine")
+        self.source.setText(f"{where}  ·  {'checked ' + when if when and a else 'checking'}  ·  {src}".upper())
         self.h1.setText(d["title"]); self.artist.setText(d["artist"])
         busy = job["state"] in (J.STAGING, J.ANALYZING, J.QUEUED)
         if job["state"] == J.QUEUED:
@@ -679,12 +792,33 @@ class ReviewPage(QWidget):
             self.facts["Rate"].setText(f"{f['sample_rate_hz'] / 1000:g} kHz" if f.get("sample_rate_hz") else "?")
             self.facts["Length"].setText(fmt_time(f["duration_s"]) if f.get("duration_s") else "?")
             self.facts["Channels"].setText({1: "Mono", 2: "Stereo"}.get(f.get("channels"), str(f.get("channels") or "?")))
+            mu, me = a.get("music") or {}, a.get("meta") or {}
+            self.facts["BPM"].setText(f"{mu['bpm']:.2f}".rstrip("0").rstrip(".") if mu.get("bpm") else "–")
+            self.facts["Key"].setText(mu["camelot"] if mu.get("camelot") else "–")
+            self.fact_subs["Key"].setText(mu.get("key", "") if mu.get("camelot") else "")
+            self.facts["Key"].setToolTip(mu.get("key", ""))
+            self.facts_key_name = mu.get("key", "")
+            self.facts["Key"].setToolTip("Estimated from the audio (Camelot code and key name)")
+            bits = [me.get("label"), me.get("year"), me.get("genre")]
+            self.meta_line.setText("  ·  ".join(b for b in bits if b))
+            self.meta_line.setToolTip("From " + ", ".join(me.get("sources") or ["the file"]) if me else "")
+            cov = me.get("cover_path")
+            pm = QPixmap(cov) if cov and Path(cov).exists() else QPixmap()
+            self.cover.setVisible(not pm.isNull())
+            if not pm.isNull():
+                self.cover.setPixmap(pm.scaled(104, 104, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
             played = dec.get("decoded_s")
             dec_ok = a.get("decode_ok") and next((c for c in a["checks"] if c["id"] == "decode"), {}).get("status") != "FAIL"
             self.facts["Plays"].setText("–" if played is None else ("All the way" if dec_ok else f"Stops at {fmt_time(played)}"))
+            self.fact_subs["Format"].setText(self.facts["Rate"].text() if self.facts["Rate"].text() not in ("?", "–") else "")
+            self.facts_detail.setText("  ·  ".join(x for x in (self.facts["Bitrate"].text(), self.facts["Rate"].text(),
+                                                             self.facts["Channels"].text(),
+                                                             "plays all the way through" if dec_ok else self.facts["Plays"].text().lower())
+                                                    if x and x not in ("?", "–")))
             if a.get("spectrogram_path") and Path(a["spectrogram_path"]).exists():
                 self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
                                        audio=_audio_path(job), duration_s=f.get("duration_s"))
+                self.spectrum.set_preview(mu.get("drop_s"), None)        # mark the drop; no preview window here
             else:
                 self.spectrum.clear_view("Spectrogram unavailable." if job["state"] not in J.FINAL else "Staged copy removed.")
             cut = a.get("cutoff_hz")
@@ -693,7 +827,8 @@ class ReviewPage(QWidget):
                 row = QWidget(); hl = hbox(row, (0, 10, 0, 10), 14)
                 word = T.GRADE_WORD[c["status"]]
                 t = label(word.upper(), "tag", word); t.setFixedWidth(56); t.setAlignment(Qt.AlignTop)
-                txt = label(f"<b>{html.escape(c['title'])}</b> — <span style='color: palette(mid)'>{html.escape(c['message'])}</span>", wrap=True)
+                muted = T.colours(getattr(self.svc.settings, "theme", "light"))["muted"]
+                txt = label(f"<b>{html.escape(c['title'])}</b> — <span style='color: {muted}'>{html.escape(c['message'])}</span>", wrap=True)
                 txt.setTextFormat(Qt.RichText)
                 hl.addWidget(t); hl.addWidget(txt, 1)
                 self.checks.addWidget(row); self.checks.addWidget(rule())

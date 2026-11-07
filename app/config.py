@@ -6,12 +6,12 @@ import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
-# The product name, in ONE place. "Pied Piper" is a placeholder (a dev-time joke) until the real name is
-# chosen; every visible use of the name reads this constant (window title, dialogs, engine, data folder).
-APP_NAME = "Pied Piper"
-APP_SLUG = "PiedPiper"                    # for file and artifact names that shouldn't carry a space
-APP_VERSION = "0.5.8"                     # keep in step with pyproject.toml; the build names the artifact with it
-PREVIOUS_NAMES = ("DEADWAX", "Project Archive")   # earlier placeholders; existing installs are migrated from them
+# The product name, in ONE place: DigMart (brand guide, 2026-11). Earlier placeholders are in PREVIOUS_NAMES so
+# existing installs migrate; every visible use of the name reads this constant (window title, dialogs, engine, data folder).
+APP_NAME = "DigMart"
+APP_SLUG = "DigMart"                      # for file and artifact names that shouldn't carry a space
+APP_VERSION = "0.6.0"                     # keep in step with pyproject.toml; the build names the artifact with it
+PREVIOUS_NAMES = ("Pied Piper", "DEADWAX", "Project Archive")   # earlier placeholders; existing installs are migrated from them
 
 
 def data_dir() -> Path:
@@ -58,6 +58,8 @@ class Settings:
     extensions: list[str] = field(default_factory=lambda: ["mp3", "wav", "flac", "aiff", "aif"])
     ffmpeg_path: str = ""                     # empty = bundled copy, then PATH
     max_concurrent_analyses: int = 5
+    playlist_folders: bool = True             # batch downloads go to <library>/<app>/<playlist name>/
+    online_lookup: bool = True                # look up cover art / label / genre by artist + title
     keep_spectrograms: int = 100              # library spectrograms kept on disk (~0.8 MB each); older ones are redrawn on demand          # analysis slots; further tracks wait in the queue
     setup_done: bool = False                  # first-run setup (library folder + sharing) completed
     theme: str = "light"                      # light | dark

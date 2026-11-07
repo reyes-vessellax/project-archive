@@ -1,28 +1,38 @@
-"""The placeholder mark: a "pp" monogram tile, drawn in code so it follows the theme's accent colour.
-An original glyph of our own — not any existing logo — so it can ship in test builds without question.
-"""
+"""DigMart brand: the logo artwork from the brand kit, plus the wordmark set in the kit's Poppins Bold."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from ..config import APP_NAME
 from . import theme as T
 
 
-def paint_mark(p: QPainter, rect: QRectF, colour: QColor, text_colour: QColor | None = None) -> None:
-    """A rounded teal tile with a tight lowercase "pp" in the display face."""
-    p.save()
-    p.setRenderHint(QPainter.Antialiasing)
-    size = rect.width()
-    p.setPen(Qt.NoPen); p.setBrush(colour)
-    p.drawRoundedRect(rect, size * 0.22, size * 0.22)
-    f = QFont(T.DISPLAY); f.setPixelSize(max(6, int(size * 0.62))); f.setWeight(QFont.ExtraBold)
-    f.setLetterSpacing(QFont.AbsoluteSpacing, -size * 0.06)
-    p.setFont(f); p.setPen(text_colour or QColor("#ffffff"))
-    p.drawText(rect.adjusted(0, -size * 0.06, 0, -size * 0.06), Qt.AlignCenter, "pp")
-    p.restore()
+# The DigMart mark is the artwork from the brand kit itself (app/ui/brand_assets/), never a redraw.
+ASSETS = Path(__file__).resolve().parent / "brand_assets"
+_cache: dict[str, QPixmap] = {}
+
+
+def _asset(name: str) -> QPixmap:
+    if name not in _cache:
+        _cache[name] = QPixmap(str(ASSETS / name))
+    return _cache[name]
+
+
+def paint_mark(p: QPainter, rect: QRectF, colour: QColor | None = None, text_colour: QColor | None = None,
+               mono: bool = False) -> None:
+    """Draw the brand-kit mark (starburst + smiley), fitted and centred in `rect`; `mono` = the kit's outline icon."""
+    pm = _asset("digmart-icon-outline.png" if mono else "digmart-mark.png")
+    if pm.isNull():
+        return
+    scaled = pm.scaled(int(rect.width() * 4), int(rect.height() * 4), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    w = rect.width() if scaled.width() / rect.width() >= scaled.height() / rect.height() else rect.height() * scaled.width() / scaled.height()
+    h = w * scaled.height() / scaled.width()
+    target = QRectF(rect.center().x() - w / 2, rect.center().y() - h / 2, w, h)
+    p.save(); p.setRenderHint(QPainter.SmoothPixmapTransform); p.drawPixmap(target, scaled, QRectF(scaled.rect())); p.restore()
 
 
 def mark_pixmap(size: int, colour: str, bg: str | None = None, dpr: float = 1.0) -> QPixmap:
@@ -34,30 +44,38 @@ def mark_pixmap(size: int, colour: str, bg: str | None = None, dpr: float = 1.0)
     return pm
 
 
+def icon_pixmap(size: int) -> QPixmap:
+    """The application icon: the kit's burst + smiley (no wordmark) on a black rounded tile."""
+    return _asset("digmart-app-icon.png").scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+
 def app_icon(theme: str = "light") -> QIcon:
-    c = T.colours(theme)
     icon = QIcon()
-    for s in (16, 32, 48, 64, 128, 256):
-        icon.addPixmap(mark_pixmap(s, "#ffffff", bg=c["accent"]))
+    for s in (16, 32, 48, 64, 128, 256, 512, 1024):
+        icon.addPixmap(icon_pixmap(s))
     return icon
 
 
 class Brand(QWidget):
-    """Top-left: the mark + the name. Clicking it goes home."""
+    """Top of the sidebar: the brand-kit main logo (burst + smiley with DigMart underneath).
+    Dark mode uses the dark version of the same artwork (black outline and lettering shown white)."""
     clicked = Signal()
+    H = 116                                          # logo height in the sidebar (logical px)
 
     def __init__(self):
         super().__init__()
         self.setCursor(Qt.PointingHandCursor)
-        lay = QHBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(8)
-        self.mark = QLabel(); self.mark.setFixedSize(26, 26)
-        self.name = QLabel(APP_NAME.lower()); self.name.setObjectName("brandname")
-        lay.addWidget(self.mark); lay.addWidget(self.name)
+        self.setToolTip(APP_NAME)
+        lay = QHBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(0)
+        self.logo = QLabel()
+        lay.addStretch(1); lay.addWidget(self.logo); lay.addStretch(1)
         self.set_theme("light")
 
     def set_theme(self, theme: str):
-        c = T.colours(theme)
-        self.mark.setPixmap(mark_pixmap(26, c["accent"], dpr=2.0))
+        pm = _asset("digmart-logo-dark.png" if theme == "dark" else "digmart-logo.png")
+        pm = pm.scaledToHeight(self.H * 3, Qt.SmoothTransformation)          # 3x: sharp on Retina
+        pm.setDevicePixelRatio(3.0)
+        self.logo.setPixmap(pm); self.logo.setFixedSize(pm.deviceIndependentSize().toSize())
 
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:

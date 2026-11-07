@@ -71,6 +71,11 @@ def main() -> int:
     from .config import data_dir
     data_dir().mkdir(parents=True, exist_ok=True)
     _log_crashes(data_dir() / "app.log")
+    try:                                                    # a fresh update started fine: drop the old copy
+        from .core.updater import finish_pending
+        finish_pending()
+    except Exception:
+        pass
     lock = QLockFile(str(data_dir() / "app.lock")); lock.setStaleLockTime(0)
     if not lock.tryLock(100):
         QMessageBox.information(None, APP_NAME, f"{APP_NAME} is already running. Look for its window (or its icon in the taskbar).")

@@ -8,6 +8,7 @@ small pool for the engine and folder scans, so a busy analysis never blocks prog
 from __future__ import annotations
 
 import time
+import sys
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -16,7 +17,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QStackedWidget, QWidget
 
 from ..adapters.base import Candidate, SearchResult
-from ..config import APP_NAME
+from ..config import APP_NAME, data_dir
 from ..core import jobs as J
 from ..core.safety import Rejected
 from ..core.service import ActionBlocked, ArchiveService
@@ -27,7 +28,12 @@ from .pages import HomePage, ReviewPage, SearchPage, row_data
 from .library_page import LibraryPage, reveal_in_folder
 from .settings_page import SettingsPage
 from .tour import TourOverlay, default_steps
-from .widgets import AvatarMenu, Signals, Task, TopBar, vbox
+from .widgets import AvatarMenu, Sidebar, Signals, Task, hbox, vbox
+from .batch_page import Batch, BatchPage, BatchSignals
+from ..core import batch as B
+from ..core import batch_runner as BR
+from ..core import updater as U
+from ..core.session import Session, SessionStore
 
 def _applog(line: str) -> None:
     try:
@@ -79,6 +85,7 @@ class MainWindow(QMainWindow):
         self._polling = self._scanning = False
         self.signals = Signals()
         self.signals.progress.connect(self._on_progress)
+        self.signals.done.connect(self._after_decision)          # before refresh: pick the next track first
         self.signals.done.connect(lambda _id: self.refresh())
         self.signals.done.connect(self._search_buttons_settle)
         self.signals.notice.connect(self._notice)
@@ -113,6 +120,15 @@ class MainWindow(QMainWindow):
         self.clean_timer.start()
         self.hk_timer = QTimer(self, interval=10 * 60 * 1000, timeout=lambda: self.io.start(Task(svc.engine_housekeeping, self.signals)))
         self.hk_timer.start()
+        self.sessions = SessionStore(data_dir() / "session.json")
+        self.session = self.sessions.load()
+        self._update_zip = None; self._update_cmd = None
+        self.update_timer = QTimer(self, interval=6 * 3600 * 1000, timeout=self._check_updates); self.update_timer.start()
+        QTimer.singleShot(60_000, self._check_updates)
+        if self.session.window and len(self.session.window) == 4:
+            self.setGeometry(*self.session.window)
+        if self.session.maximized:
+            self.showMaximized()
         if svc.accounts.load() and svc.settings.setup_done:
             self._enter_app()
         else:
@@ -124,15 +140,25 @@ class MainWindow(QMainWindow):
         self.onboarding = Onboarding(self.svc); self.onboarding.finished.connect(self._enter_app)
         self.root.addWidget(self.onboarding)
 
-        shell = QWidget(); shell.setObjectName("root"); sl = vbox(shell)
-        self.topbar = TopBar(); self.topbar.tab_clicked.connect(self._tab); self.topbar.avatar_clicked.connect(self._menu)
+        shell = QWidget(); shell.setObjectName("root"); sl = hbox(shell)
+        self.topbar = Sidebar(); self.topbar.tab_clicked.connect(self._tab); self.topbar.avatar_clicked.connect(self._menu)
+        self.topbar.update_clicked.connect(self._install_update)
         sl.addWidget(self.topbar)
         self.pages = QStackedWidget(); sl.addWidget(self.pages, 1)
         self.home = HomePage(self.svc); self.searchp = SearchPage(self.svc); self.review = ReviewPage(self.svc)
-        self.settings = SettingsPage(self.svc); self.library = LibraryPage(self.svc)
-        for p in (self.home, self.searchp, self.review, self.settings, self.library):
+        self.settings = SettingsPage(self.svc); self.library = LibraryPage(self.svc); self.batchp = BatchPage()
+        for p in (self.home, self.searchp, self.review, self.settings, self.library, self.batchp):
             self.pages.addWidget(p)
         self.library.open_job.connect(self._open_job)
+        self.batchp.start.connect(self._batch_start); self.batchp.choose_folder.connect(self._batch_folder)
+        self.batchp.stop.connect(self._batch_stop); self.batchp.download_all.connect(self._batch_download_all)
+        self.batchp.removed.connect(lambda _id: self._save_session())
+        self.bsig = BatchSignals(); self.bsig.loaded.connect(self._batch_loaded); self.bsig.item.connect(self.batchp.update_item)
+        self.bsig.item.connect(lambda *_: self._save_session()); self.bsig.error.connect(self._batch_error)
+        self.bsig.finished.connect(self._batch_finished)
+        self._batches_running = 0
+        self.batch_pool = QThreadPool(); self.batch_pool.setMaxThreadCount(1)
+        self._batch_stop_flag = False
         self.home.clear_finished.connect(self._clear_finished)
         self.review.remove_job.connect(self._remove_entry)
         self.review.reveal.connect(self._reveal)
@@ -142,6 +168,10 @@ class MainWindow(QMainWindow):
         self.home.open_job.connect(self._open_job); self.home.remove_job.connect(self._remove_entry)
         self.home.review_all.connect(lambda: self._tab("ready")); self.home.add_files.connect(self._pick_files)
         self.searchp.pick.connect(self._pick_candidate)
+        self.searchp.filters_changed.connect(lambda: self._save_session())
+        self.searchp.preview.connect(self._preview_candidate); self.searchp.stop_preview.connect(self._stop_preview)
+        self._preview_jobs: set[str] = set()
+        self.signals.done.connect(self._maybe_play_preview)
         self.review.select.connect(self._open_job)
         self.review.promote.connect(self._promote); self.review.reject.connect(self._reject)
         self.review.cancel.connect(self._cancel); self.review.rerun.connect(self._recheck)
@@ -164,6 +194,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "home"):
             accent = T.colours(self.svc.settings.theme)["accent"]
             self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent); self.library.set_accent(accent)
+            self.review.level._theme = self.svc.settings.theme; self.review.level.update()
         if hasattr(self, "topbar"):
             self._brand_theme()
 
@@ -181,6 +212,7 @@ class MainWindow(QMainWindow):
         else:
             self.root.setCurrentWidget(self.shell)
             self._maybe_start_tour()
+        self._restore_session()
         if not self._backend_started:
             self._backend_started = True
             QTimer.singleShot(0, self._start_backend)
@@ -190,7 +222,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_account(self):
         a = self.svc.accounts.load()
-        self.topbar.set_initials(a.initials if a else "?")
+        self.topbar.set_initials(a.initials if a else "?", (a.name if a else "") or "Account")
 
     # ---------------------------------------------------------------- navigation
     def _tab(self, key: str):
@@ -210,6 +242,10 @@ class MainWindow(QMainWindow):
         elif key == "library":
             self.library.refresh()
             self.pages.setCurrentWidget(self.library)
+        elif key == "batch":
+            self.pages.setCurrentWidget(self.batchp)
+        self._page_key = key
+        self._save_session()
 
     def _menu(self):
         menu = AvatarMenu(self)                           # built on click, destroyed on close
@@ -317,6 +353,15 @@ class MainWindow(QMainWindow):
         self.review.set_rail(self._jobs, self._analyses, self.steps)
         self.review.show_job(job, a, self.steps)
 
+    def _after_decision(self, job_id: str):
+        """After Download to Library / Delete the track has left the Ready list: move on to the next one waiting."""
+        if self.selected != job_id:
+            return
+        job = self.svc.db.job(job_id)
+        if job and job.get("hidden"):
+            waiting = [j["id"] for j in self.svc.jobs() if j["state"] == J.READY]
+            self.selected = waiting[0] if waiting else None
+
     def _clear_finished(self):
         n = self.svc.hide_finished()
         if self.selected and not self.svc.db.job(self.selected) or (self.selected and self.svc.db.job(self.selected).get("hidden")):
@@ -421,7 +466,11 @@ class MainWindow(QMainWindow):
         slots = self.svc.settings.max_concurrent_analyses
         detail = f"{min(chk, slots)}/{slots} checking · {down} downloading" if (chk or down) else ""
         self.topbar.set_status(st.message, colour, detail)
+        was = self._connected
         self._connected = bool(st.logged_in) or not self.svc.managed_mode
+        if self._connected and not was and self.svc.adapter is not None and not getattr(self, "_batches_resumed", False):
+            self._batches_resumed = True
+            QTimer.singleShot(3000, self._batch_resume_all)      # unfinished playlists carry on once connected
         self.home.set_connected(self._connected, st.message)
         self.searchp.set_connected(self._connected)
         if self._waiting_screen():
@@ -463,8 +512,199 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(2000, self._poll_status)      # poll faster while signing in
 
     def closeEvent(self, e):
+        self._batch_stop_flag = True
+        self._save_session(now=True)
         self.svc.stop_backend()
         super().closeEvent(e)
+
+    # ---------------------------------------------------------------- auto save
+    def _save_session(self, now: bool = False):
+        if not hasattr(self, "sessions"):
+            return
+        s = self.session
+        s.page = getattr(self, "_page_key", s.page)
+        s.selected_job = self.selected or ""
+        g = self.normalGeometry() if self.isMaximized() else self.geometry()
+        s.window, s.maximized = [g.x(), g.y(), g.width(), g.height()], self.isMaximized()
+        s.search_text = self.searchp.q.text()
+        from dataclasses import asdict
+        s.filters = asdict(self.searchp.filters)
+        s.batches = [b.to_dict() for b in self.batchp.batches]
+        s.batch_selected = self.batchp.selected or ""
+        s.batch_name, s.batch_items = "", []
+        self.sessions.save(s, now=now)
+
+    def _restore_session(self):
+        s = self.session
+        saved = list(s.batches)
+        if s.batch_items:                                   # 0.6.0-dev sessions had a single list
+            saved.append({"name": s.batch_name or "Batch", "service": "List", "items": s.batch_items})
+        for d in reversed(saved):                           # stored newest first; add oldest first
+            items = []
+            for x in d.get("items", []):
+                st = x.get("status", "waiting")
+                items.append(BR.Item(B.Wanted(x.get("artist", ""), x.get("title", ""), x.get("mix", ""), x.get("source", "")),
+                                     status="waiting" if st in ("searching", "found") else st,   # picks aren't kept: find again
+                                     detail="" if st in ("searching", "found") else x.get("detail", "")))
+            b = Batch(name=d.get("name", "Batch"), service=d.get("service", "List"), items=items)
+            if d.get("id"):
+                b.id = d["id"]
+            self.batchp.add_batch(b, select=False)
+        if s.batch_selected and self.batchp.batch(s.batch_selected):
+            self.batchp.select(s.batch_selected)
+        self.searchp.q.setText(s.search_text or "")
+        self.searchp.set_filters(s.filters or {})
+        if s.selected_job and self.svc.db.job(s.selected_job):
+            self.selected = s.selected_job
+        if s.page in ("queue", "search", "ready", "library", "batch"):
+            self._tab(s.page)
+
+    def moveEvent(self, e):
+        super().moveEvent(e); self._save_session()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e); self._save_session()
+
+    # ---------------------------------------------------------------- batch
+    def _library_names(self) -> list[tuple[str, str]]:
+        out = []
+        for j in self.svc.db.jobs(states=(J.PROMOTED,), limit=20000):
+            a = self.svc.db.analysis(j["id"]) or {}
+            m = a.get("meta") or {}
+            if m.get("title"):
+                out.append((m.get("artist", ""), f"{m['title']} ({m['mix']})" if m.get("mix") else m["title"]))
+            else:
+                from ..adapters.base import parse_track
+                art, t, mix = parse_track(j["original_name"])
+                out.append((art, f"{t} ({mix})" if mix else t))
+        return out
+
+    def _batch_start(self, text: str):
+        if not text:
+            self.batchp.show_message("Paste a playlist link or some track names first.")
+            return
+        self.batchp.show_message("Reading the playlist…")
+
+        def work():
+            try:
+                first = text.split()[0]
+                if first.lower().startswith(("https://", "http://")) and len(text.split()) == 1:
+                    name, wanted = B.from_link(first)
+                    svc = B.service_of(first) or "List"
+                else:
+                    wanted = B.parse_text(text)
+                    svc = "CSV" if wanted and wanted[0].source == "CSV" else "List"
+                    name = f"Pasted list · {len(wanted)} tracks"
+            except B.LinkUnreadable as e:
+                self.bsig.error.emit(str(e)); return
+            self.bsig.loaded.emit(name, svc, [BR.Item(w) for w in wanted])
+        self.io.start(Task(work, self.signals))
+
+    def _batch_folder(self):
+        from PySide6.QtWidgets import QFileDialog
+        d = QFileDialog.getExistingDirectory(self, "Choose a folder of tracks to upgrade")
+        if not d:
+            return
+
+        def work():
+            wanted = B.from_folder(Path(d))
+            self.bsig.loaded.emit(f"Upgrade · {Path(d).name}", "Folder", [BR.Item(w) for w in wanted])
+        self.io.start(Task(work, self.signals))
+
+    def _batch_error(self, msg: str):
+        self.batchp.show_message(msg)
+
+    def _batch_loaded(self, name: str, service: str, items: list):
+        if not items:
+            self.batchp.show_message("No tracks found in that. Check the link, or paste the track names instead.")
+            return
+        self.batchp.show_message("")
+        self.batchp.take_input()
+        b = Batch(name=name, service=service, items=items)
+        self.batchp.add_batch(b)
+        self._tab("batch")
+        self._save_session()
+        self._batch_run(b)
+
+    def _batch_run(self, b: Batch):
+        if self.svc.adapter is None:
+            self.batchp.set_running(False, "Not connected yet. The playlist is saved; it's searched as soon as you're connected.")
+            return
+        self._batch_stop_flag = False
+        self._batches_running += 1
+        self.batchp.set_running(True, f"Searching one track every {int(BR.GAP_S)} seconds so the network doesn't slow your "
+                                      "account down. Playlists are searched one after another; keep using the app meanwhile.")
+        library = self._library_names()
+
+        def work():
+            try:
+                BR.run(b.items, self.svc, library, lambda i, it: self.bsig.item.emit(b.id, i, it),
+                       should_stop=lambda: self._batch_stop_flag)
+            finally:
+                self.bsig.finished.emit(b.id)
+        self.batch_pool.start(Task(work, self.signals))      # one thread: playlists run one after another
+
+    def _batch_finished(self, _batch_id: str):
+        self._batches_running = max(0, self._batches_running - 1)
+        if not self._batches_running:
+            self.batchp.set_running(False, "")
+        self._save_session()
+
+    def _batch_stop(self):
+        self._batch_stop_flag = True
+        self.batchp.set_running(False, "Paused. Add a playlist or reopen the app to carry on where it left off.")
+
+    def _batch_resume_all(self):
+        """On start-up (once connected): finish any playlist that still has tracks to search."""
+        for b in reversed(self.batchp.batches):
+            if b.count("waiting"):
+                self._batch_run(b)
+
+    def _batch_download_all(self, batch_id: str):
+        b = self.batchp.batch(batch_id)
+        if not b:
+            return
+        picks = [(i, it) for i, it in enumerate(b.items) if it.status == "found" and it.pick is not None]
+
+        def work():
+            for i, it in picks:
+                try:
+                    job = self.svc.request_download(it.pick, playlist=b.name)
+                    it.status = "queued"
+                    self.signals.done.emit(job["id"])
+                except ActionBlocked as e:
+                    it.status, it.detail = "error", str(e)[:120]
+                self.bsig.item.emit(b.id, i, it)
+        self.io.start(Task(work, self.signals))
+        self.batchp.set_running(self._batches_running > 0,
+                                f"Downloading {len(picks)} track(s) from “{b.name}” into quarantine. Each shows up under Ready "
+                                f"once checked; the ones you keep go into a “{b.name}” folder in your library.")
+
+    # ---------------------------------------------------------------- updates
+    def _check_updates(self):
+        if not getattr(sys, "frozen", False):
+            return                                          # running from source: git is the updater
+
+        def work():
+            try:
+                u = U.check()
+                if u is None:
+                    return
+                zp = U.download(u)
+                cmd = U.stage_install(zp)
+                self._update_cmd, self._update_version = cmd, u.version
+                self.signals.notice.emit(f"UPDATE_READY {u.version}")
+            except U.UpdateError as e:
+                _applog(f"update: {e}")
+        self.io.start(Task(work, self.signals))
+
+    def _install_update(self):
+        if not self._update_cmd:
+            return
+        self._save_session(now=True)
+        U.launch_installer(self._update_cmd)
+        self.close()
+        QApplication.instance().quit()
 
     # ---------------------------------------------------------------- search
     def _search(self, q: str):
@@ -632,6 +872,52 @@ class MainWindow(QMainWindow):
         self.io.start(Task(work, self.signals))
         self.statusBar().showMessage(f"Requested “{cand.title or cand.display_name}”. It goes to quarantine first.", 6000)
 
+    # ---------------------------------------------------------------- preview (Search only)
+    def _preview_candidate(self, cand: Candidate):
+        """Download into quarantine like Check, then play 20 s from the drop once it's checked."""
+        name = cand.title or cand.display_name
+        self.searchp.set_preview_state("loading", f"Getting “{name}” for a preview: downloading, then a quick check…")
+
+        def work():
+            job = self.svc.request_download(cand)
+            self._preview_jobs.add(job["id"])
+            self.signals.done.emit(job["id"])
+        self.io.start(Task(work, self.signals))
+
+    def _maybe_play_preview(self, job_id: str):
+        if job_id not in self._preview_jobs:
+            return
+        job = self.svc.db.job(job_id)
+        if not job:
+            return
+        if job["state"] == J.ERROR or job["state"] in J.FINAL:
+            self._preview_jobs.discard(job_id)
+            self.searchp.set_preview_state("", "That copy didn't come through for a preview. Try another one.")
+            return
+        if job["state"] != J.READY or not job.get("staged_path"):
+            return                                                  # still downloading / checking
+        self._preview_jobs.discard(job_id)
+        a = self.svc.db.analysis(job_id) or {}
+        mu = a.get("music") or {}
+        start = float(mu.get("preview_start_s") or 0.0)
+        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+        if not hasattr(self, "_pv"):
+            self._pv = QMediaPlayer(self); self._pv_out = QAudioOutput(self); self._pv.setAudioOutput(self._pv_out)
+            self._pv_timer = QTimer(self, singleShot=True, timeout=self._stop_preview)
+        self._pv.setSource(QUrl.fromLocalFile(job["staged_path"]))
+        self._pv.setPosition(int(start * 1000)); self._pv.play()
+        QTimer.singleShot(200, lambda: self._pv.setPosition(int(start * 1000)) if self._pv.position() < start * 1000 - 500 else None)
+        self._pv_timer.start(20_000)                                   # stops by itself after 20 s
+        where = f"from the drop at {int(mu['drop_s']) // 60}:{int(mu['drop_s']) % 60:02d}" if mu.get("drop_s") is not None \
+            else f"from {int(start) // 60}:{int(start) % 60:02d}"
+        title = row_data(job, a, self.steps)["title"]
+        self.searchp.set_preview_state("playing", f"Playing “{title}” {where} (20 s). It's waiting under Ready if you want it.")
+
+    def _stop_preview(self):
+        if hasattr(self, "_pv"):
+            self._pv.stop(); self._pv_timer.stop()
+        self.searchp.set_preview_state("")
+
     def _poll_downloads(self):
         if self.svc.adapter is None or self._polling:
             return
@@ -754,6 +1040,9 @@ class MainWindow(QMainWindow):
         self.io.start(Task(work, self.signals))
 
     def _notice(self, message: str):
+        if message.startswith("UPDATE_READY "):
+            self.topbar.set_update(f"Update to {message.split()[1]} · restart")
+            return
         self.review.set_busy(False)
         self.statusBar().showMessage(message, 8000)
 
@@ -794,11 +1083,17 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- drag & drop / keys
     def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls():
+        if e.mimeData().hasUrls() or e.mimeData().hasText():
             e.acceptProposedAction()
 
     def dropEvent(self, e):
-        self._enqueue_paths([Path(u.toLocalFile()) for u in e.mimeData().urls() if u.isLocalFile()])
+        md = e.mimeData()
+        web = [u.toString() for u in md.urls() if u.scheme() in ("http", "https")]
+        if not web and md.hasText() and md.text().strip().lower().startswith("https://"):
+            web = [md.text().strip().split()[0]]
+        if web and B.service_of(web[0]):                    # a playlist link dragged from the browser
+            self._tab("batch"); self._batch_start(web[0]); return
+        self._enqueue_paths([Path(u.toLocalFile()) for u in md.urls() if u.isLocalFile()])
 
     def keyPressEvent(self, e):
         if self.pages.currentWidget() is self.review and self.selected:

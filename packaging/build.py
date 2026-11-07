@@ -27,7 +27,7 @@ def make_icon(path: Path) -> bool:
         from PySide6.QtCore import QBuffer, QIODevice
         from PySide6.QtWidgets import QApplication
         from app.ui import theme as T
-        from app.ui.brand import mark_pixmap
+        from app.ui.brand import icon_pixmap
         app = QApplication.instance() or QApplication([])
         T.load_fonts()
         import struct
@@ -35,7 +35,7 @@ def make_icon(path: Path) -> bool:
         sizes = (16, 24, 32, 48, 64, 128, 256)
         blobs = []
         for s in sizes:
-            pm = mark_pixmap(s, "#ffffff", bg=T.colours("light")["accent"])
+            pm = icon_pixmap(s)
             if s >= 256:                                     # PNG entry (what Windows expects at 256)
                 buf = QBuffer(); buf.open(QIODevice.WriteOnly); pm.save(buf, "PNG"); blobs.append(bytes(buf.data()))
                 continue
@@ -71,14 +71,14 @@ def make_icns(path: Path) -> bool:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtWidgets import QApplication
         from app.ui import theme as T
-        from app.ui.brand import mark_pixmap
+        from app.ui.brand import icon_pixmap
         app = QApplication.instance() or QApplication([])
         T.load_fonts()
         iconset = path.with_suffix(".iconset")
         iconset.mkdir(parents=True, exist_ok=True)
         for s in (16, 32, 128, 256, 512):
-            mark_pixmap(s, "#ffffff", bg=T.colours("light")["accent"]).save(str(iconset / f"icon_{s}x{s}.png"), "PNG")
-            mark_pixmap(s, "#ffffff", bg=T.colours("light")["accent"], dpr=2.0).save(str(iconset / f"icon_{s}x{s}@2x.png"), "PNG")
+            icon_pixmap(s).save(str(iconset / f"icon_{s}x{s}.png"), "PNG")
+            icon_pixmap(s * 2).save(str(iconset / f"icon_{s}x{s}@2x.png"), "PNG")
         subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(path)], check=True)
         print(f"icon: wrote {path} ({path.stat().st_size} bytes)")
         return True
@@ -112,6 +112,11 @@ args = [
         "tkinter", "setuptools", "pkg_resources", "unittest", "pydoc", "doctest", "xmlrpc",   # (email stays: http.client needs it)
     )), []),
 ]
+# Brand fonts and logo artwork live next to the UI code; PyInstaller only copies .py files unless told.
+for sub in ("fonts", "brand_assets"):
+    src = os.path.join("app", "ui", sub)
+    if Path(src).is_dir():
+        args += ["--add-data", f"{src}{os.pathsep}{src}"]
 # Everything we ship that isn't Python lives under _internal/vendor/<thing>/, so the folder reads:
 #   <APP_NAME>.exe, _internal/{vendor/ffmpeg, vendor/engine, app, PySide6, numpy, python runtime}
 if Path("vendor/ffmpeg").is_dir():

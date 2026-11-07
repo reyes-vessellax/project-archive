@@ -1,8 +1,8 @@
-# Pied Piper
+# DigMart
 
 *The Google of music.* (Working name. We'll change it. Probably.)
 
-Pied Piper is a desktop platform that lets DJs discover, acquire, and validate music across a
+DigMart is a desktop platform that lets DJs discover, acquire, and validate music across a
 decentralized peer-to-peer ecosystem — with a trust layer in front of the library so nothing lands
 in your crates until it's been checked. Think of it as **audio pre-flight**: every file passes through
 quarantine, gets a full-spectrum analysis, and earns a verdict before you decide whether it ships.
@@ -51,7 +51,7 @@ Everything runs on the user's machine. No uploads, no servers, no telemetry.
 | Linux | Builds from source; no packaged app yet |
 
 Builds are published as artifacts on **Actions → Test and build → latest green run**:
-`PiedPiper-<version>-Windows` (zip of the app folder) and `PiedPiper-<version>-macOS-AppleSilicon` / `-Intel` (a `.dmg`: open it, drag the app to Applications).
+`DigMart-<version>-Windows` (zip of the app folder) and `DigMart-<version>-macOS-AppleSilicon` / `-Intel` (a `.dmg`: open it, drag the app to Applications).
 
 ## Architecture (one paragraph)
 
