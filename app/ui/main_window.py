@@ -663,7 +663,8 @@ class MainWindow(QMainWindow):
         except ActionBlocked as e:
             self.statusBar().showMessage(str(e), 8000); return
         self.library._key = None; self.library.refresh(); self._refresh_crates()
-        self.statusBar().showMessage(f"Moved “{Path(job['final_path']).name}” to the Trash.", 8000)
+        bin_name = "Recycle Bin" if sys.platform == "win32" else "Trash"
+        self.statusBar().showMessage(f"Moved “{Path(job['final_path']).name}” to the {bin_name}.", 8000)
 
     # ---------------------------------------------------------------- auto save
     def _save_session(self, now: bool = False):

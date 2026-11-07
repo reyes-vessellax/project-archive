@@ -577,7 +577,8 @@ class ArchiveService:
 
             library = self.settings.downloads_dir()              # <library>/<app name>, made on first download
             if job.get("playlist") and self.settings.playlist_folders:
-                library = library / safe_filename(job["playlist"])  # one folder per batch playlist
+                # one folder per batch playlist; a slash in the name is part of the name, not a sub-folder
+                library = library / safe_filename(job["playlist"].replace("/", " - ").replace("\\", " - "))
             library.mkdir(parents=True, exist_ok=True)
             target = unique_path(library, safe_filename(job["original_name"]))
             self._transition(job, J.PROMOTING)

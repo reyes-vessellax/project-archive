@@ -215,22 +215,46 @@ def stage_install(zip_path: Path) -> list[str]:
     if target is None:
         raise UpdateError("Updates install only in the packaged app.")
     work = updates_dir() / "staged"
+    if sys.platform == "win32":
+        # Unpack beside the app (same drive): PowerShell can't move a folder from %APPDATA% to another drive.
+        side = target.with_name(target.name + ".update")
+        try:
+            shutil.rmtree(side, ignore_errors=True); side.mkdir(parents=True, exist_ok=True); work = side
+        except OSError:
+            pass                                                      # read-only parent: fall back to the user folder
     shutil.rmtree(work, ignore_errors=True)
     new = safe_extract(zip_path, work)
     backup = target.with_name(target.name + ".previous")
     pid = os.getpid()
     if sys.platform == "win32":
         exe_name = Path(sys.executable).name.replace("'", "''")
-        target_s, new_s, backup_s = (str(p).replace("'", "''") for p in (target, new, backup))
+        target_s, new_s, backup_s, work_s = (str(p).replace("'", "''") for p in (target, new, backup, work))
+        log_s = str(updates_dir().parent / "update.log").replace("'", "''")
+        engines = ", ".join("'" + n.replace("'", "''") + "'" for n in _engine_names())
         script = updates_dir() / "apply_update.ps1"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        # Windows holds files briefly after a process ends (the engine, Defender scanning the new files, an
+        # Explorer window on the folder), so the rename is retried for ~30 s. Whatever happens, an app is
+        # started again at the end: the new one if the swap worked, the old one if it didn't.
         script.write_text(
-            "$ErrorActionPreference = 'Stop'\n"
-            f"Wait-Process -Id {pid} -ErrorAction SilentlyContinue\n"
-            "Start-Sleep -Milliseconds 500\n"
-            f"$t = '{target_s}'; $n = '{new_s}'; $b = '{backup_s}'\n"
-            "if (Test-Path $b) { Remove-Item -Recurse -Force $b }\n"
-            "Rename-Item -Path $t -NewName (Split-Path $b -Leaf)\n"
-            "try { Move-Item -Path $n -Destination $t } catch { Rename-Item -Path $b -NewName (Split-Path $t -Leaf); throw }\n"
+            "$ErrorActionPreference = 'Continue'\n"
+            f"$t = '{target_s}'; $n = '{new_s}'; $b = '{backup_s}'; $w = '{work_s}'; $log = '{log_s}'\n"
+            "function Log($m) { Add-Content -Path $log -Value ((Get-Date -Format s) + ' ' + $m) }\n"
+            f"Wait-Process -Id {pid} -Timeout 60 -ErrorAction SilentlyContinue\n"
+            f"foreach ($e in @({engines})) {{ Get-Process -Name $e -ErrorAction SilentlyContinue | "
+            "Wait-Process -Timeout 15 -ErrorAction SilentlyContinue }\n"
+            "Start-Sleep -Milliseconds 800\n"
+            "if (Test-Path $b) { Remove-Item -Recurse -Force $b -ErrorAction SilentlyContinue }\n"
+            "$ok = $false\n"
+            "for ($i = 0; $i -lt 30 -and -not $ok; $i++) {\n"
+            "  try { Rename-Item -Path $t -NewName (Split-Path $b -Leaf) -ErrorAction Stop; $ok = $true }\n"
+            "  catch { Start-Sleep -Seconds 1 }\n"
+            "}\n"
+            "if (-not $ok) { Log 'update: the app folder stayed in use; kept the current version'; "
+            f"Start-Process -FilePath (Join-Path $t '{exe_name}'); exit 1 }}\n"
+            "try { Move-Item -Path $n -Destination $t -ErrorAction Stop; Log 'update: installed' }\n"
+            "catch { Log ('update: move failed, restoring: ' + $_); Rename-Item -Path $b -NewName (Split-Path $t -Leaf) }\n"
+            "if ($w -ne $n -and (Test-Path $w)) { Remove-Item -Recurse -Force $w -ErrorAction SilentlyContinue }\n"
             f"Start-Process -FilePath (Join-Path $t '{exe_name}')\n", encoding="utf-8")
         return ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", str(script)]
     script = updates_dir() / "apply_update.sh"
@@ -246,9 +270,21 @@ def stage_install(zip_path: Path) -> list[str]:
     return ["/bin/sh", str(script)]
 
 
+def _engine_names() -> tuple[str, ...]:
+    try:
+        from .slskd_manager import ENGINE_NAMES
+        return tuple(ENGINE_NAMES)
+    except Exception:                                                    # noqa: BLE001
+        return ()
+
+
 def launch_installer(cmd: list[str]) -> None:
-    """Start the swap script detached; the caller then quits the app."""
-    kw = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "close_fds": True}
+    """Start the swap script detached; the caller then quits the app.
+    It runs from the updates folder: on Windows a process whose working folder is inside the app folder
+    (the default when the app was double-clicked) would stop that folder from being renamed."""
+    d = updates_dir(); d.mkdir(parents=True, exist_ok=True)
+    kw = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "close_fds": True,
+          "cwd": str(d)}
     if sys.platform == "win32":
         kw["creationflags"] = 0x00000008 | 0x00000200 | getattr(subprocess, "CREATE_NO_WINDOW", 0)  # DETACHED | NEW_GROUP
     else:
@@ -261,4 +297,5 @@ def finish_pending() -> None:
     target = install_target()
     if target is not None:
         shutil.rmtree(target.with_name(target.name + ".previous"), ignore_errors=True)
+        shutil.rmtree(target.with_name(target.name + ".update"), ignore_errors=True)
     shutil.rmtree(updates_dir(), ignore_errors=True)

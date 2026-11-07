@@ -135,3 +135,27 @@ def test_stage_install_writes_a_swap_script(tmp_path, monkeypatch):
 
 def test_never_updates_from_source():
     assert U.install_target() is None
+
+
+def test_windows_swap_script_is_safe(tmp_path, monkeypatch):
+    """Windows: unpack beside the app (same drive), retry the rename, always start an app again, never run
+    from inside the app folder."""
+    app_dir = tmp_path / "D" / "DigMart"
+    app_dir.mkdir(parents=True); (app_dir / "DigMart.exe").write_bytes(b"")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(app_dir / "DigMart.exe"))
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(U, "updates_dir", lambda: tmp_path / "C" / "AppData" / "DigMart" / "updates")
+    zp = tmp_path / "u.zip"
+    zp.write_bytes(_zip({"DigMart/DigMart.exe": (b"new", 0o644)}).getvalue())
+    cmd = U.stage_install(zp)
+    script = Path(cmd[-1]).read_text()
+    assert (tmp_path / "D" / "DigMart.update" / "DigMart").is_dir()           # same drive as the app
+    assert "for ($i = 0; $i -lt 30" in script and "Rename-Item" in script     # retried
+    assert script.count("Start-Process -FilePath") == 2                      # old app back if it fails, new if it works
+    assert "DigMart Engine" in script                                        # waits for the engine to let go
+    assert cmd[0] == "powershell" and "-File" in cmd
+    seen = {}
+    monkeypatch.setattr(U.subprocess, "Popen", lambda c, **kw: seen.update(kw))
+    U.launch_installer(cmd)
+    assert seen["cwd"] == str(tmp_path / "C" / "AppData" / "DigMart" / "updates")   # not inside the app folder

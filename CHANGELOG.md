@@ -1,8 +1,42 @@
 # Changelog
 
-All notable changes to DEADWAX (working name; formerly Project Archive). Dates are build dates.
+All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). Dates are build dates.
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
+
+## 0.6.1 (2026-11-07) — one master copy: Reyes's 0.6.0 + Chris's beta work + Windows fixes
+
+Built on Reyes's DigMart 0.6.0 (his design and features unchanged), with what Chris's `beta` branch had
+that 0.6.0 didn't (0.5.9 to 0.6.5 came after the 0.5.8 handoff), and a Windows pass.
+
+- **Wishlist** (sidebar): standing searches. "Watch this search" on Search, or the Artist / Title / Mix form
+  on the page. Asked for again every 20–30 min for 30 days; the first copy that passes the quality bar is
+  pulled into quarantine and checked like any other file; Good / Have a look → it waits on Ready and the
+  sidebar shows a count. Broken → the next candidate. Nothing is ever kept automatically. Whole playlists
+  stay on Batch.
+- **One search budget** for Search, Batch and the Wishlist, so together they can't trip the network's rate
+  limit. The Wishlist never searches while you search or a batch runs.
+- **Search:** click a column heading to sort (again to flip; # back to fastest first). Rate groups each
+  lossless format together, so all the WAVs sit in one block.
+- **Already have it?** A result that matches your library or queue shows a note; the button needs a second
+  click ("Check it anyway").
+- **Silent pre-checks** before the decode: programs, archives, PDFs, images or web pages with an audio name,
+  files too small to be a track, and sizes that can't fit the length stop at once with the reason.
+- **Engine watchdog:** if the engine dies it's started again (status: Reconnecting…), no app restart.
+- **Volume** slider in the now-playing bar, remembered between sessions.
+- Gentler wheel scrolling (the 0.5.9 change that missed the handoff).
+- Fixes: the review page no longer widens for a frame on every refresh; wrapped text never gets clipped;
+  "Sharing your library" light only on the first start; a router that won't open the port is a dash, not
+  a red cross; the self-test plays its audio probe muted.
+- **Windows:**
+  - The player opens the sound device on the first play, not at start-up: with no output device (remote
+    desktop, an unplugged audio interface) the app used to crash on launch.
+  - Auto-update swap: runs from outside the app folder (Windows can't rename a folder a process is
+    standing in), unpacks the update beside the app (PowerShell can't move folders across drives),
+    retries the rename for 30 s while Windows/Defender let go of files, always reopens an app (new or old),
+    and logs to `update.log`.
+  - Batch playlist folders keep slashes as part of the name ("Late night / sunrise" was saved as "sunrise").
+  - "Recycle Bin" instead of "Trash" in Library messages on Windows.
 
 ## 0.6.0 (2026-11-07)
 

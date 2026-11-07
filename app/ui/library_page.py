@@ -290,7 +290,8 @@ class LibraryPage(QWidget):
         self.btn_crate = button("Add to crate ▾", "ghost", self._crate_menu)
         self.btn_uncrate = button("Remove from crate", "ghost", self._remove_from_crate)
         self.btn_delete = button("Delete from library", "danger", self._delete)
-        self.btn_delete.setToolTip("Moves the file to the Trash (you can still get it back from there)")
+        self.btn_delete.setToolTip(f"Moves the file to the {'Recycle Bin' if sys.platform == 'win32' else 'Trash'} "
+                                   "(you can still get it back from there)")
         acts.addWidget(self.btn_reveal); acts.addWidget(self.btn_crate); acts.addWidget(self.btn_uncrate)
         acts.addStretch(1); acts.addWidget(self.btn_delete); acts.addWidget(self.btn_close)
         right.addLayout(acts)
