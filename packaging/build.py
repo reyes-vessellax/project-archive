@@ -112,6 +112,11 @@ args = [
         "tkinter", "setuptools", "pkg_resources", "unittest", "pydoc", "doctest", "xmlrpc",   # (email stays: http.client needs it)
     )), []),
 ]
+# Brand fonts and logo artwork live next to the UI code; PyInstaller only copies .py files unless told.
+for sub in ("fonts", "brand_assets"):
+    src = os.path.join("app", "ui", sub)
+    if Path(src).is_dir():
+        args += ["--add-data", f"{src}{os.pathsep}{src}"]
 # Everything we ship that isn't Python lives under _internal/vendor/<thing>/, so the folder reads:
 #   <APP_NAME>.exe, _internal/{vendor/ffmpeg, vendor/engine, app, PySide6, numpy, python runtime}
 if Path("vendor/ffmpeg").is_dir():

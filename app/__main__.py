@@ -22,6 +22,12 @@ def self_test() -> int:
             say(f"{tool} -> {exe}")
         import app.ui.main_window  # noqa: F401  (imports Qt and the whole UI)
         import cryptography, mutagen, yt_dlp  # noqa: F401,E401  (tags, signed updates, playlist links)
+        from app.ui.brand import ASSETS
+        from app.ui.theme import FONT_DIR
+        fonts, logos = sorted(p.name for p in FONT_DIR.glob("*.ttf")), sorted(p.name for p in ASSETS.glob("*.png"))
+        say(f"brand: {len(fonts)} fonts, {len(logos)} logo files")
+        if not any(f.startswith("Poppins") for f in fonts) or "digmart-mark.png" not in logos:
+            raise RuntimeError("brand fonts or logo files are missing from the build")
         say(f"components: mutagen {mutagen.version_string}, yt-dlp {yt_dlp.version.__version__}, cryptography {cryptography.__version__}")
         say("audio playback: " + _audio_probe(exe_ffmpeg=find_tool("ffmpeg")))
         # The bundled Soulseek engine: generate a throwaway config, start it, make sure the API answers, stop it.
