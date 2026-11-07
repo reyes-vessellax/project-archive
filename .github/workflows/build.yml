@@ -3,6 +3,7 @@ name: Test and build
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']     # text-only changes don't ship a new app version
   pull_request:
   workflow_dispatch:
 
