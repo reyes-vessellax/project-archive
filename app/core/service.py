@@ -438,7 +438,8 @@ class ArchiveService:
                 tmp.unlink(missing_ok=True)
                 self.db.update_job(job_id, state=J.READY, final_path=None, message=f"Save failed: {e}")
                 raise ActionBlocked(f"Couldn't save to the library: {e}") from e
-            self.db.update_job(job_id, state=J.PROMOTED, final_path=str(target),
+            # hidden=1: a saved track leaves the Ready list by itself (it lives on in the Library page)
+            self.db.update_job(job_id, state=J.PROMOTED, final_path=str(target), hidden=1,
                                disposition="promoted_override" if status == WARN else "promoted")
             self.db.event(job_id, "promoted", str(target))
             self._keep_spectrogram(job_id, analysis)        # the library page keeps showing it after staging is gone
@@ -504,7 +505,7 @@ class ArchiveService:
                 raise ActionBlocked("Wait until the check finishes before deleting.")
             self._remove_staging(job)
             self._transition(job, J.REJECTED)
-            self.db.update_job(job_id, disposition="rejected")
+            self.db.update_job(job_id, disposition="rejected", hidden=1)    # deleted: nothing left to look at
             self.db.event(job_id, "rejected")
 
     # housekeeping ----------------------------------------------------------------------------

@@ -79,6 +79,7 @@ class MainWindow(QMainWindow):
         self._polling = self._scanning = False
         self.signals = Signals()
         self.signals.progress.connect(self._on_progress)
+        self.signals.done.connect(self._after_decision)          # before refresh: pick the next track first
         self.signals.done.connect(lambda _id: self.refresh())
         self.signals.done.connect(self._search_buttons_settle)
         self.signals.notice.connect(self._notice)
@@ -316,6 +317,15 @@ class MainWindow(QMainWindow):
         a = self._analyses.get(self.selected) if job else None
         self.review.set_rail(self._jobs, self._analyses, self.steps)
         self.review.show_job(job, a, self.steps)
+
+    def _after_decision(self, job_id: str):
+        """After Download to Library / Delete the track has left the Ready list: move on to the next one waiting."""
+        if self.selected != job_id:
+            return
+        job = self.svc.db.job(job_id)
+        if job and job.get("hidden"):
+            waiting = [j["id"] for j in self.svc.jobs() if j["state"] == J.READY]
+            self.selected = waiting[0] if waiting else None
 
     def _clear_finished(self):
         n = self.svc.hide_finished()

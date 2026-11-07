@@ -188,7 +188,7 @@ def test_library_named_after_app_is_not_nested(service, tmp_path):
 def test_clear_finished_hides_only_finished(service, fixtures):
     a = service.stage(fixtures["mp3_320"]); service.analyze(a["id"]); service.promote(a["id"])
     b = service.stage(fixtures["mp3_320"]); service.analyze(b["id"])                 # still waiting for a decision
-    assert service.hide_finished() == 1
+    assert service.hide_finished() == 0                                               # the saved one already left by itself
     ids = {j["id"] for j in service.jobs()}
     assert b["id"] in ids and a["id"] not in ids
     assert service.db.job(a["id"])["state"] == J.PROMOTED                            # history intact; library page still lists it
@@ -227,3 +227,21 @@ def test_spectrograms_are_capped_and_redrawn_on_demand(service, fixtures):
     out = service.redraw_spectrogram(oldest)
     assert out and Path(out).exists() and service.db.analysis(oldest)["spectrogram_path"] == out
     assert len(list(keep_dir.glob("*.png"))) == 10          # the cap holds after a redraw too
+
+
+@needs_ffmpeg
+def test_saved_track_leaves_ready_list_but_stays_in_library(service, fixtures):
+    job = service.stage(fixtures["mp3_320"])
+    service.analyze(job["id"])
+    assert job["id"] in [j["id"] for j in service.jobs()]
+    service.promote(job["id"])
+    assert job["id"] not in [j["id"] for j in service.jobs()]                     # gone from Ready, no × needed
+    assert job["id"] in [j["id"] for j in service.db.jobs(states=(J.PROMOTED,))]  # still in the Library
+
+
+@needs_ffmpeg
+def test_deleted_track_leaves_ready_list(service, fixtures):
+    job = service.stage(fixtures["mp3_320"])
+    service.analyze(job["id"])
+    service.reject(job["id"])
+    assert job["id"] not in [j["id"] for j in service.jobs()]
