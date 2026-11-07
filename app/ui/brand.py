@@ -44,11 +44,15 @@ def mark_pixmap(size: int, colour: str, bg: str | None = None, dpr: float = 1.0)
     return pm
 
 
+def icon_pixmap(size: int) -> QPixmap:
+    """The application icon: the kit's burst + smiley (no wordmark) on a black rounded tile."""
+    return _asset("digmart-app-icon.png").scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+
 def app_icon(theme: str = "light") -> QIcon:
-    c = T.colours(theme)
     icon = QIcon()
-    for s in (16, 32, 48, 64, 128, 256):
-        icon.addPixmap(mark_pixmap(s, "#ffffff", bg=c["accent"]))
+    for s in (16, 32, 48, 64, 128, 256, 512, 1024):
+        icon.addPixmap(icon_pixmap(s))
     return icon
 
 
