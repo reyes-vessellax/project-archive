@@ -97,13 +97,20 @@ def tag_reference(path: Path) -> tuple[float | None, str | None]:
     return bpm, key
 
 
+def _norm(name: str) -> str:
+    """Match "Track - Copy.mp3" and "Track (1).mp3" to "Track.mp3" in the Rekordbox export."""
+    n = name.lower()
+    n = re.sub(r" - copy(?=\.\w+$)", "", n)
+    return re.sub(r" \(\d+\)(?=\.\w+$)", "", n)
+
+
 def xml_reference(xml: Path) -> dict[str, tuple[float | None, str | None]]:
     out = {}
     for t in ET.parse(xml).getroot().iter("TRACK"):
         loc = t.get("Location")
         if not loc:
             continue
-        name = Path(urllib.parse.unquote(urllib.parse.urlparse(loc).path)).name.lower()
+        name = _norm(Path(urllib.parse.unquote(urllib.parse.urlparse(loc).path)).name)
         bpm = float(t.get("AverageBpm") or 0) or None
         out[name] = (bpm, to_camelot(t.get("Tonality")))
     return out
@@ -118,7 +125,7 @@ def main(argv=None) -> int:
     rows = []
     files = sorted(p for p in a.folder.rglob("*") if p.suffix.lower() in AUDIO)
     for i, p in enumerate(files, 1):
-        want_bpm, want_key = ref.get(p.name.lower(), (None, None)) if ref else tag_reference(p)
+        want_bpm, want_key = ref.get(_norm(p.name), (None, None)) if ref else tag_reference(p)
         if not want_bpm and not want_key:
             continue
         m = analyze_music(p)

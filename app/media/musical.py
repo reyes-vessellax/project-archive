@@ -5,7 +5,8 @@ so this adds about a second per track. All of it is an estimate and is labelled 
 
 - BPM: onset envelope (spectral flux) -> autocorrelation with a dance-music tempo prior -> refined on
   multi-beat lags for ~0.05 BPM precision.
-- Key: chroma from a long FFT, correlated against the Krumhansl-Kessler major/minor profiles.
+- Key: notes standing above the spectral floor (a long FFT, tuning corrected), root from the
+  Krumhansl-Kessler profiles, major/minor from the third. See estimate_key.
 - Preview window: the drop (the biggest rise into the track's loudest stretch), started a couple of
   seconds early so you hear it land; if there's no clear drop, the loudest steady 20 seconds.
 """
@@ -161,41 +162,69 @@ def estimate_bpm(y: np.ndarray, sr: int = SR, lo: float = 70.0, hi: float = 180.
 
 
 # --------------------------------------------------------------------------------------------- key
-def chroma(y: np.ndarray, sr: int = SR, n_fft: int = 8192, hop: int = 4096) -> np.ndarray:
-    win = np.hanning(n_fft).astype(np.float32)
+def _box(x: np.ndarray, size: int) -> np.ndarray:
+    """Moving average along the last axis (numpy only)."""
+    k = size // 2
+    c = np.cumsum(np.pad(x, ((0, 0), (k + 1, k)), mode="edge"), axis=1)
+    return (c[:, size:] - c[:, :-size]) / size
+
+
+def chroma(y: np.ndarray, sr: int = SR, n_fft: int = 16384, hop: int = 8192) -> np.ndarray:
+    """How much of each of the 12 notes the track holds, 40 Hz-3 kHz.
+
+    Tested against 97 Rekordbox-analysed club tracks (see tools/accuracy.py), each choice earned its place:
+    - a long FFT (0.7 Hz resolution) so bass notes land on the right semitone;
+    - only what stands above the local spectral floor counts: hats, noise and the body of a kick sit on the
+      floor, notes stick out of it (this alone took agreement with Rekordbox from ~45% to ~55%);
+    - every moment votes equally (per-frame normalisation), so a loud drop doesn't drown the breakdown;
+    - tuning: vinyl rips and pitched edits sit up to half a semitone off A440; the offset is measured from
+      the spectral peaks and taken out before notes are counted.
+    """
     freqs = np.fft.rfftfreq(n_fft, 1.0 / sr)
-    band = (freqs >= 55.0) & (freqs <= 2000.0)
-    pcs = (np.round(12 * np.log2(freqs[band] / 440.0)) + 9) % 12          # 0 = C
-    pcs = pcs.astype(int)
-    total = np.zeros(12)
-    step = 512
+    band = (freqs >= 40.0) & (freqs <= 3000.0)
+    f = freqs[band]
+    win = np.hanning(n_fft).astype(np.float32)
     n = 1 + (len(y) - n_fft) // hop
-    for start in range(0, max(n, 0), step):
-        fr = _frames(y[start * hop: (start + step) * hop + n_fft], n_fft, hop)[:step]
+    total = np.zeros(int(band.sum()))
+    for start in range(0, max(n, 0), 64):
+        fr = _frames(y[start * hop: (start + 64) * hop + n_fft], n_fft, hop)[:64]
         if not len(fr):
             break
-        mag = np.abs(np.fft.rfft(fr * win, axis=1))[:, band]
-        mag = np.sqrt(mag)                                                 # tame loud bass notes
-        # per-frame normalisation: each moment votes equally, quiet intros included
-        mag /= (mag.sum(axis=1, keepdims=True) + 1e-9)
-        total += np.bincount(np.repeat(pcs[None, :], len(mag), axis=0).ravel(), weights=mag.ravel(),
-                             minlength=12)
-    return total / (total.sum() + 1e-12)
+        X = np.abs(np.fft.rfft(fr * win, axis=1))[:, band]
+        X = np.maximum(X - _box(X, 41), 0.0)
+        total += (X / (X.sum(axis=1, keepdims=True) + 1e-9)).sum(axis=0)
+    semis = 12 * np.log2(f / 440.0)
+    sel = (f >= 100) & (f <= 1500)
+    x, s = total[sel], semis[sel]
+    if x.size > 2:
+        pk = np.r_[False, (x[1:-1] > x[:-2]) & (x[1:-1] > x[2:]), False]
+        z = np.sum(x[pk] * np.exp(2j * np.pi * (s[pk] - np.round(s[pk]))))
+        if abs(z) / (x[pk].sum() + 1e-12) > 0.05:                   # only when the peaks agree on an offset
+            semis = semis - np.angle(z) / (2 * np.pi)
+    c = np.bincount((np.round(semis).astype(int) + 9) % 12, weights=total, minlength=12)   # 0 = C
+    return c / (c.sum() + 1e-12)
+
+
+MINOR_PRIOR = 0.06      # club music leans minor; a small nudge, not a rule (major tracks still come out major)
+THIRD_RATIO = 0.5       # minor unless the major third clearly outweighs the minor third
 
 
 def estimate_key(y: np.ndarray, sr: int = SR) -> tuple[str, str, float] | None:
+    """Root from the Krumhansl-Kessler profiles; major or minor from the third above that root.
+    Deciding the mode separately fixed the commonest mistake: calling a minor club track its parallel major."""
     c = chroma(y, sr)
     if not np.isfinite(c).all() or c.max() <= 0:
         return None
-    scores = []
-    for tonic in range(12):
-        scores.append((float(np.corrcoef(c, np.roll(KK_MAJOR, tonic))[0, 1]), tonic, "major"))
-        scores.append((float(np.corrcoef(c, np.roll(KK_MINOR, tonic))[0, 1]), tonic, "minor"))
-    scores.sort(reverse=True)
-    best, second = scores[0], scores[1]
-    corr, tonic, mode = best
-    camelot = f"{CAMELOT_MAJOR[tonic]}B" if mode == "major" else f"{CAMELOT_MINOR[tonic]}A"
-    confidence = max(0.0, min(1.0, (corr - second[0]) * 5 + max(0.0, corr) * 0.5))
+    s_maj = np.array([np.corrcoef(c, np.roll(KK_MAJOR, t))[0, 1] for t in range(12)])
+    s_min = np.array([np.corrcoef(c, np.roll(KK_MINOR, t))[0, 1] for t in range(12)]) + MINOR_PRIOR
+    t_maj, t_min = int(np.argmax(s_maj)), int(np.argmax(s_min))
+    tonic = t_maj if s_maj[t_maj] > s_min[t_min] else t_min
+    minor = c[(tonic + 3) % 12] >= THIRD_RATIO * c[(tonic + 4) % 12]
+    mode = "minor" if minor else "major"
+    camelot = f"{CAMELOT_MINOR[tonic]}A" if minor else f"{CAMELOT_MAJOR[tonic]}B"
+    ranked = np.sort(np.concatenate([s_maj, s_min]))[::-1]
+    best = float(s_min[tonic] if minor else s_maj[tonic])
+    confidence = max(0.0, min(1.0, (ranked[0] - ranked[1]) * 5 + max(0.0, best) * 0.5))
     return f"{NOTES[tonic]} {mode}", camelot, round(confidence, 2)
 
 
