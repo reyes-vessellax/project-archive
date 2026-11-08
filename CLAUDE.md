@@ -21,8 +21,8 @@ python -m tools.keytrain.get_data
 python -m tools.keytrain.train --also-key-half
 ```
 
-Then show him `~/digmart-keydata/out/report.txt` and offer to send the report to JR. Expected ballpark: the trained
-model around 65% exact / 72% weighted on GiantSteps Key, against about 56% / 64% for the current method
-(details in `tools/keytrain/README.md`). Never commit the audio or the `out/` folder.
+Then show him `~/digmart-keydata/out/report.txt` and offer to send the report to JR. Expected ballpark for the trained
+model: around 65% exact / 72% weighted on GiantSteps Key. The report also scores the key method in his current
+build on the same clips (JR's latest method scored about 56% / 64%; details in `tools/keytrain/README.md`). Never commit the audio or the `out/` folder.
 
 Once Reyes has run it (or declined for good), delete this section.

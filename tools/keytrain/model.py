@@ -40,6 +40,13 @@ def relation(got, want) -> str:
     return "other"
 
 
+def _box(x: np.ndarray, size: int) -> np.ndarray:
+    """Moving average along the last axis (kept here so these tools work with any version of the app)."""
+    k = size // 2
+    c = np.cumsum(np.pad(x, ((0, 0), (k + 1, k)), mode="edge"), axis=1)
+    return (c[:, size:] - c[:, :-size]) / size
+
+
 def spectrum(y: np.ndarray, sr: int = M.SR, n_fft: int = 16384, hop: int = 8192):
     """(freqs, tuned semitones from A440, summed peak energy) for one track."""
     freqs = np.fft.rfftfreq(n_fft, 1.0 / sr)
@@ -53,7 +60,7 @@ def spectrum(y: np.ndarray, sr: int = M.SR, n_fft: int = 16384, hop: int = 8192)
         if not len(fr):
             break
         X = np.abs(np.fft.rfft(fr * win, axis=1))[:, band]
-        X = np.maximum(X - M._box(X, 41), 0.0)
+        X = np.maximum(X - _box(X, 41), 0.0)
         total += (X / (X.sum(axis=1, keepdims=True) + 1e-9)).sum(axis=0)
     semis = 12 * np.log2(f / 440.0)
     sel = (f >= 100) & (f <= 1500)
