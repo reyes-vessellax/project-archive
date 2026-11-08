@@ -498,6 +498,24 @@ class QueueRow(QWidget):
             self.clicked.emit(self.job_id)
         super().mousePressEvent(e)
 
+    def update_to(self, tag: str, title: str, artist: str, pct: float | None, meta: str, removable: bool) -> None:
+        """Change this row in place (a download ticking along) instead of building a new one."""
+        if self.property("tag") != tag:
+            self.setProperty("tag", tag); T.repolish(self)
+            self.tag.setText(tag.upper()); set_tag(self.tag, tag)
+            self.bar.setProperty("tag", tag); T.repolish(self.bar)
+            self.x.setToolTip("Cancel download" if tag == "Down" else "Remove from the list" if tag in ("Done", "Gone", "Error") else "Delete this track from quarantine")
+        if self.title.text() != title:
+            self.title.setText(title); self.title.setToolTip(title)
+        if self.artist.text() != (artist or " "):
+            self.artist.setText(artist or " ")
+        self.bar.setValue(int(pct) if pct is not None else 0)
+        self.bar.setVisible(pct is not None and pct < 100)
+        if self.meta.text() != meta:
+            self.meta.setText(meta)
+        if self.x.isVisible() != removable:
+            self.x.setVisible(removable); self.x_space.setVisible(not removable)
+
     def set_selected(self, on: bool) -> None:
         self.setProperty("selected", "true" if on else "false")
         T.repolish(self)
@@ -546,14 +564,21 @@ from PySide6.QtWidgets import QStyledItemDelegate as _QStyledItemDelegate
 
 class KeepColourDelegate(_QStyledItemDelegate):
     """A selected or opened row keeps its coloured text (the Key in accent, Good in green...). Qt paints selected
-    text in one highlight colour, which turned the Key black whenever a Library row dropped down."""
+    text in one highlight colour, which turned the Key black whenever a Library row dropped down.
+    Only paint() is overridden, and only selected coloured cells take the slow path: a Python hook on every
+    size calculation made filtering a 2,000-track library lag."""
 
-    def initStyleOption(self, option, index):
-        super().initStyleOption(option, index)
-        from PySide6.QtGui import QPalette
-        fg = index.data(Qt.ForegroundRole)
-        colour = fg.color() if hasattr(fg, "color") else (fg if isinstance(fg, QColor) else option.palette.color(QPalette.Text))
-        option.palette.setColor(QPalette.HighlightedText, colour)
+    def paint(self, painter, option, index):
+        from PySide6.QtWidgets import QStyle
+        if option.state & QStyle.State_Selected:
+            fg = index.data(Qt.ForegroundRole)
+            if fg is not None:
+                from PySide6.QtGui import QPalette
+                from PySide6.QtWidgets import QStyleOptionViewItem
+                opt = QStyleOptionViewItem(option)
+                opt.palette.setColor(QPalette.HighlightedText, fg.color() if hasattr(fg, "color") else QColor(fg))
+                return super().paint(painter, opt, index)
+        return super().paint(painter, option, index)
 
 
 class StopButton(QPushButton):

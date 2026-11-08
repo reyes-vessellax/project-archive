@@ -101,6 +101,9 @@ class HomePage(QWidget):
         self.list_host = QWidget(); self.list_host.setObjectName("page")
         self.list = vbox(self.list_host, spacing=0); self.list.addStretch(1)
         self.list_scroll = scroll(self.list_host); qcol.addWidget(self.list_scroll, 1)
+        self._queue_limit = QUEUE_ROWS
+        self.more_btn = button("", "link", self._show_more); self.more_btn.hide()
+        qcol.addWidget(self.more_btn, 0, Qt.AlignLeft)
         self.list_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)     # the list never scrolls sideways
         self.empty = label("Nothing in the queue. Search above, or drop tracks onto the window.", "faint", wrap=True)
         qcol.addWidget(self.empty)
@@ -135,6 +138,12 @@ class HomePage(QWidget):
         rw = QWidget(); rw.setLayout(rail); rw.setMinimumWidth(320); rw.setMaximumWidth(420)
         body.addWidget(rw, 2)
 
+    def _show_more(self):
+        self._queue_limit += QUEUE_ROWS
+        self._last_key = None
+        if hasattr(self, "_last_args"):
+            self.refresh(*self._last_args)
+
     def set_connected(self, on: bool, message: str = ""):
         self.q.setEnabled(on)
         self.q.setPlaceholderText("Search for a track…" if on else (message or "Connecting…"))
@@ -142,6 +151,7 @@ class HomePage(QWidget):
 
     def refresh(self, jobs: list[dict], analyses: dict[str, dict | None]):
         # Rebuild the row widgets only when something visible changed; refresh() fires every poll.
+        self._last_args = (jobs, analyses)
         rows = [(j["id"], row_data(j, analyses.get(j["id"]), self.steps)) for j in jobs]
         key = tuple((jid, d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"]) for jid, d in rows)
         if key == getattr(self, "_last_key", None):
@@ -150,21 +160,41 @@ class HomePage(QWidget):
         prev_tags = getattr(self, "_prev_tags", {})
         changed = {jid for jid, d in rows if jid in prev_tags and prev_tags[jid] != d["tag"]}
         self._prev_tags = {jid: d["tag"] for jid, d in rows}
-        # queue list (rebuilt in place; the scroll position stays where the user left it)
+        # queue list: rows that already exist are updated in place, only new ones are built, and only the newest
+        # QUEUE_ROWS are shown (a long history used to rebuild hundreds of rows on every 2-second poll)
+        shown = rows[: self._queue_limit]
+        self.more_btn.setVisible(len(rows) > len(shown))
+        self.more_btn.setText(f"Show {len(rows) - len(shown)} older")
+        existing: dict = getattr(self, "_row_widgets", {})
+        wanted = [jid for jid, _ in shown]
+
         def rebuild():
-            while self.list.count() > 1:
-                item = self.list.takeAt(0)
-                if item.widget():
-                    item.widget().hide(); item.widget().deleteLater()   # hidden now: no ghost rows painted over the new ones
-            self.empty.setVisible(not jobs)
             self.list_host.setUpdatesEnabled(False)
-            for jid, d in rows:
-                row = QueueRow(jid, d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"])
-                row.clicked.connect(self.open_job.emit); row.removed.connect(self.remove_job.emit)
-                self.list.insertWidget(self.list.count() - 1, row)
+            keep = set(wanted)
+            for jid in list(existing):
+                if jid not in keep:
+                    w = existing.pop(jid)
+                    self.list.removeWidget(w); w.hide(); w.deleteLater()   # hidden now: no ghost rows
+            order_now = [self.list.itemAt(i).widget().job_id for i in range(self.list.count() - 1)
+                         if self.list.itemAt(i).widget() is not None]
+            for jid, d in shown:
+                row = existing.get(jid)
+                if row is None:
+                    row = QueueRow(jid, d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"])
+                    row.clicked.connect(self.open_job.emit); row.removed.connect(self.remove_job.emit)
+                    existing[jid] = row
+                else:
+                    row.update_to(d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"])
                 if jid in changed:
                     row.flash()                               # the blip: this track just moved on
+            if order_now != wanted:                           # new arrivals or a reorder: lay the rows out again
+                for jid in wanted:
+                    self.list.removeWidget(existing[jid])
+                for i, jid in enumerate(wanted):
+                    self.list.insertWidget(i, existing[jid])
+            self.empty.setVisible(not jobs)
             self.list_host.setUpdatesEnabled(True)
+        self._row_widgets = existing
         keep_scroll(self.list_scroll, rebuild)
         down = sum(1 for j in jobs if j["state"] == J.QUEUED)
         chk = sum(1 for j in jobs if j["state"] in (J.STAGING, J.ANALYZING))
@@ -199,6 +229,9 @@ class HomePage(QWidget):
             self.scope.clear_view("The spectrogram of your most recent check appears here.")
             for v in self.fact_vals.values():
                 v.setText("–")
+
+
+QUEUE_ROWS = 150
 
 
 def _bitrate(f: dict) -> str:

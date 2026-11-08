@@ -225,64 +225,119 @@ class ReadyPage(QWidget):
         lay.addStretch(1)
 
 
+class _LoaderMark(QWidget):
+    """The smiley mark, breathing gently, inside a thin ring with an accent arc chasing round it."""
+    SIZE = 168
+
+    def __init__(self, svc):
+        super().__init__()
+        from .brand import _asset
+        from . import theme as T
+        self.setFixedSize(self.SIZE, self.SIZE)
+        dark = getattr(svc.settings, "theme", "light") == "dark"
+        self._c = T.colours("dark" if dark else "light")
+        dpr = 3.0
+        self._pm = _asset("digmart-mark-dark.png" if dark else "digmart-mark.png").scaledToWidth(int(112 * dpr), Qt.SmoothTransformation)
+        self._pm.setDevicePixelRatio(dpr)
+        self._t = 0.0
+        self._done = False
+        self._timer = QTimer(self, interval=16, timeout=self._step)
+
+    def start(self):
+        self._done = False; self._t = 0.0; self._timer.start()
+
+    def stop(self, done: bool = True):
+        self._done = done; self._timer.stop(); self.update()
+
+    def _step(self):
+        self._t += 0.016; self.update()
+
+    def paintEvent(self, e):
+        import math
+        from PySide6.QtCore import QPointF, QRectF
+        from PySide6.QtGui import QColor, QPainter, QPen
+        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing); p.setRenderHint(QPainter.SmoothPixmapTransform)
+        s = self.SIZE; ring = QRectF(6, 6, s - 12, s - 12)
+        track = QPen(QColor(self._c["line"])); track.setWidthF(2.0); p.setPen(track); p.drawEllipse(ring)
+        arc = QPen(QColor(self._c["pass_"] if self._done else self._c["accent"])); arc.setWidthF(3.0); arc.setCapStyle(Qt.RoundCap)
+        p.setPen(arc)
+        if self._done:
+            p.drawEllipse(ring)
+        else:
+            span = 70 + 50 * math.sin(self._t * 2.2)                       # the arc stretches and shrinks as it turns
+            start = -(self._t * 300) % 360
+            p.drawArc(ring, int(start * 16), int(-span * 16))
+        scale = 1.0 + 0.025 * math.sin(self._t * 3.0)                     # a slow breath
+        sz = self._pm.deviceIndependentSize()
+        w, h = sz.width() * scale, sz.height() * scale
+        p.drawPixmap(QRectF((s - w) / 2, (s - h) / 2, w, h), self._pm, QRectF(self._pm.rect()))
+        p.end()
+
+
 class ConnectingPage(QWidget):
-    """Shown while the engine starts and signs in. A spinner, three steps, then it closes itself."""
+    """Shown while the engine starts and signs in: the mark in a turning ring, one line saying what's happening,
+    and a row of small dots for the steps. Nothing else. It closes itself when everything is ready."""
     done = Signal()
+    STEPS = (("engine", "Starting the engine"), ("network", "Signing in to the network"),
+             ("port", "Opening your port"), ("shares", "Sharing your library"))
 
     def __init__(self, svc: ArchiveService):
         super().__init__()
         self.svc = svc
-        outer, lay = _centered()
-        root = vbox(self); root.addWidget(outer)
-        lay.addWidget(_logo(svc))
-        lay.addWidget(_steps(2))
-        self.title = label("Getting things ready…", "big"); lay.addWidget(self.title)
-        self.spinner = label("", "h1"); self.spinner.setStyleSheet("font-size: 28px; color: palette(mid);"); lay.addWidget(self.spinner)
-        self.rows = {}
-        for key, text in (("engine", "Starting the engine"), ("network", "Signing in to the network"),
-                          ("port", "Asking the router to open your port"), ("shares", "Sharing your library")):
-            r = hbox(spacing=12)
-            dot = label("○", "steplight"); dot.setProperty("tag", ""); dot.setFixedWidth(26); txt = label(text, "muted")
-            r.addWidget(dot); r.addWidget(txt); r.addStretch(1)
-            lay.addLayout(r); self.rows[key] = (dot, txt)
-        # sharing is a first-run question (asked on the setup screen); later starts don't re-announce it
-        self.first_run = not svc.settings.setup_done
-        if not self.first_run:
-            for w in self.rows["shares"]:
-                w.hide()
-        self.note = label("This takes a few seconds the first time. If your firewall asks to allow incoming connections, "
-                          "choose Allow — that's how other users send you files.", "faint", wrap=True)
-        lay.addWidget(self.note)
-        lay.addStretch(1)
-        self._frames = "◐◓◑◒"; self._i = 0
-        self._spin = QTimer(self, interval=120, timeout=self._tick)
-
-    def _tick(self):
-        self._i = (self._i + 1) % len(self._frames)
-        self.spinner.setText(self._frames[self._i])
+        self.setObjectName("page"); self.setAttribute(Qt.WA_StyledBackground, True)
+        root = vbox(self, (24, 24, 24, 24), 0)
+        root.addStretch(3)
+        self.mark_w = _LoaderMark(svc)
+        root.addWidget(self.mark_w, 0, Qt.AlignHCenter)
+        root.addSpacing(30)
+        self.title = label("Getting things ready", "loadtitle"); self.title.setAlignment(Qt.AlignCenter)
+        root.addWidget(self.title)
+        root.addSpacing(8)
+        self.sub = label("", "faint"); self.sub.setAlignment(Qt.AlignCenter); root.addWidget(self.sub)
+        root.addSpacing(18)
+        self.first_run = not svc.settings.setup_done          # sharing is a first-run question; later starts skip it
+        keys = [k for k, _ in self.STEPS if k != "shares" or self.first_run]
+        pips = hbox(spacing=10); pips.addStretch(1)
+        self.pips = {}
+        for k in keys:
+            d = QLabel(); d.setObjectName("pip"); d.setFixedSize(8, 8); d.setProperty("state", "")
+            pips.addWidget(d); self.pips[k] = d
+        pips.addStretch(1)
+        root.addLayout(pips)
+        root.addStretch(4)
+        self.note = label("If your firewall asks to allow incoming connections, choose Allow. That's how other "
+                          "users send you files.", "faint", wrap=True)
+        self.note.setAlignment(Qt.AlignCenter); self.note.setVisible(self.first_run)
+        root.addWidget(self.note, 0, Qt.AlignHCenter)
+        self.note.setMaximumWidth(460)
+        self.state = {k: "" for k in keys}
+        self.texts = dict(self.STEPS)
 
     def start(self):
-        self._spin.start()
-        for dot, txt in self.rows.values():
-            set_tag(dot, ""); txt.setObjectName("muted")
+        for k in self.state:
+            self.state[k] = ""
+        self._render()
+        self.mark_w.start()
 
     def mark(self, key: str, state: str, note: str = ""):
-        dot, txt = self.rows[key]
-        if key == "shares" and not self.first_run:
+        if key not in self.state:
             return
-        dot.setText({"done": "✓", "busy": "●", "fail": "✕", "skip": "–"}.get(state, "○"))
-        set_tag(dot, {"done": "Good", "busy": "Down", "fail": "Broken", "skip": "Wait"}.get(state, ""))
-        base = txt.property("base") or txt.text()
-        txt.setProperty("base", base)
-        txt.setText(f"{base} — {note}" if note else base)
-        if state == "busy":
-            txt.setObjectName("")
-        else:
-            txt.setObjectName("muted")
-        set_tag(txt, "")
+        self.state[key] = state
+        if note:
+            self.sub.setText(note)
+        self._render()
+
+    def _render(self):
+        from . import theme as T
+        for k, d in self.pips.items():
+            d.setProperty("state", self.state[k]); T.repolish(d)
+        busy = next((k for k in self.state if self.state[k] == "busy"), None)
+        todo = next((k for k in self.state if not self.state[k]), None)
+        key = busy or todo
+        self.title.setText(self.texts[key] if key else "Ready")
 
     def finish(self):
-        self._spin.stop()
+        self.mark_w.stop(True)
         self.done.emit()
 
 

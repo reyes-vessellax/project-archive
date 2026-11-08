@@ -90,7 +90,7 @@ class MainWindow(QMainWindow):
             svc.purge_previews()                     # clips or partials a crash left behind
         except Exception:
             pass
-        self.pool = QThreadPool(); self.pool.setMaxThreadCount(max(1, svc.settings.max_concurrent_analyses))
+        self.pool = QThreadPool(); self.pool.setMaxThreadCount(svc.analysis_slots)
         self.io = QThreadPool(); self.io.setMaxThreadCount(3)
         self.dl_pool = QThreadPool(); self.dl_pool.setMaxThreadCount(2)   # paced batch downloads (they wait minutes)
         self._polling = self._scanning = False
@@ -572,7 +572,7 @@ class MainWindow(QMainWindow):
         colour = c["pass_"] if st.logged_in else (c["warn"] if st.available else c["faint"])
         chk = sum(1 for j in self._jobs if j["state"] in (J.STAGING, J.ANALYZING))
         down = sum(1 for j in self._jobs if j["state"] == J.QUEUED)
-        slots = self.svc.settings.max_concurrent_analyses
+        slots = self.svc.analysis_slots
         detail = f"{min(chk, slots)}/{slots} checking · {down} downloading" if (chk or down) else ""
         self.topbar.set_status(st.message, colour, detail)
         was = self._connected
@@ -1285,7 +1285,7 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- settings
     def _settings_saved(self):
         s = self.svc.settings
-        self.pool.setMaxThreadCount(max(1, s.max_concurrent_analyses))
+        self.pool.setMaxThreadCount(self.svc.analysis_slots)
         self.apply_theme()
         now = (s.share_folder, s.soulseek_own_username, s.use_own_slskd)
         if getattr(self, "_engine_cfg", now) != now:

@@ -126,6 +126,7 @@ class TrackRow(QFrame):
         self.drop_lay = vbox(self.drop, (46, 4, 6, 10), 2)
         outer.addWidget(self.drop)
         self._alts: list = []
+        self._item = self._drop_for = None
 
     def _go(self):
         if not self._armed:                     # first press: ask
@@ -147,7 +148,11 @@ class TrackRow(QFrame):
         super().mouseReleaseEvent(e)
 
     def set_open(self, on: bool):
-        self.drop.setVisible(on and len(self._alts) > 1)
+        on = on and len(self._alts) > 1
+        if on and self._drop_for is not self._item:            # the copies list is only built when it's opened
+            self._fill_drop(self._item)
+            self._drop_for = self._item
+        self.drop.setVisible(on)
 
     def _fill_drop(self, it):
         while self.drop_lay.count():
@@ -184,7 +189,7 @@ class TrackRow(QFrame):
         self.setCursor(Qt.PointingHandCursor if len(self._alts) > 1 else Qt.ArrowCursor)
         self.setToolTip("Click to see the other copies found" if len(self._alts) > 1 else "")
         was_open = self.drop.isVisible()
-        self._fill_drop(it)
+        self._item, self._drop_for = it, None                  # rebuilt next time it opens (or now, if open)
         self.set_open(was_open)
 
 

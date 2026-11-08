@@ -319,6 +319,14 @@ class ArchiveService:
         return res
 
     @property
+    def analysis_slots(self) -> int:
+        """How many tracks are checked at once: the Settings number, but never more than this computer's cores
+        can carry (each check runs two FFmpeg decodes side by side). 8 cores -> up to 5, 4 cores -> 3."""
+        import os
+        cores = os.cpu_count() or 4
+        return max(1, min(self.settings.max_concurrent_analyses, max(2, cores // 2 + 1)))
+
+    @property
     def download_pacer(self):
         """One pacer for every batch, so two playlists downloading at once still share the same few slots."""
         if getattr(self, "_pacer", None) is None:

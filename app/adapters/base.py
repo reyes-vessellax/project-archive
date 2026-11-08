@@ -9,6 +9,8 @@ existing, separately installed client (slskd) through its local API; that client
 """
 from __future__ import annotations
 
+import functools
+
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -138,6 +140,7 @@ def split_artist_title(filename: str) -> tuple[str, str]:
     return parse_track(filename)[:2]
 
 
+@functools.lru_cache(maxsize=8192)
 def parse_track(filename: str) -> tuple[str, str, str]:
     """(artist, title, mix). `mix` is the trailing "(Extended Mix)" / "[Remix]" part, "" if none, and the
     title is returned WITHOUT it; "(feat. X)" stays in the title."""

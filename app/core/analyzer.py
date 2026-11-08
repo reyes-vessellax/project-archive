@@ -49,6 +49,12 @@ def analyze(path: Path, settings: Settings, progress: Progress = lambda s: None)
                                   f"Longer than the {settings.max_duration_minutes}-minute limit in Settings.")]
             return _result(digest, facts, magic, None, None, None, checks)
         progress("Decoding")
+        # BPM/key need their own low-rate decode; run it beside the main decode instead of after it
+        # (saves about a second per track; each is a separate FFmpeg process, so they use two cores)
+        from concurrent.futures import ThreadPoolExecutor
+        music_pool = ThreadPoolExecutor(max_workers=1)
+        music_future = music_pool.submit(analyze_music, path, settings.ffmpeg_path)
+        music_pool.shutdown(wait=False)
         sr = facts.sample_rate_hz or 44100
         timeout = max(120.0, (facts.duration_s or 600) * 1.5)
         d = decode_and_analyze(path, sr, facts.duration_s, settings.ffmpeg_path, timeout=timeout)
@@ -70,7 +76,12 @@ def analyze(path: Path, settings: Settings, progress: Progress = lambda s: None)
     out = _result(digest, facts, magic, decode, cutoff, spec_path, checks)
     if facts.readable and out["decode_ok"]:
         progress("Finding BPM, key and the drop")
-        out["music"] = analyze_music(path, settings.ffmpeg_path).to_dict()
+        future = locals().get("music_future")
+        try:
+            music = future.result(timeout=180) if future is not None else analyze_music(path, settings.ffmpeg_path)
+        except Exception:
+            music = analyze_music(path, settings.ffmpeg_path)
+        out["music"] = music.to_dict()
         progress("Looking up cover art and details")
         out["meta"] = describe(path, settings)
     return out

@@ -184,6 +184,12 @@ QFrame#trowdrop {{ background: {c['panel']}; border-top: 1px dashed {c['line']};
 QPushButton#altrow {{ background: transparent; border: none; text-align: left; padding: 0 8px; min-height: 26px; max-height: 26px; font-family: "IBM Plex Mono"; font-size: 12px; color: {c['text']}; border-radius: 3px; }}
 QPushButton#altrow:hover {{ background: {c['soft']}; }}
 QPushButton#altrow:disabled {{ color: {c['accent']}; font-weight: 600; }}
+QLabel#loadtitle {{ font-size: 20px; font-weight: 600; color: {c['text']}; letter-spacing: 0.2px; }}
+QLabel#pip {{ background: {c['line']}; border-radius: 4px; }}
+QLabel#pip[state="busy"] {{ background: {c['accent']}; }}
+QLabel#pip[state="done"] {{ background: {c['pass_']}; }}
+QLabel#pip[state="skip"] {{ background: {c['faint']}; }}
+QLabel#pip[state="fail"] {{ background: {c['fail']}; }}
 QPushButton#zoom {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['line']}; border-radius: 3px; padding: 0; min-height: 0; font-size: 14px; font-weight: 600; }}
 QPushButton#zoom:hover {{ border-color: {c['accent']}; }}
 QPushButton#zoom:disabled {{ color: {c['faint']}; border-color: {c['bar']}; }}

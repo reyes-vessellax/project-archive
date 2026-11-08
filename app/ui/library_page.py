@@ -166,65 +166,97 @@ class LibraryPage(QWidget):
             self.delete_job.emit(it.data(0, Qt.UserRole))
 
     def _filter(self, text: str):
+        """Typing in the filter (or picking a key, BPM range, playlist) hides and shows rows that already exist.
+        The rows themselves are only built when the library changes (refresh), not on every keystroke."""
+        if getattr(self, "_built_key", None) != getattr(self, "_key", None):
+            self._build_items()
         words = [w for w in text.lower().split() if w]
+        lo_hi = self._bpm_range()
+        want_pl = self.pl_box.currentData() if hasattr(self, "pl_box") else ""
+        want_key = self.key_box.currentData() if hasattr(self, "key_box") else ""
+        compat = compatible_keys(want_key) if want_key else None
+        keep = self._open_id
+        shown, open_hidden = 0, False
+        self.tree.setUpdatesEnabled(False)
+        for it, rec in self._items:
+            ok = True
+            if lo_hi and (not rec["bpm"] or not (lo_hi[0] <= rec["bpm"] <= lo_hi[1])):
+                ok = False
+            elif self.crate_id and rec["id"] not in self._crate_members:
+                ok = False
+            elif want_pl and rec["playlist"] != want_pl:
+                ok = False
+            elif compat is not None and rec["cam"] not in compat:
+                ok = False
+            elif words and not all(w in rec["hay"] for w in words):
+                ok = False
+            if it.isHidden() == ok:
+                it.setHidden(not ok)
+            shown += ok
+            if not ok and rec["id"] == keep:
+                open_hidden = True
+        self.tree.setUpdatesEnabled(True)
+        if open_hidden:
+            self._collapse()
+        total = len(self._items) if not self.crate_id else sum(1 for _, r in self._items if r["id"] in self._crate_members)
+        filtered = bool(words or lo_hi or want_pl or want_key)
+        self.sub.setText(f"{shown} of {total} tracks" if filtered else f"{total} track{'s' if total != 1 else ''}")
+        self.empty.setVisible(total == 0)
+
+    def _build_items(self):
+        """One row per library track, with what the filter needs worked out once (no file checks per keystroke)."""
+        from PySide6.QtGui import QColor
+        from ..adapters.base import parse_track
+        self._built_key = getattr(self, "_key", None)
         keep = self._open_id
         scroll_at = self.tree.verticalScrollBar().value()
         self.tree.blockSignals(True)                         # rebuilding isn't a selection change
         self._park_panel()                                   # clear() would delete it with the rows
         self.tree.setSortingEnabled(False)
         self.tree.clear()
-        shown = 0
+        pal = T.colours(getattr(self.svc.settings, "theme", "light"))
+        accent = QColor(pal["accent"])
+        grade_col = {k: QColor(pal[v]) for k, v in (("PASS", "pass_"), ("WARN", "warn"), ("FAIL", "fail"))}
+        mid = self.palette().mid()
+        self._items = []
+        items = []
         for job, a in self._rows:
             f = (a or {}).get("facts", {}) if a else {}
             tags = f.get("tags", {}) or {}
-            from ..adapters.base import parse_track
             p_artist, p_title, p_mix = parse_track(job["original_name"])
             meta, mu = (a or {}).get("meta") or {}, (a or {}).get("music") or {}
             artist = meta.get("artist") or tags.get("artist") or p_artist
             title = meta.get("title") or tags.get("title") or p_title
             mix = meta["mix"] if "mix" in meta else p_mix          # the check already dropped catalogue numbers
             bpm, cam = mu.get("bpm"), mu.get("camelot") or ""
-            lo_hi = self._bpm_range()
-            if lo_hi and (not bpm or not (lo_hi[0] <= bpm <= lo_hi[1])):
-                continue
-            if self.crate_id and job["id"] not in self._crate_members:
-                continue
-            want_pl = self.pl_box.currentData() if hasattr(self, "pl_box") else ""
-            if want_pl and job.get("playlist") != want_pl:
-                continue
-            want_key = self.key_box.currentData() if hasattr(self, "key_box") else ""
-            if want_key and cam not in compatible_keys(want_key):
-                continue
             final = job.get("final_path") or ""
-            hay = " ".join([artist, title, mix, tags.get("album", ""), Path(final).name, job["original_name"]]).lower()
-            if words and not all(w in hay for w in words):
-                continue
+            fname = Path(final).name
             grade = T.GRADE_LONG.get((a or {}).get("overall_status", ""), "")
             added = (job.get("updated_at") or "")[:10]
             kbps = f"{round(f['bitrate_bps'] / 1000)} {f.get('bitrate_mode') if f.get('bitrate_mode') in ('CBR','VBR') else 'kbps'}" if f.get("bitrate_bps") else ("lossless" if f.get("lossless") else "")
             it = QTreeWidgetItem([title, artist, mix, "", cam, (f.get("container") or "").upper(), kbps,
-                                  fmt_time(f["duration_s"]) if f.get("duration_s") else "", grade, added, Path(final).name])
+                                  fmt_time(f["duration_s"]) if f.get("duration_s") else "", grade, added, fname])
             if bpm:
                 it.setData(self.C_BPM, Qt.DisplayRole, round(float(bpm), 1))      # sorts as a number
-            from PySide6.QtGui import QColor
-            pal = T.colours(getattr(self.svc.settings, "theme", "light"))
-            it.setForeground(self.C_KEY, QColor(pal["accent"]))
+            it.setForeground(self.C_KEY, accent)
             st = (a or {}).get("overall_status", "")
             if st:
-                it.setForeground(self.C_GRADE, QColor(pal[{"PASS": "pass_", "WARN": "warn", "FAIL": "fail"}.get(st, "muted")]))
+                it.setForeground(self.C_GRADE, grade_col.get(st, mid))
             it.setData(0, Qt.UserRole, job["id"]); it.setData(0, Qt.UserRole + 1, final)
             it.setToolTip(self.C_FILE, final)
             if not Path(final).exists():
                 for c in range(self.tree.columnCount()):
-                    it.setForeground(c, self.palette().mid())
-                it.setText(self.C_FILE, Path(final).name + "  (moved or deleted)")
-            self.tree.addTopLevelItem(it); shown += 1
+                    it.setForeground(c, mid)
+                it.setText(self.C_FILE, fname + "  (moved or deleted)")
+            hay = " ".join([artist, title, mix, tags.get("album", ""), fname, job["original_name"]]).lower()
+            self._items.append((it, {"id": job["id"], "bpm": bpm, "cam": cam, "playlist": job.get("playlist"), "hay": hay}))
+            items.append(it)
+        self.tree.addTopLevelItems(items)
         self.tree.setSortingEnabled(True)
         reselected = False
         if keep:
-            for i in range(self.tree.topLevelItemCount()):
-                it = self.tree.topLevelItem(i)
-                if it.data(0, Qt.UserRole) == keep:
+            for it, rec in self._items:
+                if rec["id"] == keep:
                     it.setSelected(True); reselected = True; break
         self.tree.blockSignals(False)
         if keep and not reselected:
@@ -233,9 +265,6 @@ class LibraryPage(QWidget):
             self._mount_panel(self._item_for(keep), animate=False)
         self.tree.verticalScrollBar().setValue(scroll_at)
         QTimer.singleShot(0, lambda v=scroll_at: self.tree.verticalScrollBar().setValue(v))
-        total = len(self._rows)
-        self.sub.setText(f"{shown} of {total} tracks" if words else f"{total} track{'s' if total != 1 else ''}")
-        self.empty.setVisible(total == 0)
 
     # ---------------------------------------------------------------- actions
     def _selected(self):
@@ -372,7 +401,7 @@ class LibraryPage(QWidget):
         if self.panel is not None and self._child is not None:
             try:
                 self.panel.setFixedWidth(max(300, self.tree.viewport().width() - 2))
-                self._child.setSizeHint(0, self.panel.size()); self.tree.doItemsLayout()
+                self._child.setSizeHint(0, self.panel.size())
             except RuntimeError:
                 pass
 
@@ -384,9 +413,8 @@ class LibraryPage(QWidget):
         nh = min(self._grow_target, h + step)
         self.panel.setFixedHeight(nh)
         if self._child is not None:
-            self._child.setSizeHint(0, self.panel.size())
-            self.tree.doItemsLayout()
-        if nh >= self._grow_target:
+            self._child.setSizeHint(0, self.panel.size())   # the view re-measures just this row (a full
+        if nh >= self._grow_target:                            # relayout was 70 ms a frame on a big library)
             self._anim.stop()
             if self._child is not None and getattr(self, "_reveal", False):
                 self._reveal = False
