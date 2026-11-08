@@ -283,11 +283,6 @@ def best(cands: list[Candidate], w: Wanted, min_kbps: int = 320) -> Candidate | 
     r = ranked(cands, w, min_kbps)
     return r[0] if r else None
 
-def best(cands: list[Candidate], w: Wanted) -> Candidate | None:
-    scored = [(score(c, w), c) for c in cands]
-    scored = [x for x in scored if x[0] > 0]
-    return max(scored, key=lambda x: x[0])[1] if scored else None
-
 
 def _net_urlopen(req, timeout=15.0):
     return _netmod.urlopen(req, timeout=timeout)
