@@ -1,2 +1,6 @@
 PySide6==6.12.0
 numpy>=2.1
+keyring>=25
+mutagen==1.47.0
+yt-dlp==2026.10.21
+cryptography==49.0.0

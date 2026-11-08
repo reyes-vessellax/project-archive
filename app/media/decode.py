@@ -11,7 +11,8 @@ import numpy as np
 from .tools import find_tool, popen
 
 N_FFT = 4096
-COLUMNS = 1000          # spectrogram width
+COLUMNS = 2000          # spectrogram width (sharp enough to zoom in on the Ready page)
+MAX_FRAMES = 4000       # hard cap on spectra kept in memory (~33 MB at float32)
 CHUNK = 1 << 20         # bytes read from FFmpeg per step
 
 
@@ -86,14 +87,24 @@ def decode_and_analyze(path: Path, sample_rate_hz: int, expected_s: float | None
         while next_pos + N_FFT <= buf_start + buf.size:
             i = next_pos - buf_start
             seg = buf[i:i + N_FFT] * window
-            frames.append((np.abs(np.fft.rfft(seg)) ** 2).astype(np.float32))
+            if len(frames) < MAX_FRAMES:               # a lying duration header can't grow this without bound
+                frames.append((np.abs(np.fft.rfft(seg)) ** 2).astype(np.float32))
             next_pos += hop
         drop = max(0, min(next_pos, buf_start + buf.size) - buf_start)
         buf = buf[drop:]
         buf_start += drop
 
-    proc.wait(timeout=30)
+    try:
+        proc.wait(timeout=30)
+    except Exception:
+        proc.kill()
+        proc.wait(timeout=10)
     t.join(timeout=5)
+    for stream in (proc.stdout, proc.stderr):          # pipes are OS handles; never leave them to the GC
+        try:
+            stream.close()
+        except Exception:
+            pass
     res.exit_code = proc.returncode
     res.ok_exit = proc.returncode == 0 and not res.timed_out
     res.decoded_s = total / sample_rate_hz if sample_rate_hz else 0.0

@@ -17,8 +17,8 @@ class ToolMissing(RuntimeError):
 def _bundled_dirs() -> list[Path]:
     dirs = []
     if getattr(sys, "frozen", False):                       # PyInstaller build
-        dirs.append(Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "ffmpeg")
-        dirs.append(Path(sys.executable).parent / "ffmpeg")
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        dirs += [base / "vendor" / "ffmpeg", base / "ffmpeg", Path(sys.executable).parent / "ffmpeg"]
     dirs.append(Path(__file__).resolve().parents[2] / "vendor" / "ffmpeg")
     return dirs
 
@@ -46,8 +46,11 @@ def creation_flags() -> int:
 
 
 def run(args: list[str], timeout: float) -> subprocess.CompletedProcess:
-    proc = subprocess.run(args, capture_output=True, timeout=timeout, shell=False,
-                          creationflags=creation_flags(), stdin=subprocess.DEVNULL)
+    try:
+        proc = subprocess.run(args, capture_output=True, timeout=timeout, shell=False,
+                              creationflags=creation_flags(), stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired as e:               # subprocess.run kills the child on timeout; report it cleanly
+        raise RuntimeError(f"{Path(args[0]).name} didn't finish in {timeout:.0f}s") from e
     proc.stderr = proc.stderr[-MAX_STDERR:]
     return proc
 

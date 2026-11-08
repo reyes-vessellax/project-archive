@@ -1,86 +1,93 @@
-# Project Archive
+# DigMart
 
-A DJ audio preflight tool. Stage a track, see what it **really** is (true format, bitrate, whether it plays
-all the way through, and a spectrogram that exposes fake 320s), then explicitly keep it in your library or
-reject it. Everything runs locally on your own computer: no uploads, no servers.
+*The Google of music.* (Working name. We'll change it. Probably.)
 
-> The app reports evidence, not proof. A 320 kbps MP3 or a WAV can still come from a low-quality source.
-> It never labels a file "authentic" or "verified lossless". You make the final call.
+DigMart is a desktop platform that lets DJs discover, acquire, and validate music across a
+decentralized peer-to-peer ecosystem — with a trust layer in front of the library so nothing lands
+in your crates until it's been checked. Think of it as **audio pre-flight**: every file passes through
+quarantine, gets a full-spectrum analysis, and earns a verdict before you decide whether it ships.
 
-## Status (v0.1, in progress)
+> We surface evidence, not promises. A file is never labeled "authentic" or "verified lossless" —
+> the verdict is **Good**, **Have a look**, or **Broken**, with the receipts. You make the call.
 
-| Done | Next |
+## What it does today (v0.5)
+
+**Discover.** One search fans out across the network in waves, so results populate top-down while the
+long tail keeps arriving — consistently matching or beating the incumbent clients on result counts.
+Sources are ranked by availability and speed, locked and off-format files are shown but greyed,
+advertising bots are detected and sunk, and a search that comes back empty quietly retries without
+the word most likely to be a typo (and says so).
+
+**Acquire.** Pick a result and it streams into a sandboxed quarantine — never your library. Downloads
+that stall are retried automatically; the review page shows live progress; a failed one can be
+re-requested with one click.
+
+**Validate.** Each file is decoded end to end and graded: true container and codec vs. the extension,
+bitrate (CBR/VBR), sample rate, bit depth, channels, play-through integrity, and a spectrogram with a
+frequency-cutoff detector that exposes up-sampled fakes. Five checks run in parallel; the rest queue.
+
+**Decide.** Good / Have a look / Broken. **Download to Library** moves the file (hash-verified, never
+overwrites) into a dedicated folder inside your existing library; **Delete** removes it for good.
+
+**Library.** Every track you've kept, with its facts, a filter-as-you-type search, an inline drop-down
+with the spectrogram and a built-in player (playhead crawls across the spectrum), and *Show in folder*.
+
+**Zero-config networking.** The transport engine is bundled and invisible: a per-user identity and
+API key are provisioned silently, the router is asked to open a port automatically, firewall prompts
+carry the app's name, and stray engine processes from earlier sessions are reclaimed on start.
+
+**Polish.** Light and dark themes (Sora + IBM Plex Mono), a first-run tour, smooth momentum scrolling,
+a start-up screen that lights each step as it completes, local accounts with sign-up / sign-in, and a
+Settings → Advanced escape hatch (logs, port status, start fresh).
+
+Everything runs on the user's machine. No uploads, no servers, no telemetry.
+
+## Platforms
+
+| | Status |
 |---|---|
-| Real format detection, bitrate (CBR/VBR), sample rate, bit depth, channels | Chris's front-end design |
-| Full play-through test with claimed-vs-actual length check | Windows testing (Chris) |
-| Spectrogram + frequency-cutoff warning | History / search filters |
-| PASS / WARN / FAIL with plain-English reasons | App icon, signing (later) |
-| Quarantine, Save to Library (hash-verified, never overwrites), Reject | |
-| Watched Incoming folder, auto-cleanup, crash recovery, settings | |
-| Store search (Beatport, Bandcamp, Juno, Traxsource, Discogs) | |
-| 35 automated tests on synthetic audio | |
+| Windows 10/11 (x64) | Test builds on every push; unsigned for now (*More info → Run anyway* once) |
+| macOS (Apple Silicon and Intel) | Test builds on every push, one dmg per chip; ad-hoc signed, not yet notarized (*right-click → Open* once) |
+| Linux | Builds from source; no packaged app yet |
 
-## Get the Windows app (no setup)
+Builds are published as artifacts on **Actions → Test and build → latest green run**:
+`DigMart-<version>-Windows` (zip of the app folder) and `DigMart-<version>-macOS-AppleSilicon` / `-Intel` (a `.dmg`: open it, drag the app to Applications).
 
-1. On GitHub, open **Actions -> Test and build -> latest green run**.
-2. Download **ProjectArchive-Windows**, unzip it, run `Project Archive.exe`.
-3. First launch shows "Windows protected your PC" because the app isn't signed yet:
-   click **More info -> Run anyway**.
+## Architecture (one paragraph)
 
-FFmpeg is bundled inside; nothing else to install.
-
-## Run from source (macOS or Windows)
-
-Needs Python 3.12+ and FFmpeg (`brew install ffmpeg` on Mac; on Windows put `ffmpeg.exe`/`ffprobe.exe`
-in `vendor/ffmpeg/` or on your PATH).
-
-```bash
-python -m venv ~/.venvs/project-archive          # outside the repo if its path contains ':'
-~/.venvs/project-archive/bin/pip install -r requirements.txt pytest   # Windows: ...\Scripts\pip
-~/.venvs/project-archive/bin/python -m app        # run the app
-~/.venvs/project-archive/bin/python -m pytest     # run the tests
-```
-
-Build a standalone app: `pip install pyinstaller`, copy FFmpeg into `vendor/ffmpeg/`, then
-`python packaging/build.py` -> `dist/`.
-
-## How it works
-
-Drop a track (or let the watched folder pick it up) -> it's copied into a private quarantine folder ->
-checked -> you choose **Save to Library** (PASS), **Save to Library anyway** (WARN, explicit), or
-**Reject**. FAIL can only be rejected. Your original file is never modified or deleted.
-
-| Check | Method |
-|---|---|
-| Actual format | FFprobe + file signature, compared with the extension |
-| Bitrate | FFprobe; CBR/VBR from the LAME/Xing header |
-| Plays through | Full FFmpeg decode; actual length compared with the length the file claims |
-| Frequency cutoff | Averaged FFT spectrum; warns when energy stops well short of what the format implies |
-| Fingerprint | SHA-256, re-verified after copying into the library |
-
-## Layout
+Python 3.13 + PySide6 front end; a service layer owning a SQLite state machine
+(DISCOVERED → QUEUED → STAGING → ANALYZING → READY_FOR_REVIEW → PROMOTED / REJECTED); a media layer on
+bundled FFmpeg/FFprobe and NumPy for decoding, spectral analysis, and rendering; and a pluggable
+**source adapter** contract behind which the bundled P2P engine (and, later, store integrations) live.
+Credentials sit in the OS keyring. The engine is driven over a loopback-only API with a per-user key.
 
 ```
-app/core      workflow: service (stage/analyze/promote/reject), rules, jobs, safety, analyzer
-app/media     ffprobe/ffmpeg wrappers, streaming decode + spectrum, PNG spectrogram
-app/storage   SQLite job history (metadata only, never audio)
-app/ui        PySide6 window
-docs/         UI_HANDOFF.md: data + actions for front-end design
-tests/        synthetic fixtures generated at test time (no copyrighted audio)
+app/
+  adapters/    source adapter contract + the bundled engine adapter
+  core/        service, analyzer, rules, account, credentials, firewall, UPnP, process lifetime
+  media/       decode, probe, spectrogram
+  storage/     SQLite schema + migrations
+  ui/          theme, widgets, pages, onboarding, tour, library, settings
+packaging/     PyInstaller build, icon generation, folder tidy
+tests/         100+ tests on synthetic audio and a behaviourally faithful fake engine
 ```
 
-## Data locations
+## Roadmap to 1.0
 
-- Database + quarantine: `~/Library/Application Support/Project Archive` (Mac),
-  `%APPDATA%\Project Archive` (Windows)
-- Library (default): `~/Music/Project Archive Library`, changeable in Settings
+See [`docs/ROADMAP_1.0.md`](docs/ROADMAP_1.0.md). Headlines: already-have-it detection, standing
+searches with a notification bell and auto-validation, auto-update, live network status, BPM and key
+detection (validated against the user's own tagged library), source reputation, silent pre-checks,
+hosted accounts, one-click diagnostic reports, installers, signing and notarization.
 
-## Out of scope (see the spec)
+## Developing
 
-No Soulseek protocol or automation, no hosting or sharing of music, no uploads. Users are responsible for
-having the right to obtain and keep each file.
+```
+pip install -r requirements.txt pytest
+python -m pytest -q          # ~100 tests, ~50 s
+python -m app                # run from source (needs FFmpeg on PATH)
+python packaging/build.py    # local packaged build
+```
 
-## Licensing note
-
-The Windows build bundles an FFmpeg GPL build from BtbN/FFmpeg-Builds (license text included in the
-bundle). Fine for private use between us; revisit before distributing publicly.
+New here? Start with [`docs/HANDOFF.md`](docs/HANDOFF.md) (what must not change, where things are, how to build and ship).
+Decisions and open legal flags: [`docs/DECISIONS_AND_FLAGS.md`](docs/DECISIONS_AND_FLAGS.md).
+Change history: [`CHANGELOG.md`](CHANGELOG.md).

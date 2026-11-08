@@ -33,6 +33,52 @@ def overall(checks: list[Check]) -> str:
     return max((c.status for c in checks), key=ORDER.get, default=PASS)
 
 
+# Things that are plainly not audio, by their first bytes. Any of these is a hard stop before decoding.
+NOT_AUDIO = (
+    (b"MZ", "a Windows program (.exe/.dll)"),
+    (b"PK\x03\x04", "a zip archive"),
+    (b"Rar!", "a RAR archive"),
+    (b"7z\xbc\xaf", "a 7-Zip archive"),
+    (b"%PDF", "a PDF"),
+    (b"\x7fELF", "a Linux program"),
+    (b"<!DOCTYPE", "a web page"),
+    (b"<html", "a web page"),
+    (b"\x89PNG", "a PNG image"),
+    (b"\xff\xd8\xff", "a JPEG image"),
+    (b"GIF8", "a GIF image"),
+)
+
+
+def prechecks(path, ext: str, facts: MediaFacts, magic: str | None, settings: Settings) -> list[Check]:
+    """Quick, silent checks before the expensive decode. Any FAIL here ends the analysis early with the
+    reason; the full decode is only spent on files that could plausibly be music."""
+    checks: list[Check] = []
+    ext = ext.lower().lstrip(".")
+    try:
+        with open(path, "rb") as f:
+            head = f.read(16)
+        size = path.stat().st_size
+    except OSError as e:
+        return [Check("precheck", FAIL, "Can't read the file", str(e))]
+    for sig, what in NOT_AUDIO:
+        if head.startswith(sig):
+            return [Check("precheck", FAIL, "Not an audio file", f"The file is {what} with a .{ext} name.")]
+    if size < 64 * 1024:
+        return [Check("precheck", FAIL, "Too small to be a track", f"{size // 1024} KB — a few seconds at most.")]
+    if facts.readable and facts.duration_s and facts.duration_s > 5:
+        implied_kbps = size * 8 / facts.duration_s / 1000
+        lossy = ext in ("mp3", "aac", "m4a", "ogg", "opus")
+        if lossy and implied_kbps < 24:
+            checks.append(Check("precheck", FAIL, "Size doesn't match the length",
+                                f"{size / 1e6:.1f} MB for {facts.duration_s / 60:.1f} min is about {implied_kbps:.0f} kbps — "
+                                "far too little data for a real track; the file is probably cut short or mislabelled."))
+        if lossy and implied_kbps > 2000:
+            checks.append(Check("precheck", WARN, "Size doesn't match the length",
+                                f"{size / 1e6:.1f} MB for {facts.duration_s / 60:.1f} min is far more data than a .{ext} "
+                                "would hold; the file may carry something else inside."))
+    return checks
+
+
 def evaluate(ext: str, facts: MediaFacts, decode: dict | None, cutoff_hz: float | None,
              settings: Settings) -> list[Check]:
     checks: list[Check] = []

@@ -22,7 +22,13 @@ CREATE TABLE IF NOT EXISTS jobs (
     expires_at TEXT,
     final_path TEXT,
     disposition TEXT,
-    message TEXT
+    message TEXT,
+    remote_user TEXT,
+    remote_path TEXT,
+    remote_size INTEGER,
+    transfer_id TEXT,
+    progress REAL,
+    hidden INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS analyses (
     job_id TEXT PRIMARY KEY REFERENCES jobs(id),
@@ -31,12 +37,47 @@ CREATE TABLE IF NOT EXISTS analyses (
     decode_ok INTEGER, spectrum_path TEXT, overall_status TEXT, analysis_json TEXT
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS crates (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, created_at TEXT);
+CREATE TABLE IF NOT EXISTS crate_items (crate_id TEXT NOT NULL, job_id TEXT NOT NULL, added_at TEXT,
+    PRIMARY KEY (crate_id, job_id));
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, timestamp TEXT, event_type TEXT, message TEXT
+);
+CREATE TABLE IF NOT EXISTS wishes (
+    id TEXT PRIMARY KEY,
+    query TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    status TEXT NOT NULL,            -- watching | checking | found | paused
+    next_run_at TEXT,                -- when the standing search runs again (watching only)
+    last_run_at TEXT,
+    runs INTEGER NOT NULL DEFAULT 0,  -- searches made for this wish
+    tries INTEGER NOT NULL DEFAULT 0, -- candidates sent to quarantine so far
+    job_id TEXT,                     -- the candidate currently being checked / the one found
+    candidates_json TEXT,            -- the remaining gated candidates from the last search
+    last_seen INTEGER,               -- rows the last search returned (before the gate)
+    found_at TEXT,
+    seen INTEGER NOT NULL DEFAULT 1, -- 0 = found and not yet looked at (the bell counts these)
+    note TEXT,
+    playlist TEXT,                   -- batch import this wish belongs to (NULL for a single wish)
+    position INTEGER,                -- its place in that playlist
+    expect_s INTEGER,                -- expected length in seconds, when the playlist gave one
+    expires_at TEXT,                 -- the standing order ends here unless renewed (status becomes expired)
+    artist TEXT,                     -- the structured wish, when the user filled the form (any part may be empty)
+    title TEXT,
+    mix TEXT
 );
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_source ON jobs(source_path, source_size, source_mtime);
 """
+
+# Columns added after the first release. Existing databases get them with ALTER TABLE.
+MIGRATIONS = {
+    "jobs": {"remote_user": "TEXT", "remote_path": "TEXT", "remote_size": "INTEGER",
+             "transfer_id": "TEXT", "progress": "REAL", "hidden": "INTEGER NOT NULL DEFAULT 0",
+             "retries": "INTEGER NOT NULL DEFAULT 0", "retry_at": "TEXT",
+             "playlist": "TEXT"},                       # batch playlist it came from (its library sub-folder)
+}
 
 
 def now() -> str:
@@ -45,12 +86,22 @@ def now() -> str:
 
 class Database:
     def __init__(self, path: Path):
+        self.path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._con = sqlite3.connect(str(path), check_same_thread=False)
         self._con.row_factory = sqlite3.Row
         self._con.execute("PRAGMA journal_mode=WAL")
         self._con.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        for table, cols in MIGRATIONS.items():
+            have = {r[1] for r in self._con.execute(f"PRAGMA table_info({table})")}
+            with self._con:
+                for name, typ in cols.items():
+                    if name not in have:
+                        self._con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
 
     def close(self):
         with self._lock:
@@ -64,6 +115,12 @@ class Database:
         with self._lock, self._con:
             self._con.execute(f"INSERT INTO jobs ({cols}) VALUES ({', '.join('?' * len(job))})", tuple(job.values()))
 
+    def jobs_version(self) -> str:
+        """Changes whenever any job row changes: cheap cache key."""
+        with self._lock:
+            row = self._con.execute("SELECT COUNT(*), MAX(updated_at) FROM jobs").fetchone()
+        return f"{row[0]}:{row[1]}"
+
     def update_job(self, job_id: str, **fields) -> None:
         fields["updated_at"] = now()
         sets = ", ".join(f"{k} = ?" for k in fields)
@@ -75,11 +132,14 @@ class Database:
             row = self._con.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return dict(row) if row else None
 
-    def jobs(self, states: tuple[str, ...] | None = None, limit: int = 500) -> list[dict]:
-        q, args = "SELECT * FROM jobs", ()
+    def jobs(self, states: tuple[str, ...] | None = None, limit: int = 500, include_hidden: bool = True) -> list[dict]:
+        where, args = [], ()
         if states:
-            q += f" WHERE state IN ({', '.join('?' * len(states))})"
+            where.append(f"state IN ({', '.join('?' * len(states))})")
             args = states
+        if not include_hidden:
+            where.append("hidden = 0")
+        q = "SELECT * FROM jobs" + (" WHERE " + " AND ".join(where) if where else "")
         q += " ORDER BY created_at DESC LIMIT ?"
         with self._lock:
             return [dict(r) for r in self._con.execute(q, (*args, limit)).fetchall()]
@@ -88,6 +148,13 @@ class Database:
         with self._lock:
             row = self._con.execute("SELECT * FROM jobs WHERE source_path = ? AND source_size = ? AND source_mtime = ?",
                                     (path, size, mtime)).fetchone()
+        return dict(row) if row else None
+
+    def find_remote(self, user: str, remote_path: str, states: tuple[str, ...]) -> dict | None:
+        q = (f"SELECT * FROM jobs WHERE remote_user = ? AND remote_path = ? AND state IN "
+             f"({', '.join('?' * len(states))}) LIMIT 1")
+        with self._lock:
+            row = self._con.execute(q, (user, remote_path, *states)).fetchone()
         return dict(row) if row else None
 
     # analyses ---------------------------------------------------------------------
@@ -103,6 +170,82 @@ class Database:
         with self._lock:
             row = self._con.execute("SELECT analysis_json FROM analyses WHERE job_id = ?", (job_id,)).fetchone()
         return json.loads(row[0]) if row else None
+
+    # crates (the user's own groupings of library tracks) ------------------------------
+    def crates(self) -> list[dict]:
+        with self._lock:
+            rows = self._con.execute(
+                "SELECT c.id, c.name, COUNT(i.job_id) AS n FROM crates c LEFT JOIN crate_items i ON i.crate_id = c.id "
+                "LEFT JOIN jobs j ON j.id = i.job_id AND j.state = 'PROMOTED' GROUP BY c.id ORDER BY c.name COLLATE NOCASE").fetchall()
+        return [dict(r) for r in rows]
+
+    def create_crate(self, name: str) -> str:
+        import uuid
+        name = " ".join(name.split())[:60]
+        if not name:
+            raise ValueError("Give the crate a name.")
+        with self._lock, self._con:
+            row = self._con.execute("SELECT id FROM crates WHERE name = ? COLLATE NOCASE", (name,)).fetchone()
+            if row:
+                return row[0]
+            cid = uuid.uuid4().hex[:12]
+            self._con.execute("INSERT INTO crates VALUES (?,?,?)", (cid, name, now()))
+            return cid
+
+    def rename_crate(self, crate_id: str, name: str) -> None:
+        name = " ".join(name.split())[:60]
+        if name:
+            with self._lock, self._con:
+                self._con.execute("UPDATE crates SET name = ? WHERE id = ?", (name, crate_id))
+
+    def delete_crate(self, crate_id: str) -> None:
+        """Removes the crate only; the tracks stay in the library."""
+        with self._lock, self._con:
+            self._con.execute("DELETE FROM crate_items WHERE crate_id = ?", (crate_id,))
+            self._con.execute("DELETE FROM crates WHERE id = ?", (crate_id,))
+
+    def add_to_crate(self, crate_id: str, job_id: str) -> None:
+        with self._lock, self._con:
+            self._con.execute("INSERT OR IGNORE INTO crate_items VALUES (?,?,?)", (crate_id, job_id, now()))
+
+    def remove_from_crate(self, crate_id: str, job_id: str) -> None:
+        with self._lock, self._con:
+            self._con.execute("DELETE FROM crate_items WHERE crate_id = ? AND job_id = ?", (crate_id, job_id))
+
+    def crate_jobs(self, crate_id: str) -> set[str]:
+        with self._lock:
+            return {r[0] for r in self._con.execute("SELECT job_id FROM crate_items WHERE crate_id = ?", (crate_id,))}
+
+    def crates_of(self, job_id: str) -> set[str]:
+        with self._lock:
+            return {r[0] for r in self._con.execute("SELECT crate_id FROM crate_items WHERE job_id = ?", (job_id,))}
+
+    # wishes -------------------------------------------------------------------------
+    def insert_wish(self, **wish) -> None:
+        wish.setdefault("created_at", now())
+        wish.setdefault("updated_at", wish["created_at"])
+        cols = ", ".join(wish)
+        with self._lock, self._con:
+            self._con.execute(f"INSERT INTO wishes ({cols}) VALUES ({', '.join('?' * len(wish))})", tuple(wish.values()))
+
+    def update_wish(self, wish_id: str, **fields) -> None:
+        fields["updated_at"] = now()
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        with self._lock, self._con:
+            self._con.execute(f"UPDATE wishes SET {sets} WHERE id = ?", (*fields.values(), wish_id))
+
+    def delete_wish(self, wish_id: str) -> None:
+        with self._lock, self._con:
+            self._con.execute("DELETE FROM wishes WHERE id = ?", (wish_id,))
+
+    def wish(self, wish_id: str) -> dict | None:
+        with self._lock:
+            row = self._con.execute("SELECT * FROM wishes WHERE id = ?", (wish_id,)).fetchone()
+        return dict(row) if row else None
+
+    def wishes(self) -> list[dict]:
+        with self._lock:
+            return [dict(r) for r in self._con.execute("SELECT * FROM wishes ORDER BY created_at DESC").fetchall()]
 
     # settings / events ----------------------------------------------------------------
     def load_settings(self) -> dict:

@@ -3,6 +3,7 @@ name: Test and build
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']     # text-only changes don't ship a new app version
   pull_request:
   workflow_dispatch:
 
@@ -43,6 +44,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Stamp the build number (every push to main is a new version)
+        shell: bash
+        run: echo "BUILD = ${{ github.run_number }}" > app/_build.py
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -56,18 +60,184 @@ jobs:
           Copy-Item "$bin/ffmpeg.exe","$bin/ffprobe.exe" vendor/ffmpeg/
           $lic = Get-ChildItem ffmpeg-dl -Recurse -Filter LICENSE.txt | Select-Object -First 1
           if ($lic) { Copy-Item $lic.FullName vendor/ffmpeg/FFMPEG-LICENSE.txt }
+      - name: Fetch the Soulseek engine (slskd) to bundle
+        shell: pwsh
+        env:
+          SLSKD_VERSION: "0.26.2"
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/slskd/slskd/releases/download/$env:SLSKD_VERSION/slskd-$env:SLSKD_VERSION-win-x64.zip" -OutFile slskd.zip
+          New-Item -ItemType Directory -Force vendor/slskd | Out-Null
+          Expand-Archive slskd.zip -DestinationPath vendor/slskd
+          if (-not (Test-Path vendor/slskd/slskd.exe)) { throw "slskd.exe not found after extraction" }
+          # Prompts show the executable's path, and users don't know what slskd is, so ship it under our name.
+          # (Its embedded description can't be edited: it is a .NET single-file bundle and resource editors
+          # corrupt it. The installer will add a named firewall rule instead; see docs/DECISIONS_AND_FLAGS.md.)
+          $name = (python -c "from app.config import APP_NAME; print(APP_NAME)")
+          Move-Item vendor/slskd/slskd.exe "vendor/slskd/$name Engine.exe"
+          if (-not (Test-Path "vendor/slskd/$name Engine.exe")) { throw "engine rename failed" }
       - name: Build
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
           python packaging/build.py
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (python -c "from app.config import FULL_VERSION; print(FULL_VERSION)")
+          "version=$v" >> $env:GITHUB_OUTPUT
+          $s = (python -c "from app.config import APP_SLUG; print(APP_SLUG)")
+          "slug=$s" >> $env:GITHUB_OUTPUT
+          $n = (python -c "from app.config import APP_NAME; print(APP_NAME)")
+          "name=$n" >> $env:GITHUB_OUTPUT
       - name: Smoke test the built app
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath "dist/Project Archive/Project Archive.exe" -ArgumentList "--self-test" -Wait -PassThru
+          $name = (python -c "from app.config import APP_NAME; print(APP_NAME)")
+          $p = Start-Process -FilePath "dist/$name/$name.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if (Test-Path "dist/$name/self-test.log") { Get-Content "dist/$name/self-test.log"; Remove-Item "dist/$name/self-test.log" }
           if ($p.ExitCode -ne 0) { throw "self-test failed with exit code $($p.ExitCode)" }
       - uses: actions/upload-artifact@v4
         with:
-          name: ProjectArchive-Windows
-          path: dist/Project Archive/
+          name: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-Windows
+          path: dist/${{ steps.ver.outputs.name }}/
           retention-days: 30
+      - name: Make the update archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/${{ steps.ver.outputs.name }}" -DestinationPath "${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: update-windows
+          path: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-windows-x64.zip
+          retention-days: 7
+
+  macos-app:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest   # Apple Silicon. (Intel runners are retired/never start; build Intel locally.)
+            arch: AppleSilicon
+            ffmpeg_arch: arm64
+            slskd_arch: osx-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stamp the build number (every push to main is a new version)
+        shell: bash
+        run: echo "BUILD = ${{ github.run_number }}" > app/_build.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Fetch FFmpeg to bundle (static, ${{ matrix.arch }})
+        run: |
+          set -e
+          mkdir -p vendor/ffmpeg dl && cd dl
+          curl -fsSL -o ffmpeg.zip  "https://ffmpeg.martin-riedl.de/redirect/latest/macos/${{ matrix.ffmpeg_arch }}/release/ffmpeg.zip"
+          curl -fsSL -o ffprobe.zip "https://ffmpeg.martin-riedl.de/redirect/latest/macos/${{ matrix.ffmpeg_arch }}/release/ffprobe.zip"
+          unzip -o -q ffmpeg.zip && unzip -o -q ffprobe.zip
+          cp ffmpeg ffprobe ../vendor/ffmpeg/ && chmod +x ../vendor/ffmpeg/ffmpeg ../vendor/ffmpeg/ffprobe
+          ../vendor/ffmpeg/ffmpeg -version | head -1
+          curl -fsSL -o ../vendor/ffmpeg/FFMPEG-LICENSE.txt "https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/COPYING.GPLv3" || true
+      - name: Fetch the Soulseek engine (slskd) to bundle
+        env:
+          SLSKD_VERSION: "0.26.2"
+        run: |
+          set -e
+          mkdir -p vendor/slskd
+          curl -fsSL -o slskd.zip "https://github.com/slskd/slskd/releases/download/${SLSKD_VERSION}/slskd-${SLSKD_VERSION}-${{ matrix.slskd_arch }}.zip"
+          unzip -o -q slskd.zip -d vendor/slskd
+          test -f vendor/slskd/slskd || { echo "slskd binary not found"; ls -R vendor/slskd; exit 1; }
+          name=$(python -c "from app.config import APP_NAME; print(APP_NAME)")
+          mv vendor/slskd/slskd "vendor/slskd/$name Engine" && chmod +x "vendor/slskd/$name Engine"
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          python packaging/build.py
+      - name: Sign ad hoc (lets macOS run it; first open is right-click → Open)
+        run: |
+          name=$(python -c "from app.config import APP_NAME; print(APP_NAME)")
+          codesign --force --deep --sign - "dist/$name.app"
+          codesign --verify --deep --strict "dist/$name.app" && echo "signed (ad hoc)"
+      - name: Read version
+        id: ver
+        run: |
+          echo "version=$(python -c 'from app.config import FULL_VERSION; print(FULL_VERSION)')" >> $GITHUB_OUTPUT
+          echo "slug=$(python -c 'from app.config import APP_SLUG; print(APP_SLUG)')" >> $GITHUB_OUTPUT
+          echo "name=$(python -c 'from app.config import APP_NAME; print(APP_NAME)')" >> $GITHUB_OUTPUT
+      - name: Make the disk image (drag to Applications)
+        run: |
+          set -e
+          name="${{ steps.ver.outputs.name }}"; slug="${{ steps.ver.outputs.slug }}"; ver="${{ steps.ver.outputs.version }}"
+          rm -rf dmg-stage && mkdir dmg-stage
+          cp -R "dist/$name.app" dmg-stage/
+          ln -s /Applications dmg-stage/Applications
+          hdiutil create -volname "$name" -srcfolder dmg-stage -ov -format UDZO "$slug-$ver-macOS-${{ matrix.arch }}.dmg"
+          ls -la "$slug-$ver-macOS-${{ matrix.arch }}.dmg"
+      - name: Prove the image mounts and the app inside runs
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -e
+          name="${{ steps.ver.outputs.name }}"; slug="${{ steps.ver.outputs.slug }}"; ver="${{ steps.ver.outputs.version }}"
+          mnt=$(hdiutil attach -nobrowse -readonly "$slug-$ver-macOS-${{ matrix.arch }}.dmg" | grep -o '/Volumes/.*' | tail -1)
+          echo "mounted at $mnt"; ls "$mnt"
+          rm -rf appcopy && mkdir appcopy && cp -R "$mnt/$name.app" appcopy/
+          hdiutil detach "$mnt"
+          codesign --verify --deep --strict "appcopy/$name.app" && echo "copy still signed"
+          file "appcopy/$name.app/Contents/MacOS/$name"
+          "appcopy/$name.app/Contents/MacOS/$name" --self-test || code=$?
+          cat "appcopy/$name.app/Contents/MacOS/self-test.log" 2>/dev/null || cat self-test.log 2>/dev/null || true
+          exit ${code:-0}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS-${{ matrix.arch }}
+          path: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS-${{ matrix.arch }}.dmg
+          retention-days: 30
+      - name: Make the update archive (keeps the app's links and permissions)
+        run: ditto -c -k --keepParent "dist/${{ steps.ver.outputs.name }}.app" "${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macos-arm64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: update-macos
+          path: |
+            ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macos-arm64.zip
+            ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-macOS-AppleSilicon.dmg
+          retention-days: 7
+
+  release:
+    # Every push to main: publish a release the installed apps update from. The manifest is signed with the
+    # update key (repository secret DIGMART_SIGNING_KEY); apps refuse anything not signed with it.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [windows-app, macos-app]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Stamp the build number
+        run: echo "BUILD = ${{ github.run_number }}" > app/_build.py
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: update-*
+          merge-multiple: true
+          path: release
+      - name: Sign the update list and publish the release
+        env:
+          DIGMART_SIGNING_KEY: ${{ secrets.DIGMART_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          pip install -q "cryptography==49.0.0"
+          ver=$(python -c 'from app.config import FULL_VERSION; print(FULL_VERSION)')
+          slug=$(python -c 'from app.config import APP_SLUG; print(APP_SLUG)')
+          ls -la release
+          python packaging/make_manifest.py --version "$ver" --notes "DigMart $ver" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/v$ver" --out release/latest.json \
+            "windows-x64=release/$slug-$ver-windows-x64.zip" "macos-arm64=release/$slug-$ver-macos-arm64.zip"
+          gh release create "v$ver" release/* --title "DigMart $ver" --notes "Automatic build of main ($GITHUB_SHA)." --latest

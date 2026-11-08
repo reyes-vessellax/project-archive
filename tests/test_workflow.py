@@ -14,7 +14,7 @@ from .conftest import needs_ffmpeg
 
 
 def library_files(svc):
-    lib = Path(svc.settings.library_dir)
+    lib = svc.settings.downloads_dir()
     return sorted(p.name for p in lib.iterdir()) if lib.exists() else []
 
 
@@ -32,7 +32,11 @@ def test_promote_pass_verifies_hash(service, fixtures):
     a = service.analyze(job["id"])
     target = service.promote(job["id"])
     from app.core.analyzer import sha256_file
-    assert sha256_file(target) == a["sha256"]
+    # the copy was verified against the checked file BEFORE tags were added; the tagged result is recorded
+    assert sha256_file(target) == service.db.analysis(job["id"])["final_sha256"]
+    import subprocess
+    pcm = lambda p: subprocess.run(["ffmpeg", "-v", "error", "-i", str(p), "-f", "s16le", "-"], capture_output=True).stdout
+    assert pcm(target) == pcm(fixtures["mp3_320"])                      # tags only: the audio is identical
     assert service.db.job(job["id"])["state"] == J.PROMOTED
     assert not Path(job["staged_path"]).exists()
 
@@ -166,3 +170,129 @@ def test_unique_path(tmp_path):
     (tmp_path / "a.mp3").write_bytes(b"1")
     (tmp_path / "a (2).mp3").write_bytes(b"1")
     assert unique_path(tmp_path, "a.mp3").name == "a (3).mp3"
+
+
+@needs_ffmpeg
+def test_downloads_land_in_app_subfolder(service, fixtures):
+    from app.config import APP_NAME
+    job = service.stage(fixtures["mp3_320"]); service.analyze(job["id"])
+    assert not service.settings.downloads_dir().exists()            # not created until the first download
+    target = service.promote(job["id"])
+    assert target.parent == Path(service.settings.library_dir) / APP_NAME
+    assert sorted(p.name for p in Path(service.settings.library_dir).iterdir()) == [APP_NAME]   # library itself untouched
+
+
+def test_library_named_after_app_is_not_nested(service, tmp_path):
+    from app.config import APP_NAME
+    s = service.settings; s.library_dir = str(tmp_path / APP_NAME); service.save_settings(s)
+    assert service.settings.downloads_dir() == tmp_path / APP_NAME
+
+
+@needs_ffmpeg
+def test_clear_finished_hides_only_finished(service, fixtures):
+    a = service.stage(fixtures["mp3_320"]); service.analyze(a["id"]); service.promote(a["id"])
+    b = service.stage(fixtures["mp3_320"]); service.analyze(b["id"])                 # still waiting for a decision
+    assert service.hide_finished() == 0                                               # the saved one already left by itself
+    ids = {j["id"] for j in service.jobs()}
+    assert b["id"] in ids and a["id"] not in ids
+    assert service.db.job(a["id"])["state"] == J.PROMOTED                            # history intact; library page still lists it
+
+
+@needs_ffmpeg
+def test_promote_keeps_spectrogram(service, fixtures):
+    a = service.stage(fixtures["mp3_320"]); service.analyze(a["id"])
+    before = service.db.analysis(a["id"])["spectrogram_path"]
+    service.promote(a["id"], override_warning=True)
+    after = service.db.analysis(a["id"])["spectrogram_path"]
+    assert after != before and Path(after).exists() and not Path(before).exists()
+
+
+@needs_ffmpeg
+def test_reset_everything_wipes_data_but_not_music(service, fixtures):
+    a = service.stage(fixtures["mp3_320"]); service.analyze(a["id"]); service.promote(a["id"], override_warning=True)
+    final = Path(service.db.job(a["id"])["final_path"])
+    root = service.db.path.parent
+    service.reset_everything()
+    assert final.exists()
+    assert not (root / "archive.db").exists()
+
+
+@needs_ffmpeg
+def test_spectrograms_are_capped_and_redrawn_on_demand(service, fixtures):
+    service.settings.keep_spectrograms = 10                  # floor is 10
+    ids = []
+    for i in range(12):
+        j = service.stage(fixtures["mp3_320"]); service.analyze(j["id"]); service.promote(j["id"], override_warning=True)
+        ids.append(j["id"])
+    keep_dir = service.db.path.parent / "spectrograms"
+    assert len(list(keep_dir.glob("*.png"))) == 10
+    oldest = ids[0]
+    assert not Path(service.db.analysis(oldest)["spectrogram_path"]).exists()
+    out = service.redraw_spectrogram(oldest)
+    assert out and Path(out).exists() and service.db.analysis(oldest)["spectrogram_path"] == out
+    assert len(list(keep_dir.glob("*.png"))) == 10          # the cap holds after a redraw too
+
+
+@needs_ffmpeg
+def test_saved_track_leaves_ready_list_but_stays_in_library(service, fixtures):
+    job = service.stage(fixtures["mp3_320"])
+    service.analyze(job["id"])
+    assert job["id"] in [j["id"] for j in service.jobs()]
+    service.promote(job["id"])
+    assert job["id"] not in [j["id"] for j in service.jobs()]                     # gone from Ready, no × needed
+    assert job["id"] in [j["id"] for j in service.db.jobs(states=(J.PROMOTED,))]  # still in the Library
+
+
+@needs_ffmpeg
+def test_deleted_track_leaves_ready_list(service, fixtures):
+    job = service.stage(fixtures["mp3_320"])
+    service.analyze(job["id"])
+    service.reject(job["id"])
+    assert job["id"] not in [j["id"] for j in service.jobs()]
+
+
+@needs_ffmpeg
+def test_batch_track_saves_into_its_playlist_folder(service, fixtures):
+    job = service.stage(fixtures["mp3_320"])
+    service.db.update_job(job["id"], playlist="Friday warm-up")
+    service.analyze(job["id"])
+    target = service.promote(job["id"])
+    assert target.parent.name == "Friday warm-up"
+    assert target.parent.parent == service.settings.downloads_dir()
+
+
+@needs_ffmpeg
+def test_remove_from_library_trashes_file_and_forgets_crates(service, fixtures, tmp_path):
+    job = service.stage(fixtures["mp3_320"]); service.analyze(job["id"])
+    target = service.promote(job["id"])
+    cid = service.db.create_crate("Warm-up")
+    service.db.add_to_crate(cid, job["id"])
+    assert service.db.crates()[0]["n"] == 1
+    trashed = []
+    service.remove_from_library(job["id"], trash=lambda p: (trashed.append(p), p.rename(tmp_path / p.name), True)[-1])
+    assert trashed == [target] and not target.exists()
+    assert job["id"] not in [j["id"] for j in service.db.jobs(states=(J.PROMOTED,))]
+    assert service.db.crate_jobs(cid) == set()
+
+
+def test_crates_basics(service):
+    a = service.db.create_crate("  Peak   time ")
+    assert service.db.create_crate("peak time") == a              # same name (any case) -> same crate
+    service.db.rename_crate(a, "Peak")
+    assert [c["name"] for c in service.db.crates()] == ["Peak"]
+    service.db.delete_crate(a)
+    assert service.db.crates() == []
+@needs_ffmpeg
+def test_prechecks_stop_non_audio_before_decoding(service, tmp_path):
+    exe = tmp_path / "Artist - Track.mp3"
+    exe.write_bytes(b"MZ" + b"\x00" * 200_000)                 # a Windows program wearing an .mp3 name
+    j = service.stage(exe); a = service.analyze(j["id"])
+    assert a["overall_status"] == "FAIL"
+    assert any(c["title"] == "Not an audio file" and "Windows program" in c["message"] for c in a["checks"])
+    assert a.get("decode") is None                            # never decoded
+
+
+@needs_ffmpeg
+def test_prechecks_pass_real_audio(service, fixtures):
+    j = service.stage(fixtures["mp3_320"]); a = service.analyze(j["id"])
+    assert not any(c["id"] == "precheck" and c["status"] == "FAIL" for c in a["checks"])
