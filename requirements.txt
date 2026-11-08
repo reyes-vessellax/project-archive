@@ -4,3 +4,4 @@ keyring>=25
 mutagen==1.47.0
 yt-dlp==2026.10.21
 cryptography==49.0.0
+certifi==2026.7.22
