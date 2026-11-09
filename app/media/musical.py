@@ -205,6 +205,59 @@ def chroma(y: np.ndarray, sr: int = SR, n_fft: int = 16384, hop: int = 8192) -> 
     return c / (c.sum() + 1e-12)
 
 
+_FLAT = {"Db": "C#", "D#": "Eb", "Gb": "F#", "G#": "Ab", "A#": "Bb", "Cb": "B", "Fb": "E", "E#": "F", "B#": "C"}
+
+
+def key_from_tag(text: str) -> tuple[str, str] | None:
+    """A key tag as DJ software writes it -> ("A minor", "8A"). Reads classic ("Am", "A minor", "G#m", "F#maj"),
+    Camelot ("8A", "08B") and Open Key ("1m", "6d"). Anything else (blank, "o", "Unknown") -> None."""
+    import re
+    t = (text or "").strip().replace("\u266f", "#").replace("\u266d", "b")
+    m = re.fullmatch(r"0?(1[0-2]|[1-9])\s*([ABab])", t)                        # Camelot
+    if m:
+        n, minor = int(m.group(1)), m.group(2).upper() == "A"
+    else:
+        m = re.fullmatch(r"0?(1[0-2]|[1-9])\s*([mdMD])", t)                    # Open Key: 1d = C major = 8B
+        if m:
+            n, minor = (int(m.group(1)) + 6) % 12 + 1, m.group(2).lower() == "m"
+        else:
+            m = re.fullmatch(r"([A-Ga-g])\s*([#b]?)\s*(m|min|minor|maj|major|M)?", t)
+            if not m:
+                return None
+            note = m.group(1).upper() + m.group(2)
+            note = _FLAT.get(note, note)
+            if note not in NOTES:
+                return None
+            minor = (m.group(3) or "") in ("m", "min", "minor")
+            pc = NOTES.index(note)
+            n = CAMELOT_MINOR[pc] if minor else CAMELOT_MAJOR[pc]
+    table = CAMELOT_MINOR if minor else CAMELOT_MAJOR
+    pc = next(p for p, c in table.items() if c == n)
+    return f"{NOTES[pc]} {'minor' if minor else 'major'}", f"{n}{'A' if minor else 'B'}"
+
+
+def bpm_from_tag(text: str) -> float | None:
+    try:
+        v = float((text or "").strip().replace(",", "."))
+    except ValueError:
+        return None
+    return round(v, 2) if 60.0 <= v <= 200.0 else None
+
+
+def prefer_tags(music: dict, tags: dict) -> dict:
+    """If the file already says its BPM/key (Rekordbox, Traktor, the label), show that and mark it "from tags".
+    What we measured is kept beside it (bpm_measured / key_measured) so nothing is thrown away."""
+    bpm = bpm_from_tag(tags.get("bpm", ""))
+    if bpm:
+        music["bpm_measured"], music["bpm"], music["bpm_from_tags"] = music.get("bpm"), bpm, True
+    key = key_from_tag(tags.get("key", ""))
+    if key:
+        music["key_measured"] = music.get("key")
+        music["camelot_measured"] = music.get("camelot")
+        music["key"], music["camelot"], music["key_from_tags"] = key[0], key[1], True
+    return music
+
+
 MINOR_PRIOR = 0.06      # club music leans minor; a small nudge, not a rule (major tracks still come out major)
 THIRD_RATIO = 0.5       # minor unless the major third clearly outweighs the minor third
 

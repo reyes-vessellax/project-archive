@@ -256,8 +256,8 @@ class SearchPage(QWidget):
     def _theme(self) -> str:
         return getattr(self.svc.settings, "theme", "light")
     pick = Signal(object)        # Candidate
-    COLS = ["#", "Title", "Mix", "Artist", "Folder", "User", "Size", "Rate", "Length", "Availability"]
-    WIDTHS = [36, 170, 110, 130, 80, 125, 70, 56, 56, 170]
+    COLS = ["#", "Title", "Mix", "Artist", "Folder", "User", "Size", "Rate", "Length", "Availability", "Source"]
+    WIDTHS = [36, 170, 110, 130, 80, 125, 70, 56, 56, 170, 64]
 
     def __init__(self, svc: ArchiveService):
         super().__init__()
@@ -307,9 +307,10 @@ class SearchPage(QWidget):
         self.tree.setItemDelegate(KeepColourDelegate(self.tree))
         self.tree.setRootIsDecorated(False); self.tree.setSortingEnabled(False); self.tree.setAlternatingRowColors(False)
         self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
-        hdr = self.tree.header(); hdr.setSectionResizeMode(QHeaderView.Interactive); hdr.setStretchLastSection(True)
+        hdr = self.tree.header(); hdr.setSectionResizeMode(QHeaderView.Interactive); hdr.setStretchLastSection(False)
         for i, w in enumerate(self.WIDTHS):
             self.tree.setColumnWidth(i, w)
+        hdr.setSectionResizeMode(self.COLS.index("Availability"), QHeaderView.Stretch)   # Source stays narrow, last
         # click a heading to sort by it (again to flip); # puts the list back to best first
         self._sort: tuple[int, bool] | None = None
         hdr = self.tree.header(); hdr.setSectionsClickable(True); hdr.setSortIndicatorShown(True)
@@ -468,7 +469,8 @@ class SearchPage(QWidget):
         selected = self.tree.selectedItems()
         keep = selected[0].data(0, Qt.UserRole).key if selected and isinstance(selected[0].data(0, Qt.UserRole), Candidate) else None
         self._dropped = res.dropped
-        self._ranked = self._sorted(sorted(res.candidates, key=lambda c: _rank(c, res.dropped)))
+        reps = self._reps()
+        self._ranked = self._sorted(sorted(res.candidates, key=lambda c: _rank(c, res.dropped, reps.get(c.user))))
         if res.dropped:
             self.state.setText(f'Nothing matched “{res.query}” — showing results for “{res.sent}” (without “{res.dropped}”)'
                                + (" · still collecting…" if searching else ""))
@@ -476,19 +478,33 @@ class SearchPage(QWidget):
         want = max(PAGE_ROWS, min(self._shown, len(self._ranked)))
         self._fill(want, keep)
 
+    def _reps(self) -> dict:
+        try:
+            return self.svc.source_reputation()
+        except Exception:                                   # reputation is a nicety; never break search over it
+            return {}
+
     def _fill(self, count: int, keep=None):
         self.tree.setUpdatesEnabled(False)
         self.tree.clear()
         self._more_item = None
         ranked = self._ranked[:count]
         self._shown = len(ranked)
+        reps = self._reps()
         items = []
         for i, c in enumerate(ranked):
             it = QTreeWidgetItem([
                 f"{i + 1:02d}", c.title or c.display_name, c.mix, c.artist, c.folder, c.user, f"{c.size / 1e6:.1f} MB",
                 (f"{c.bitrate_kbps}" + ("v" if c.vbr else "")) if c.bitrate_kbps else (c.extension.upper() if c.extension in ("flac", "wav", "aiff", "aif") else "?"),
-                fmt_time(c.length_s) if c.length_s else "?", _speed(c),
+                fmt_time(c.length_s) if c.length_s else "?", _speed(c), "",
             ])
+            rep = reps.get(c.user)
+            if rep is not None:
+                it.setText(10, rep.label())
+                tone = rep.tone()
+                if tone:
+                    it.setForeground(10, QColor(T.colours(self._theme())[tone]))
+            it.setToolTip(10, rep.sentence() if rep is not None else "You haven't downloaded from this source before.")
             it.setData(0, Qt.UserRole, c)
             it.setToolTip(1, c.display_name)
             it.setToolTip(5, c.user)
@@ -734,11 +750,15 @@ def _speed_raw(c: Candidate) -> str:
     return rate or "?"
 
 
-def _rank(c: Candidate, dropped: str = ""):
+def _rank(c: Candidate, dropped: str = "", rep=None):
+    """Best first. Source history is a tie-breaker (before reported speed), except that a source which has
+    never delivered and failed twice sinks below every working one."""
     from ..core.fuzzy import closeness
-    return (1 if (c.locked or c.note) else 0, 0 if c.free_slot else 1,
+    return (1 if (c.locked or c.note) else 0, 1 if (rep is not None and rep.never_delivers) else 0,
+            0 if c.free_slot else 1,
             closeness(c.display_name or "", dropped) if dropped else 0,     # fallback: near-misses of the typo first
             c.queue_length if c.queue_length is not None else 1_000_000,
+            -max(-3, min(3, rep.score)) if rep is not None else 0,
             -(c.upload_speed or 0), -(c.bitrate_kbps or 0))
 
 
@@ -992,11 +1012,16 @@ class ReviewPage(QWidget):
             self.facts["Channels"].setText({1: "Mono", 2: "Stereo"}.get(f.get("channels"), str(f.get("channels") or "?")))
             mu, me = a.get("music") or {}, a.get("meta") or {}
             self.facts["BPM"].setText(f"{mu['bpm']:.2f}".rstrip("0").rstrip(".") if mu.get("bpm") else "–")
+            self.facts["BPM"].setToolTip("From the file's own tags" if mu.get("bpm_from_tags") else "Measured from the audio")
+            self.fact_subs["BPM"].setText("from tags" if mu.get("bpm") and mu.get("bpm_from_tags") else "")
             self.facts["Key"].setText(mu["camelot"] if mu.get("camelot") else "–")
-            self.fact_subs["Key"].setText(mu.get("key", "") if mu.get("camelot") else "")
-            self.facts["Key"].setToolTip(mu.get("key", ""))
+            key_sub = mu.get("key", "") if mu.get("camelot") else ""
+            if key_sub and mu.get("key_from_tags"):
+                key_sub += " · from tags"
+            self.fact_subs["Key"].setText(key_sub)
             self.facts_key_name = mu.get("key", "")
-            self.facts["Key"].setToolTip("Estimated from the audio (Camelot code and key name)")
+            self.facts["Key"].setToolTip("From the file's own tags (Camelot code and key name)" if mu.get("key_from_tags")
+                                         else "Estimated from the audio (Camelot code and key name)")
             bits = [me.get("label"), me.get("year"), me.get("genre")]
             self.meta_line.setText("  ·  ".join(b for b in bits if b))
             self.meta_line.setToolTip("From " + ", ".join(me.get("sources") or ["the file"]) if me else "")

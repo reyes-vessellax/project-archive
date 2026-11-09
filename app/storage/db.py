@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS wishes (
 );
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_source ON jobs(source_path, source_size, source_mtime);
+CREATE INDEX IF NOT EXISTS events_job ON events(job_id, event_type);
 """
 
 # Columns added after the first release. Existing databases get them with ALTER TABLE.
@@ -156,6 +157,16 @@ class Database:
         with self._lock:
             row = self._con.execute(q, (user, remote_path, *states)).fetchone()
         return dict(row) if row else None
+
+    def source_rows(self) -> list[dict]:
+        """One row per network download, with what reputation needs (see core/reputation.py)."""
+        q = """SELECT j.remote_user, j.state, j.staged_path, j.remote_size, a.overall_status,
+                      (SELECT MIN(timestamp) FROM events e WHERE e.job_id = j.id AND e.event_type = 'requested') AS requested_at,
+                      (SELECT MIN(timestamp) FROM events e WHERE e.job_id = j.id AND e.event_type = 'staged') AS staged_at
+               FROM jobs j LEFT JOIN analyses a ON a.job_id = j.id
+               WHERE j.remote_user IS NOT NULL AND j.remote_user != ''"""
+        with self._lock:
+            return [dict(r) for r in self._con.execute(q).fetchall()]
 
     # analyses ---------------------------------------------------------------------
     def save_analysis(self, job_id: str, a: dict) -> None:

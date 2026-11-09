@@ -82,12 +82,12 @@ def test_clip_comes_from_the_middle_without_the_bytes_before_it(service, fixture
 
 @needs_ffmpeg
 def test_other_formats_fall_back_to_the_start(service, fixtures, monkeypatch, tmp_path):
-    src = tmp_path / "t.ogg"
-    subprocess.run([FFMPEG, "-v", "error", "-i", str(fixtures["source_wav"]), "-c:a", "libvorbis", str(src)], check=True)
-    service.settings.extensions = list(service.settings.extensions) + ["ogg"]
+    src = tmp_path / "t.m4a"     # AAC: FFmpeg's own encoder, present in every build (Homebrew has no libvorbis)
+    subprocess.run([FFMPEG, "-v", "error", "-i", str(fixtures["source_wav"]), "-c:a", "aac", str(src)], check=True)
+    service.settings.extensions = list(service.settings.extensions) + ["m4a"]
     eng = FakeEngine(src, Path(service.manager.instance_dir) / "incomplete")
     monkeypatch.setattr(service, "_adapter_or_block", lambda: eng)
-    wav, start = service.snippet_preview(_cand(src, "ogg"), seconds=10)
+    wav, start = service.snippet_preview(_cand(src, "m4a"), seconds=10)
     assert wav.exists() and eng.requests == 1               # straight from the start, no header trick
     assert not eng.path.exists()
 

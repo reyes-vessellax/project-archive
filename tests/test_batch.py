@@ -179,6 +179,14 @@ def test_low_bitrate_copies_are_never_picked():
     assert B.ranked([low, good, _cand("Kessler Avenue - Night Bus", "flac")], w)[0].extension == "flac"
 
 
+def _dispose(app, page):
+    """Delete the page now, while Qt is still up. Left to garbage collection at interpreter exit, two parentless
+    pages were torn down in the wrong order ("shared QObject was deleted directly"), which crashed the Windows run."""
+    from PySide6.QtCore import QEvent
+    page.deleteLater()
+    app.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
 def test_row_two_click_download_and_swap(monkeypatch):
     import os
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -197,6 +205,7 @@ def test_row_two_click_download_and_swap(monkeypatch):
     row.go.click(); assert got == [0] and row.go.text() == "Found"
     page._toggle_row(0); assert row.drop.isVisibleTo(row)
     page._choose(0, 1); assert it.pick is alts[1] and it.detail.startswith("MP3 320")
+    _dispose(app, page)
 
 
 def test_enter_adds_the_playlist_shift_enter_is_a_new_line():
@@ -214,3 +223,4 @@ def test_enter_adds_the_playlist_shift_enter_is_a_new_line():
     assert got == [] and page.input.toPlainText().count("\n") == 1
     QTest.keyClick(page.input, Qt.Key_Return)
     assert got and got[0].startswith("https://open.spotify.com/playlist/abc")
+    _dispose(app, page)

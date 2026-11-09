@@ -964,6 +964,26 @@ class ArchiveService:
         """What the queue panel shows: everything the user hasn't removed."""
         return self.db.jobs(include_hidden=False)
 
+    def make_report(self, note: str = "") -> Path:
+        """Settings -> Send a report: app.log + engine.log + settings (secrets removed) + the user's note, zipped."""
+        from ..config import data_dir
+        from . import report
+        logs = {"app.log": data_dir() / "app.log", "engine.log": Path(self.manager.instance_dir) / "engine.log"}
+        counts = {}
+        for j in self.db.jobs(include_hidden=True, limit=100_000):
+            counts[j["state"]] = counts.get(j["state"], 0) + 1
+        return report.build(data_dir() / "reports", logs, self.settings.to_dict(), note,
+                            extra={"jobs_by_state": counts, "engine": getattr(self, "backend_state", "")})
+
+    def source_reputation(self) -> dict:
+        """user -> Rep, recomputed only when the job history changes (the UI asks on every refresh)."""
+        from .reputation import from_rows
+        version = self.db.jobs_version()
+        cached = getattr(self, "_rep_cache", None)
+        if cached is None or cached[0] != version:
+            cached = self._rep_cache = (version, from_rows(self.db.source_rows()))
+        return cached[1]
+
     def _adapter_or_block(self) -> SourceAdapter:
         if self.managed_mode:
             if self.backend_state == "starting":

@@ -196,10 +196,12 @@ class SettingsPage(QWidget):
         self._field(lay, "FFmpeg folder", self.ffmpeg)
         row = QHBoxLayout(); row.setSpacing(10)
         row.addWidget(button("Save changes", "primary", self._save_settings))
-        row.addWidget(button("Open logs folder", "ghost", self._open_logs)); row.addStretch(1)
+        row.addWidget(button("Open logs folder", "ghost", self._open_logs))
+        row.addWidget(button("Send a report…", "ghost", self._send_report)); row.addStretch(1)
         row.addWidget(button("Start fresh…", "danger", self._start_fresh))
         lay.addLayout(row)
-        lay.addWidget(label("If something goes wrong, the logs folder has what support needs. Start fresh wipes this "
+        lay.addWidget(label("If something goes wrong, Send a report gathers the logs into one zip for you to email us "
+                            "(no passwords or keys go in it). Start fresh wipes this "
                             "computer's account, queue, history and quarantine (your music is not touched) and closes the app.", "faint", wrap=True))
         return w
 
@@ -210,6 +212,23 @@ class SettingsPage(QWidget):
         from PySide6.QtWidgets import QApplication
         self.svc.reset_everything()
         QApplication.instance().quit()
+
+    def _send_report(self):
+        from PySide6.QtWidgets import QInputDialog
+        note, ok = QInputDialog.getMultiLineText(
+            self, "Send a report", "What happened? (optional — what you were doing, what you expected)")
+        if not ok:
+            return
+        try:
+            path = self.svc.make_report(note)
+        except OSError as e:
+            QMessageBox.warning(self, "Send a report", f"Couldn't make the report: {e}")
+            return
+        from .library_page import reveal_in_folder
+        reveal_in_folder(path)
+        QMessageBox.information(self, "Send a report",
+                                f"Saved {path.name}. Its folder is open now: attach the zip to an email to us. "
+                                "It holds the app's logs and settings, with passwords and keys left out.")
 
     def _open_logs(self):
         from PySide6.QtCore import QUrl

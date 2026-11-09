@@ -81,7 +81,8 @@ def analyze(path: Path, settings: Settings, progress: Progress = lambda s: None)
             music = future.result(timeout=180) if future is not None else analyze_music(path, settings.ffmpeg_path)
         except Exception:
             music = analyze_music(path, settings.ffmpeg_path)
-        out["music"] = music.to_dict()
+        from ..media.musical import prefer_tags
+        out["music"] = prefer_tags(music.to_dict(), md.read_tags(path))
         progress("Looking up cover art and details")
         out["meta"] = describe(path, settings)
     return out

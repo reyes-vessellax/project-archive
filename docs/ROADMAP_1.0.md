@@ -22,6 +22,7 @@ file** button turns grey with a one-line note under it — *"You may already hav
   on the Ready tab for yes/no. No OS notifications or email yet.
 
 ## 3. Auto-update
+**Status:** Installer: done in 0.7.3 (per-user, Inno Setup). Updater: built, switched on when the repo goes public.
 Installer first (Inno Setup, Program Files, Start-menu entry, uninstaller). Then on start the app
 reads a small version file from the release feed; if newer, downloads the installer in the background
 and offers "Update and restart". Code signing is the business-side prerequisite (flag: certificate is
@@ -34,6 +35,7 @@ issued to the legal entity).
   in layout, lights that settle in order).
 
 ## 5. BPM and key
+**Status:** Done (0.7.0–0.7.3), including tags shown "from tags".
 Scale: two to three days, in-house, no new heavy dependencies.
 - We already decode every track to mono float32 for the spectrum; BPM comes from an onset envelope +
   autocorrelation over that same audio (with half/double-time disambiguation for 4/4 dance music),
@@ -46,6 +48,7 @@ Scale: two to three days, in-house, no new heavy dependencies.
 - If the file already carries BPM/key tags, show those and mark them "from tags".
 
 ## 6. Source reputation
+**Status:** Done in 0.7.3.
 Per-user memory: deliveries, failures, average speed. Shown as a right-most "Source" column on results
 (off by default-ish: narrow, last), and used as a tie-breaker in ranking. Ad bots and never-delivers
 sink.
@@ -61,6 +64,7 @@ list) with the local account becoming a cached copy. Billing UI stays inert unti
 chosen. **Flag — attorney:** terms of service, privacy policy, data residency for user emails.
 
 ## 9. Send a report
+**Status:** Done in 0.7.3 (local zip; upload waits for the backend).
 Settings → "Send a report": zips app.log + engine.log (+ optional note) and uploads to the backend.
 Until the backend exists, it just gathers the zip for the user to send.
 

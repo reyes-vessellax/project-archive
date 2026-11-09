@@ -108,3 +108,31 @@ def test_full_pipeline_through_ffmpeg(tmp_path):
     assert m.bpm is not None and abs(m.bpm - 124.0) <= 0.5
     assert m.camelot == "8A"
     assert m.drop_s is not None and 37 <= m.drop_s <= 42
+
+
+# ------------------------------------------------------------------- BPM/key the file already carries
+from app.media.musical import bpm_from_tag, key_from_tag, prefer_tags
+
+
+@pytest.mark.parametrize("tag,want", [
+    ("Am", ("A minor", "8A")), ("A minor", ("A minor", "8A")), ("8A", ("A minor", "8A")), ("08B", ("C major", "8B")),
+    ("1m", ("A minor", "8A")), ("1d", ("C major", "8B")), ("G#m", ("Ab minor", "1A")), ("Abm", ("Ab minor", "1A")),
+    ("F#maj", ("F# major", "2B")), ("C", ("C major", "8B")), ("Dbm", ("C# minor", "12A")), ("12B", ("E major", "12B")),
+    ("", None), ("o", None), ("Unknown", None), ("13A", None),
+])
+def test_key_tags_in_every_notation(tag, want):
+    assert key_from_tag(tag) == want
+
+
+def test_bpm_tag_must_be_plausible():
+    assert bpm_from_tag("124") == 124.0 and bpm_from_tag("128,00") == 128.0
+    assert bpm_from_tag("0") is None and bpm_from_tag("") is None and bpm_from_tag("fast") is None
+
+
+def test_tags_win_and_measurement_is_kept():
+    mu = prefer_tags({"bpm": 123.9, "key": "D minor", "camelot": "7A"}, {"bpm": "124", "key": "Am"})
+    assert mu["bpm"] == 124.0 and mu["bpm_from_tags"] and mu["bpm_measured"] == 123.9
+    assert (mu["key"], mu["camelot"], mu["key_from_tags"]) == ("A minor", "8A", True)
+    assert mu["camelot_measured"] == "7A"
+    plain = prefer_tags({"bpm": 120.0, "key": "C major", "camelot": "8B"}, {"bpm": "", "key": ""})
+    assert "bpm_from_tags" not in plain and plain["camelot"] == "8B"

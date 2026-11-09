@@ -4,6 +4,22 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.7.3 (2026-11-09) — the rest of the 1.0 roadmap that doesn't need a business decision
+
+- **BPM/key from tags (#5):** if a file already carries BPM/key (Rekordbox, Traktor, the label), that is shown and
+  marked "from tags"; our measurement is kept beside it. Reads classic (Am, F#maj), Camelot (8A) and Open Key (1m).
+- **Source reputation (#6):** what each source has really done for you (delivered / failed / came out Broken,
+  speed from request to arrival), worked out from the job history. New narrow, last "Source" column on search
+  (✓4, ✓1 ✗1, hover for the sentence). Used as a ranking tie-breaker; a source that never delivered and failed
+  twice sinks to the bottom.
+- **Send a report (#9):** Settings → Advanced → Send a report… zips app.log + engine.log + settings + your note,
+  with passwords, keys and tokens left out, and opens its folder to attach to an email.
+- **Windows installer (#3):** CI now builds `DigMart-<version>-Setup.exe` (Inno Setup), installs it silently,
+  self-tests the installed app and uninstalls it. Per-user install (no admin prompt) so the updater can still
+  swap the app folder; Start-menu entry, optional desktop shortcut, uninstaller. Unsigned until the certificate.
+- CI fixes: the macOS test runner's FFmpeg has no Vorbis encoder (test now uses AAC); two batch-page tests left
+  parentless widgets for Qt to tear down at exit, which crashed the Windows test run after all tests passed.
+
 ## 0.7.0 (2026-11-07) — one master copy: Reyes's 0.6.0 + Chris's beta work + Windows fixes
 
 (Numbered 0.7.0 so it reads as newer than both 0.6.x lines: Chris's Pied Piper beta went to 0.6.5,
