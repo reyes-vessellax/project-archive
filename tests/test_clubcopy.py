@@ -85,3 +85,21 @@ def test_service_makes_a_checked_copy_and_leaves_the_original(service, fixtures,
     good = service.stage(fixtures["mp3_320"]); service.analyze(good["id"])
     with pytest.raises(ActionBlocked):
         service.make_club_copy(good["id"])                       # nothing to fix: no copy
+
+
+@needs_ffmpeg
+def test_works_without_the_sox_resampler(tmp_path, fixtures, monkeypatch):
+    """Homebrew's FFmpeg has no SoX resampler: the copy must still be made (and proved) with FFmpeg's own."""
+    from app.media import clubcopy
+    real_run = clubcopy.run
+
+    def no_soxr(args, timeout):
+        if any("resampler=soxr" in a for a in args):
+            class P: returncode, stderr, stdout = 1, b"soxr not available", b""
+            return P()
+        return real_run(args, timeout)
+    monkeypatch.setattr(clubcopy, "run", no_soxr)
+    src = tmp_path / "hi.wav"
+    ff("-i", str(fixtures["source_wav"]), "-t", "20", "-ar", "96000", "-c:a", "pcm_f32le", str(src))
+    out = make_club_copy(src, probe(src), tmp_path / "out.aiff")
+    assert (probe(out).codec, probe(out).sample_rate_hz) == ("pcm_s24be", 48000)

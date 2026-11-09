@@ -57,14 +57,22 @@ def make_club_copy(src: Path, facts, dest: Path, ffmpeg_override: str = "", time
     # 16-bit: dithered (triangular) down from whatever the source has. 24-bit: FFmpeg works in 32-bit and the
     # encoder keeps the top 24 bits; that rounding is ~144 dB down, below any converter's noise.
     fmt = "s32" if p["bits"] == 24 else "s16"
-    af = (f"aresample={p['sr']}:resampler=soxr:precision=28:osf={fmt}:dither_method=triangular,"
-          f"aformat=sample_fmts={fmt}:sample_rates={p['sr']}")
-    args = [exe, "-nostdin", "-v", "error", "-y", "-i", str(src), "-map", "0:a:0", "-map_metadata", "0",
-            "-ac", str(p["channels"]), "-af", af, "-c:a", "pcm_s24be" if p["bits"] == 24 else "pcm_s16be",
-            "-write_id3v2", "1", "-f", "aiff", str(tmp)]
+    # SoX's resampler when this FFmpeg has it (some builds, e.g. Homebrew's, leave it out); otherwise FFmpeg's own
+    # at high-quality settings. Either way the copy is proved against the original below.
+    resamplers = ("resampler=soxr:precision=28", "resampler=swr:filter_size=64:phase_shift=10:linear_interp=1:cutoff=0.97")
     try:
-        proc = run(args, timeout)
-        if proc.returncode != 0 or not tmp.exists():
+        proc = None
+        for rs in resamplers:
+            af = (f"aresample={p['sr']}:{rs}:osf={fmt}:dither_method=triangular,"
+                  f"aformat=sample_fmts={fmt}:sample_rates={p['sr']}")
+            args = [exe, "-nostdin", "-v", "error", "-y", "-i", str(src), "-map", "0:a:0", "-map_metadata", "0",
+                    "-ac", str(p["channels"]), "-af", af, "-c:a", "pcm_s24be" if p["bits"] == 24 else "pcm_s16be",
+                    "-write_id3v2", "1", "-f", "aiff", str(tmp)]
+            proc = run(args, timeout)
+            if proc.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+                break
+            tmp.unlink(missing_ok=True)
+        if proc is None or proc.returncode != 0 or not tmp.exists():
             raise CopyFailed("FFmpeg couldn't convert it: " + proc.stderr.decode("utf-8", "replace")[-300:])
         _copy_artwork(src, tmp)
         verify(src, tmp, p, exe, timeout)
