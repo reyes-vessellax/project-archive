@@ -229,10 +229,9 @@ QLabel#spintitle {{ font-family: {display}; font-size: 26px; font-weight: 700; }
 QLabel#spinartist {{ font-size: 17px; color: {c['muted']}; }}
 QLabel#copyline {{ font-family: {mono}; font-size: 12px; font-weight: 700; color: {c['pass_']}; }}
 QLabel#clubhead {{ font-family: {mono}; font-size: 12px; font-weight: 700; letter-spacing: 1px; }}
-QFrame#cover {{ background: transparent; border: none; }}
-QFrame#shelf {{ background: transparent; border: none; border-bottom: 3px solid transparent; }}
-QFrame#shelf[open="true"] {{ border-bottom: 3px solid {c['accent']}; }}
-QFrame#drawer {{ background: {c['panel']}; border: 1px solid {c['line']}; border-top: 3px solid {c['accent']}; border-radius: 3px; }}
+QFrame#cover {{ background: transparent; border: none; border-bottom: 3px solid transparent; }}
+QFrame#cover[open="true"] {{ border-bottom: 3px solid {c['accent']}; }}
+
 QLabel#covertitle {{ font-family: {display}; font-size: 14px; font-weight: 700; }}
 QFrame#mixrow {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 3px solid {c['accent']}; border-radius: 3px; }}
 QPushButton#pulse {{ background: {c['sel']}; color: {c['sel_text']}; border: none; border-radius: 3px; padding: 0 16px; min-height: 34px; max-height: 34px; font-size: 13px; font-weight: 700; }}

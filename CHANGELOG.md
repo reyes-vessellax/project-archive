@@ -4,6 +4,18 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.8.8 (2026-11-09) — back to the Discover layout, with previews
+
+- **The 0.8.5 layout is back** (Spin the crate, Today's dig, eras, labels) and 0.8.6's shelf is gone: no more
+  downloading whole tracks ahead. On start-up, anything 0.8.6 was still fetching for it is cancelled and what it
+  left in quarantine is deleted (nothing in the library is touched).
+- **Previews, not downloads:** Play the drop fetches only the ~20 s it plays. Check this file downloads that exact
+  copy and confirms the real quality and club-ready.
+- **Faster:** the record's own title is searched first (no Discogs call), searches stop sooner, and "who's sharing
+  it" is remembered for 3 hours (misses too), so reopening Discover is instant. Only copies decks can load are offered.
+- **Today's dig opens in place:** tap a cover and its card opens right under that row; tap again to close, tap another
+  to switch.
+
 ## 0.8.7 (2026-11-09) — shelf details open in place
 
 - Click a track on Discover's shelf: its details open right under that row (bigger cover, format, length, BPM,

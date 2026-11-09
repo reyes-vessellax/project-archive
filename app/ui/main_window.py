@@ -140,9 +140,7 @@ class MainWindow(QMainWindow):
         self._update_zip = None; self._update_cmd = None
         self.update_timer = QTimer(self, interval=6 * 3600 * 1000, timeout=self._check_updates); self.update_timer.start()
         QTimer.singleShot(20_000, self._backfill_club)            # library tracks checked before the club check
-        self._digging = False
-        self.dig_timer = QTimer(self, interval=30_000, timeout=self._dig); self.dig_timer.start()
-        QTimer.singleShot(8_000, self._dig)
+        QTimer.singleShot(5_000, self._clear_dug)                # 0.8.6 dug whole tracks ahead: stop and clean up
         QTimer.singleShot(60_000, self._check_updates)
         if self.session.window and len(self.session.window) == 4:
             self.setGeometry(*self.session.window)
@@ -210,8 +208,6 @@ class MainWindow(QMainWindow):
         self.discover.preview.connect(lambda c: self._preview_from(self.discover, c))
         self.discover.stop_preview.connect(self._stop_preview)
         self.discover.pick.connect(self._pick_candidate)
-        self.discover.add_track.connect(self._shelf_add); self.discover.skip_track.connect(self._shelf_skip)
-        self.discover.era_changed.connect(lambda _k: QTimer.singleShot(500, self._dig))
         finder = self.discover.finder
         self.discover.find.connect(self._discover_find)
         finder.search.connect(lambda q: self._search(q, page=finder))
@@ -1123,35 +1119,13 @@ class MainWindow(QMainWindow):
         self._last_results = res
 
     # ---------------------------------------------------------------- Discover's shelf
-    def _dig(self):
-        """Keep Discover's shelf stocked: find, download and check one more track if it needs one."""
-        if self._digging or self.svc.adapter is None or getattr(self, "_closing", False):
-            return
-        self._digging = True
-        from ..core import digger
-        labels, era = self.discover.dig_labels(), self.discover.era
-
+    def _clear_dug(self):
+        """0.8.6 downloaded whole tracks ahead for Discover. Discover uses previews now: cancel what's still coming
+        and delete what's sitting in quarantine from it (nothing the user added to the library is touched)."""
         def work():
-            try:
-                digger.fill(self.svc, self.discover.engine, labels, era, cancelled=lambda: self._closing, log=_applog)
-            finally:
-                self._digging = False
-                self.signals.done.emit("")
-        self.io.start(Task(work, self.signals))
-
-    def _shelf_add(self, job_id: str):
-        from ..core import digger
-
-        def work():
-            target = digger.take(self.svc, job_id)
-            self.signals.notice.emit(f"Added to your library: {Path(target).name}")
-            self.signals.done.emit(job_id)
-        self.io.start(Task(work, self.signals))
-
-    def _shelf_skip(self, job_id: str):
-        def work():
-            self.svc.reject(job_id)
-            self.signals.done.emit(job_id)
+            n = self.svc.clear_dug()
+            if n:
+                _applog(f"discover: cleared {n} tracks dug ahead by 0.8.6")
         self.io.start(Task(work, self.signals))
 
     def _backfill_club(self):

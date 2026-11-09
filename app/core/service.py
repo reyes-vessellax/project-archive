@@ -968,6 +968,24 @@ class ArchiveService:
         """What the queue panel shows: everything the user hasn't removed."""
         return self.db.jobs(include_hidden=False)
 
+    def clear_dug(self) -> int:
+        """Cancel / delete every track Discover dug ahead (origin "discover") that isn't in the library."""
+        n = 0
+        for j in self.db.jobs(include_hidden=True, limit=20_000):
+            if j.get("origin") != "discover" or j["state"] in J.FINAL:
+                continue
+            try:
+                if j["state"] == J.QUEUED:
+                    self.cancel(j["id"])
+                elif j["state"] in (J.READY, J.ERROR):
+                    self.reject(j["id"])
+                else:
+                    continue                                    # mid-check: next start-up gets it
+                n += 1
+            except Exception:
+                pass
+        return n
+
     def backfill_club(self, should_stop=lambda: False, on_each=lambda job_id: None) -> int:
         """Run the club-ready check on library tracks checked before it existed. Reads the file in the library
         (never changes it) and adds the result to the stored analysis. Returns how many were done."""

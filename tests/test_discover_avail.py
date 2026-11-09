@@ -36,13 +36,25 @@ class FakeSvc:
     def forget_search(self, sid): pass
 
 
+class MemDB:
+    def __init__(self): self.d = {}
+    def cache_get(self, k): return self.d.get(k)
+    def cache_put(self, k, v):
+        from datetime import datetime, timezone
+        self.d[k] = (v, datetime.now(timezone.utc).isoformat())
+
+
 class FakeEngine:
+    def __init__(self): self.db = MemDB(); self.details_asked = 0
+
     class Lib:
         def owns(self, a, t): return t == "Owned Track"
 
     def library(self): return self.Lib()
 
-    def release(self, rid): return {"tracks": [("A", "Acid Tracks", ""), ("B", "Phuture Jacks", "")], "styles": []}
+    def release(self, rid):
+        self.details_asked += 1
+        return {"tracks": [("A", "Acid Tracks", ""), ("B", "Phuture Jacks", "")], "styles": []}
 
 
 def test_ready_good_copy_is_found_and_chosen():
@@ -52,6 +64,26 @@ def test_ready_good_copy_is_found_and_chosen():
     svc = FakeSvc({"Phuture Acid Tracks": [queued, low, good]})
     f = DA.verify(FakeEngine(), svc, Release(1, "Acid Tracks", "Phuture", 1987), "Trax Records")
     assert f.best is good and f.alts == [good] and f.track == "Acid Tracks"
+    assert svc.asked == ["Phuture Acid Tracks"]                                # the title first: no Discogs call
+
+
+def test_found_and_missed_are_remembered():
+    good = cand("trax_head", "Phuture - Acid Tracks", "flac")
+    eng, svc = FakeEngine(), FakeSvc({"Phuture Acid Tracks": [good]})
+    rel = Release(1, "Acid Tracks", "Phuture", 1987)
+    DA.verify(eng, svc, rel, "Trax"); svc.asked.clear()
+    again = DA.verify(eng, svc, rel, "Trax")
+    assert svc.asked == [] and again.best.user == "trax_head"                 # instant the second time
+    miss = Release(2, "Nobody Has It", "Phuture", 1987)
+    svc.results = {}                                                           # nobody shares anything from it
+    assert DA.verify(eng, svc, miss, "Trax") is None
+    n = len(svc.asked)
+    assert DA.verify(eng, svc, miss, "Trax") is None and len(svc.asked) == n  # a known miss isn't searched again
+
+
+def test_hi_res_reported_copies_are_not_offered():
+    hi = cand("audiophile", "Phuture - Acid Tracks", "flac"); hi.sample_rate_hz = 96000
+    assert DA.verify(FakeEngine(), FakeSvc({"Phuture Acid Tracks": [hi]}), Release(1, "Acid Tracks", "Phuture", 1987), "T") is None
 
 
 def test_not_shared_right_now_is_not_shown():
@@ -64,9 +96,7 @@ def test_not_shared_right_now_is_not_shown():
 def test_owned_records_and_various_are_skipped():
     svc = FakeSvc({})
 
-    class Own(FakeEngine):
-        def release(self, rid): return {"tracks": [("A", "Owned Track", "")]}
-    assert DA.verify(Own(), svc, Release(1, "X", "Someone", 1990), "L") is None
+    assert DA.verify(FakeEngine(), svc, Release(1, "Owned Track", "Someone", 1990), "L") is None
     assert DA.verify(FakeEngine(), svc, Release(2, "Hits", "Various", 1990), "L") is None
     assert svc.asked == []                                                     # no searches wasted
 

@@ -21,7 +21,8 @@ from .discover import Release
 from .searching import collect
 
 PREVIEWABLE = {"mp3", "flac", "wav", "aiff", "aif"}      # the snippet preview reads these straight from the source
-SEARCH_S = 20.0
+SEARCH_S = 10.0          # a verification search: stopped early once results stop arriving (most finish in 4-8 s)
+FOUND_HOURS = 3          # "someone's sharing it" is remembered this long (a miss too), so Discover reopens instantly
 
 
 class NotConnected(RuntimeError):
@@ -55,9 +56,15 @@ def titles_to_try(rel: Release, details: dict) -> list[str]:
     return out or [rel.title]
 
 
+def deck_loadable(c: Candidate) -> bool:
+    """What a search result already tells us about playing it on CDJs: the type, and the rate/depth when reported."""
+    return ((c.extension or "").lower() in PREVIEWABLE and not (c.sample_rate_hz and c.sample_rate_hz > 48000)
+            and not (c.bit_depth and c.bit_depth > 24))
+
+
 def ready_copies(cands: list[Candidate], w: B.Wanted, min_kbps: int) -> list[Candidate]:
     return [c for c in B.ranked(cands, w, min_kbps)
-            if (c.extension or "").lower() in PREVIEWABLE and c.free_slot and not (c.queue_length or 0)]
+            if deck_loadable(c) and c.free_slot and not (c.queue_length or 0)]
 
 
 def find_copy(svc, artist: str, titles: list[str], cancelled=lambda: False, log=None):
@@ -81,20 +88,62 @@ def find_copy(svc, artist: str, titles: list[str], cancelled=lambda: False, log=
     return None
 
 
+def _cache_key(rel_id: int) -> str:
+    return f"discover:found:{rel_id}"
+
+
+def _remembered(engine, rel: Release, label: str):
+    """(hit, Found-or-None) from the cache: a found record or a known miss, younger than FOUND_HOURS."""
+    from datetime import datetime, timedelta, timezone
+    hit = engine.db.cache_get(_cache_key(rel.id))
+    if not hit:
+        return False, None
+    data, at = hit
+    try:
+        if datetime.fromisoformat(at) < datetime.now(timezone.utc) - timedelta(hours=FOUND_HOURS):
+            return False, None
+    except ValueError:
+        return False, None
+    if not data.get("found"):
+        return True, None
+    best = Candidate(**data["best"])
+    alts = [Candidate(**c) for c in data.get("alts") or []]
+    return True, Found(rel, data.get("details") or {}, label, data["track"], best, alts or [best])
+
+
+def _remember(engine, rel: Release, f) -> None:
+    from dataclasses import asdict
+    data = {"found": False} if f is None else {"found": True, "track": f.track, "details": f.details,
+                                               "best": asdict(f.best), "alts": [asdict(c) for c in f.alts]}
+    engine.db.cache_put(_cache_key(rel.id), data)
+
+
 def verify(engine, svc, rel: Release, label: str, details: dict | None = None, cancelled=lambda: False, log=None):
+    """Found when someone's sharing a good, ready copy right now. The record's own title is searched first (no
+    Discogs call); only if that misses is the tracklist fetched and its A-side tried. Results are remembered."""
     artist = first_artist(rel.artist)
     if not artist or artist.lower() in ("various", "unknown artist"):
         return None
-    details = details if details is not None else engine.release(rel.id)
-    titles = titles_to_try(rel, details)
+    hit, f = _remembered(engine, rel, label)
+    if hit:
+        return f
     lib = engine.library()
-    if any(lib.owns(artist, t) for t in titles):
+    if lib.owns(artist, rel.title):
         return None                                            # you already have it
-    got = find_copy(svc, artist, titles, cancelled, log)
-    if not got:
+    got = find_copy(svc, artist, [rel.title], cancelled, log)
+    if got is None and not cancelled():
+        details = details if details is not None else engine.release(rel.id)
+        titles = [t for t in titles_to_try(rel, details) if t.lower() != rel.title.lower()]
+        if titles and not any(lib.owns(artist, t) for t in titles):
+            got = find_copy(svc, artist, titles[:1], cancelled, log)
+    if cancelled():
         return None
-    track, best, alts = got
-    return Found(rel, details, label, track, best, alts)
+    f = None
+    if got:
+        track, best, alts = got
+        f = Found(rel, details or {}, label, track, best, alts)
+    _remember(engine, rel, f)
+    return f
 
 
 def spin_found(engine, svc, labels: list[str], rng=None, cancelled=lambda: False, log=None, max_records: int = 6):
