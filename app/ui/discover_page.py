@@ -501,6 +501,7 @@ class DiscoverPage(QWidget):
         self.pool = QThreadPool(self); self.pool.setMaxThreadCount(1)     # one polite queue of lookups
         self.thumbs = QThreadPool(self); self.thumbs.setMaxThreadCount(2)
         self.vpool = QThreadPool(self); self.vpool.setMaxThreadCount(1)     # "who's sharing it" checks, one at a time
+        self.auxpool = QThreadPool(self); self.auxpool.setMaxThreadCount(2)  # covers from Deezer, loading spins
         self.bridge = _Bridge(); self.bridge.done.connect(self._done); self.bridge.thumb.connect(self._thumb)
         self._tokens = itertools.count(1)
         self._want: dict[int, callable] = {}
@@ -519,6 +520,12 @@ class DiscoverPage(QWidget):
         tok = next(self._tokens)
         self._want[tok] = then
         self.pool.start(_Job(fn, tok, self.bridge))
+        return tok
+
+    def _run_aux(self, fn, then) -> int:
+        tok = next(self._tokens)
+        self._want[tok] = then
+        self.auxpool.start(_Job(fn, tok, self.bridge))
         return tok
 
     def _run_bg(self, fn, then) -> int:
@@ -572,8 +579,21 @@ class DiscoverPage(QWidget):
         self.era = getattr(self.svc.settings, "discover_era", "") or ""
 
         self.spin_bar = SpinBar()
-        self.spin_bar.play.connect(lambda c: self._card_play(self.spin_bar, c))
-        self.spin_bar.stop.connect(self.stop_preview.emit)
+        self.spin_bar.play.connect(lambda c: self._spin_play())
+        self.spin_bar.stop.connect(self._spin_play)
+        self._spins: list = []; self._spin_loading = False; self._spin_tried: set = set()
+        from .player import Player
+
+        def _player_changed():
+            pl = Player.get()
+            if self.spin_bar._previewing and (not pl.playing() or pl.path != getattr(self, "_spin_wav", None)):
+                self.spin_bar.set_preview_state("")
+        Player.get().changed.connect(_player_changed)
+        try:
+            for f in self._spin_dir().glob("*.wav"):        # last session's loaded spins
+                f.unlink(missing_ok=True)
+        except Exception:
+            pass
         self.spin_bar.check.connect(lambda c: self._card_check(self.spin_bar, c))
         self.spin_bar.spin.connect(self.spin)
         lay.addWidget(self.spin_bar)
@@ -594,10 +614,6 @@ class DiscoverPage(QWidget):
         self._tiles_token = next(self._tokens)
         self._tiles_by_img: dict[int, list] = {}
 
-        lay.addLayout(self._section("Artists you play", "From your library. Tap one to see what of theirs people are sharing."))
-        self.artists_flow = FlowLayout(spacing=8)
-        aw = QWidget(); aw.setLayout(self.artists_flow); lay.addWidget(aw)
-        self.artists_empty = label("The artists in your library show up here.", "faint"); lay.addWidget(self.artists_empty)
         lay.addStretch(1)
         self._loaded_for = None
 
@@ -621,18 +637,6 @@ class DiscoverPage(QWidget):
         self._pulse(self.pulse_found, found, f"{found} wishlist find{'s' if found != 1 else ''}  →")
         self._pulse(self.pulse_down, active, f"{active} downloading or checking  →")
         self._load_rows()
-        try:
-            lib = self.engine.library()
-        except Exception:
-            return
-        key = (len(lib.tracks), lib.tracks[-1].job_id if lib.tracks else "")
-        if getattr(self, "_lib_key", None) == key:
-            return
-        self._lib_key = key
-        self.artists_flow.clear()
-        for name, n in lib.artists(30):
-            self.artists_flow.addWidget(chip(f"{name}  ·  {n}", lambda _=False, nm=name: self.find.emit(nm)))
-        self.artists_empty.setVisible(not lib.artists(1))
 
     # ---- crate rows ------------------------------------------------------------------------------
     def _row_labels(self) -> list[str]:
@@ -669,17 +673,30 @@ class DiscoverPage(QWidget):
                 w.setParent(None); w.deleteLater()
         self.rows = {}
         self._tiles_by_img = {}
-        day_label = label_of_the_day(date.today().toordinal())
-        names = [day_label] + [n for n in self._row_labels() if n != day_label]
-        for i, name in enumerate(names):
-            row = CrateRow(name, "LABEL OF THE DAY" if i == 0 else "")
+        from ..core.eras import STYLES, todays_labels
+        if self.era:
+            names = [(n, "") for n in self._row_labels()]
+        else:
+            labels = todays_labels(date.today().toordinal(), 8)
+            styles = list(STYLES)
+            names = [(labels[0], "LABEL OF THE DAY")]
+            for i, lb in enumerate(labels[1:]):           # a style row after every second label
+                names.append((lb, ""))
+                if i % 2 == 1 and styles:
+                    names.append((styles.pop(0), "STYLE"))
+            names += [(st, "STYLE") for st in styles]
+        self._row_kind = {n: tag for n, tag in names}
+        names_only = [n for n, _ in names]
+        for name, tag in names:
+            row = CrateRow(name, tag)
             row.tapped.connect(self._tap_tile); row.see_all.connect(self.find.emit)
             self.rows_box.addWidget(row); self.rows[name] = row
             if not connected:
                 row.offline()
-        self.spin_bar.title.setText("Loading the crates…" if connected else "Connect to the network to spin the crate.")
+        self.spin_bar.title.setText("Loading a spin…" if connected else "Connect to the network to spin the crate.")
         if not connected:
             return
+        names = names_only
         gen = self._rows_gen = next(self._tokens)
         lib = self.engine.library()
         svc = self.svc
@@ -695,8 +712,7 @@ class DiscoverPage(QWidget):
                     self.rows[nm].fill([]); return
                 self.rows[nm].fill(res)
                 self._covers_for(nm, res)
-                if self.spin_bar.found is None:
-                    self.spin()
+                self._prefetch_spins()
             self._run_bg(work, then)
 
     def _covers_for(self, name: str, tracks):
@@ -718,12 +734,17 @@ class DiscoverPage(QWidget):
 
         if all(t.thumb for t in tracks):
             paint(); return
+        is_style = self._row_kind.get(name) == "STYLE"
 
         def work():
-            ent = eng.label(name)
-            if not ent.discogs_id:
-                return None
+            from ..media.metadata import deezer_cover
             recs = []
+            ent = None if is_style else eng.label(name)
+            if not ent or not ent.discogs_id:
+                for t in tracks:                             # styles (and labels Discogs doesn't know): Deezer
+                    if not t.thumb:
+                        t.thumb = deezer_cover(t.artist, t.title)
+                return []
             first = eng.label_releases(ent.discogs_id, 1)
             recs += first.releases
             for pg in range(2, min(first.pages, 3) + 1):
@@ -731,7 +752,7 @@ class DiscoverPage(QWidget):
             return recs
 
         def then(recs):
-            if isinstance(recs, Exception) or not recs or row is None:
+            if isinstance(recs, Exception) or recs is None or row is None:
                 return
             from ..core.discover import norm
             for t in tracks:
@@ -742,9 +763,21 @@ class DiscoverPage(QWidget):
                     if r.thumb and a and a in norm(r.artist) and (norm(t.title) in norm(r.title) or norm(r.title) in norm(t.title)
                                                                   or (t.catno and t.catno.replace(" ", "").lower() in (r.catno or "").replace(" ", "").lower())):
                         t.thumb = r.thumb; break
+            missing = [t for t in tracks if not t.thumb]
             from ..core.crates import remember
-            remember(self.svc.db, name, tracks)
+            if not missing:
+                remember(self.svc.db, name, tracks); paint(); return
             paint()
+
+            def dz():
+                from ..media.metadata import deezer_cover
+                for t in missing:
+                    t.thumb = deezer_cover(t.artist, t.title)
+                return True
+
+            def dz_then(_):
+                remember(self.svc.db, name, tracks); paint()
+            self._run_aux(dz, dz_then)
         self._run(work, then)
 
     def _found_for(self, row_name: str, t):
@@ -778,16 +811,80 @@ class DiscoverPage(QWidget):
             self.stop_preview.emit()
         self.track_card.hide()
 
+    SPINS_READY = 2
+
     def spin(self):
-        """A random track from the crates on screen: instant."""
+        """Show the next spin: one whose preview is already loaded, so it plays the moment you press ▶."""
+        from .player import Player
+        if self.spin_bar._previewing:
+            Player.get().stop()
+        if not self._spins:
+            self.spin_bar.title.setText("Loading a spin…"); self.spin_bar.sub.setText("")
+            self._prefetch_spins(); return
+        f, wav = self._spins.pop(0)
+        old = getattr(self, "_spin_wav", None)
+        if old:
+            Path(old).unlink(missing_ok=True)
+        self._spin_wav = wav
+        self._show_found(self.spin_bar, f)
+        self._prefetch_spins()
+
+    def _prefetch_spins(self):
+        """Keep SPINS_READY tracks loaded: pick from every row on the page, load its preview in the background,
+        and only keep it if the preview actually came through (a busy or broken source never reaches Spin)."""
         import random
-        pool = [(name, t) for name, row in self.rows.items() for t in (tl.track for tl in row.tiles)]
+        if self._spin_loading or len(self._spins) >= self.SPINS_READY:
+            if self.spin_bar.found is None and self._spins:
+                self.spin()
+            return
+        pool = [(name, tl.track) for name, row in self.rows.items() for tl in row.tiles]
+        tried = self._spin_tried
+        pool = [(n, t) for n, t in pool if t.best.key not in tried]
         if not pool:
             return
-        cur = self.spin_bar.found
-        choices = [p for p in pool if not cur or p[1].best.key != cur.best.key] or pool
-        name, t = random.choice(choices)
-        self._show_found(self.spin_bar, self._found_for(name, t))
+        name, t = random.choice(pool)
+        tried.add(t.best.key)
+        self._spin_loading = True
+        svc, spin_dir = self.svc, self._spin_dir()
+        cands = list(t.alts) or [t.best]
+
+        def work():
+            import shutil as _sh
+            for c in cands[:2]:
+                try:
+                    wav, start = svc.snippet_preview(c, background=True)
+                except Exception:
+                    continue
+                dest = spin_dir / Path(wav).name
+                _sh.move(str(wav), dest)
+                return c, str(dest), start
+            return None
+
+        def then(res):
+            self._spin_loading = False
+            if res and not isinstance(res, Exception):
+                c, wav, _start = res
+                t.best = c
+                self._spins.append((self._found_for(name, t), wav))
+                if self.spin_bar.found is None:
+                    self.spin()
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1500 if res else 4000, self._prefetch_spins)
+        self._run_aux(work, then)
+
+    def _spin_dir(self) -> Path:
+        d = Path(self.svc.db.path).parent / "spin"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _spin_play(self):
+        from .player import Player
+        if self.spin_bar._previewing:
+            Player.get().stop(); self.spin_bar.set_preview_state(""); return
+        wav, f = getattr(self, "_spin_wav", None), self.spin_bar.found
+        if wav and f and Path(wav).exists():
+            Player.get().play(wav, f.track, f"{f.release.artist} · preview · not downloaded", stop_after_s=21)
+            self.spin_bar.set_preview_state("playing", "Playing the drop. Check this file to download it.")
 
     def _show_found(self, card, f):
         if card._previewing:

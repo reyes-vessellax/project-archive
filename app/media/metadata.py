@@ -101,7 +101,7 @@ def _json(fetch: Fetch, url: str) -> dict:
 
 
 def from_deezer(artist: str, title: str, fetch: Fetch) -> Meta | None:
-    q = urllib.parse.quote(f'artist:"{norm(artist)}" track:"{norm(title)}"')
+    q = urllib.parse.quote(f"{norm(artist)} {norm(title)}")   # plain search: Deezer stopped answering artist:/track:
     data = _json(fetch, f"https://api.deezer.com/search?q={q}&limit=10").get("data") or []
     for t in data:
         if similar(title, t.get("title_short") or t.get("title", "")) >= MATCH and \
@@ -117,6 +117,18 @@ def from_deezer(artist: str, title: str, fetch: Fetch) -> Meta | None:
                 m.genre = genres[0].get("name", "") if genres else ""
             return m
     return None
+
+
+def deezer_cover(artist: str, title: str, fetch: Fetch = None) -> str:
+    """Just a cover image URL for a track (one Deezer search, no album call); "" when nothing matches."""
+    fetch = fetch or http_get
+    q = urllib.parse.quote(f"{norm(artist)} {norm(title)}")   # plain search: Deezer stopped answering artist:/track:
+    for t in _json(fetch, f"https://api.deezer.com/search?q={q}&limit=5").get("data") or []:
+        if similar(title, t.get("title_short") or t.get("title", "")) >= MATCH and \
+                artist_ok(artist, (t.get("artist") or {}).get("name", "")):
+            alb = t.get("album") or {}
+            return alb.get("cover_medium") or alb.get("cover_big") or ""
+    return ""
 
 
 def from_musicbrainz(artist: str, title: str, fetch: Fetch) -> Meta | None:

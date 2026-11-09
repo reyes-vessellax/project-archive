@@ -5,7 +5,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
-def test_track_opens_in_place_closes_switches_and_spin_is_instant(service):
+def test_track_opens_in_place_closes_switches_and_spin_is_instant(service, tmp_path):
     from PySide6.QtCore import QEvent
     from PySide6.QtWidgets import QApplication
     from app.adapters.base import Candidate
@@ -35,7 +35,25 @@ def test_track_opens_in_place_closes_switches_and_spin_is_instant(service):
     assert len(open_cards()) == 1 and d.track_card.found.best is b.track.best              # switched, still one
     d._tap_tile(rows[1], b); app.processEvents()
     assert open_cards() == [] and d._open_tile is None                                    # same again: closed
-    d.spin(); first = d.spin_bar.found.best
-    d.spin()
-    assert d.spin_bar.found.best is not first                                             # instant, never the same twice
+    # Spin only shows tracks whose preview already loaded
+    calls = []
+
+    def fake_preview(c, background=False, **kw):
+        calls.append((c.user, background))
+        if c.user == "u02":
+            raise RuntimeError("busy source")
+        w = tmp_path / f"{c.user}.wav"; w.write_bytes(b"RIFF"); return w, 30.0
+    import random
+    service.snippet_preview = fake_preview
+    d._spins.clear(); d._spin_tried.clear()
+    for _ in range(40):
+        if d._spin_loading:
+            app.processEvents(); d.auxpool.waitForDone(2000); app.processEvents(); continue
+        if len(d._spin_tried) >= 10:
+            break
+        d._prefetch_spins()
+    d.auxpool.waitForDone(3000); app.processEvents()
+    assert calls and all(bg for _, bg in calls)                                           # background previews only
+    shown = [f.best.user for f, _ in d._spins] + ([d.spin_bar.found.best.user] if d.spin_bar.found else [])
+    assert shown and "u02" not in shown                                                   # a source that failed never shows
     d.deleteLater(); app.sendPostedEvents(None, QEvent.DeferredDelete)

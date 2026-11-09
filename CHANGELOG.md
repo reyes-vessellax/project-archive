@@ -4,6 +4,19 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.0 (2026-11-09) — Discover: daily labels, styles, a Spin that always plays
+
+- **8 label rows a day,** rotating through 68 labels across every era (Chicago, NY/NJ, Detroit, UK/Europe, France,
+  2010s, disco), Label of the day first. Era chips still show an era's labels.
+- **Style rows** mixed in: Deep house, Acid house, Chicago house, Garage house, Disco edit, Tech house.
+  "Artists you play" removed.
+- **Spin the crate always plays:** it picks from every row on the page, loads the preview in the background and only
+  shows a track once its preview came through; ▶ plays it instantly. Two are kept ready. A preview you start
+  yourself always takes priority over this background loading.
+- **Covers:** anything Discogs can't match gets its cover from Deezer.
+- **Fix:** Deezer stopped answering artist:/track: searches, so its covers, labels and years were silently missing
+  from library lookups too. Plain searches now.
+
 ## 0.8.9 (2026-11-09) — Discover as crate rows, much faster
 
 - **Crate rows:** Label of the day on top, then one row per label (era chips choose which), each a sideways strip

@@ -82,6 +82,7 @@ class ArchiveService:
         self.db = Database(db_path or data_dir() / "archive.db")
         from .searching import Budget
         self.search_budget = Budget()     # one bucket: the user's searches, Batch and the Wishlist
+        self._pv_lock, self._pv_bg_cancel = threading.Lock(), False     # one preview at a time; yours wins
         from .wishlist import Wishlist
         self.wishlist = Wishlist(self)
         self.settings = Settings.from_dict(self.db.load_settings())
@@ -378,7 +379,25 @@ class ArchiveService:
         return None
 
     def snippet_preview(self, cand: Candidate, seconds: float = 20.0, should_stop=lambda: False,
-                        progress=lambda msg: None, timeout_s: float = 60.0) -> tuple[Path, float]:
+                        progress=lambda msg: None, timeout_s: float = 60.0, background: bool = False) -> tuple[Path, float]:
+        """One preview at a time. A preview you asked for always wins: a background one (Spin loading its next
+        track) steps aside the moment you press play somewhere."""
+        if background:
+            if not self._pv_lock.acquire(blocking=False):
+                raise ActionBlocked("Another preview is playing.")
+            stop = lambda: should_stop() or self._pv_bg_cancel
+        else:
+            self._pv_bg_cancel = True
+            self._pv_lock.acquire()
+            self._pv_bg_cancel = False
+            stop = should_stop
+        try:
+            return self._snippet_preview(cand, seconds, stop, progress, timeout_s)
+        finally:
+            self._pv_lock.release()
+
+    def _snippet_preview(self, cand: Candidate, seconds: float = 20.0, should_stop=lambda: False,
+                         progress=lambda msg: None, timeout_s: float = 60.0) -> tuple[Path, float]:
         """Hear ~20 seconds from somewhere in the middle of a track WITHOUT downloading it.
 
         The engine resumes a partial download from where the partial file ends, so: fetch the first few KB

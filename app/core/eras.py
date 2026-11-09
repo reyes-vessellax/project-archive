@@ -130,3 +130,40 @@ ESSENTIAL_LABELS = [
 def label_of_the_day(day_ordinal: int) -> str:
     """Today's dig rotates through the essential labels, one a day."""
     return ESSENTIAL_LABELS[day_ordinal % len(ESSENTIAL_LABELS)][0]
+
+
+# Discover's daily rotation: a wide pool of labels, every era. 8 rows a day (Label of the day + 7), different each day.
+LABEL_POOL = [
+    # Chicago
+    "Trax Records", "DJ International Records", "Dance Mania", "Relief Records", "Cajual Records", "Prescription",
+    "Guidance Recordings", "Undaground Therapy Muzik", "Chiwax",
+    # New York & New Jersey
+    "Strictly Rhythm", "Nu Groove Records", "Nervous Records", "King Street Sounds", "Henry Street Music",
+    "Movin' Records", "Emotive Records", "Easy Street Records", "Ibadan Records", "Spiritual Life Music",
+    "MAW Records", "Madhouse Records",
+    # Detroit
+    "KMS", "Transmat", "Planet E", "KDJ", "Sound Signature", "Mahogani Music", "Metroplex", "Moods & Grooves",
+    "430 West", "Underground Resistance", "FXHE Records",
+    # UK & Europe
+    "Defected", "Glitterbox Recordings", "Freerange Records", "Glasgow Underground", "Paper Recordings",
+    "Peacefrog Records", "Classic Music Company", "Innervisions", "Get Physical Music", "Mojuba", "Running Back",
+    "Dirt Crew Recordings", "Clone Records", "Rush Hour", "Phonica Records",
+    # France
+    "Roulé", "Crydamoure", "Versatile Records", "Yellow Productions",
+    # 2010s and now
+    "L.I.E.S.", "Lobster Theremin", "Rhythm Section International", "Shall Not Fade", "Local Talk",
+    "Dirtybird", "Hot Creations", "Toolroom", "Solid Grooves Records", "Crosstown Rebels", "Repopulate Mars",
+    "Snatch! Records",
+    # Disco roots and edits
+    "West End Records", "Salsoul Records", "Prelude Records", "Z Records", "Razor-N-Tape",
+]
+
+STYLES = ["Deep house", "Acid house", "Chicago house", "Garage house", "Disco edit", "Tech house"]
+
+
+def todays_labels(day_ordinal: int, n: int = 8) -> list[str]:
+    """n labels for today: a different slice of the pool each day, so the page changes daily."""
+    import random
+    pool = list(LABEL_POOL)
+    random.Random(day_ordinal).shuffle(pool)
+    return pool[:n]
