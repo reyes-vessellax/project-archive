@@ -4,6 +4,12 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.8.7 (2026-11-09) — shelf details open in place
+
+- Click a track on Discover's shelf: its details open right under that row (bigger cover, format, length, BPM,
+  key, the full club-ready results, Play from the drop / Add to library / Not for me). Click it again: closed.
+  Click another: that one opens instead. No separate player further down the page.
+
 ## 0.8.6 (2026-11-09) — Discover is a shelf of ready-to-take tracks
 
 - **Everything on Discover can be taken right now:** DigMart digs ahead in the background (records from the

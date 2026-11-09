@@ -61,3 +61,32 @@ def test_fill_is_bounded_and_never_repeats(service, monkeypatch):
     assert digger.fill(service, None, ["Trax"]) == 1                  # second download in flight
     found.release = Release(44, "Third", "Phuture", 1987)
     assert digger.fill(service, None, ["Trax"]) == 0                  # MAX_INFLIGHT reached: waits
+
+
+@needs_ffmpeg
+def test_shelf_card_opens_in_place_and_closes(service, fixtures, tmp_path):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QApplication
+    from app.ui.discover_page import DiscoverPage
+    app = QApplication.instance() or QApplication([])
+    ids = []
+    for i in range(6):
+        p = tmp_path / f"t{i}.mp3"
+        ff("-i", str(fixtures["source_wav"]), "-af", f"volume=-{i}dB", "-c:a", "libmp3lame", "-b:a", "320k", str(p))
+        ids.append(_dug(service, p, {"release_id": 100 + i}))
+    d = DiscoverPage(service); d.resize(1200, 900); d.show(); d.refresh_shelf(); app.processEvents()
+    first = ids[-1]                                                  # newest first
+    assert len(d._shelf_cards) == 6, [(service.db.analysis(i) or {}).get("overall_status") for i in ids]
+    d._toggle_card(first); app.processEvents()
+    drawer = d.shelf_flow._drawer[0].widget()
+    card = d._shelf_cards[first]
+    assert drawer.isVisible() and drawer.geometry().top() > card.geometry().bottom()   # right under its row
+    later = [c for c in d._shelf_cards.values() if c.geometry().top() > card.geometry().top()]
+    assert all(c.geometry().top() > drawer.geometry().bottom() for c in later)          # pushes the rest down
+    d._toggle_card(first); app.processEvents()
+    assert d.shelf_flow._drawer is None                                                  # same card again: closes
+    d._toggle_card(ids[0]); d._toggle_card(ids[1]); app.processEvents()
+    assert d.shelf_flow._drawer[1] is d._shelf_cards[ids[1]]                             # another: switches
+    d.deleteLater(); app.sendPostedEvents(None, QEvent.DeferredDelete)

@@ -33,19 +33,44 @@ class FlowLayout(QLayout):
         the row ends flush with the page (no ragged gap on the right)."""
         super().__init__(parent)
         self._items, self._sp, self._cell = [], spacing, cell
+        self._drawer = None            # (QWidgetItem, anchor widget): opens under the anchor's row, full width
         self.setContentsMargins(0, 0, 0, 0)
 
     def addItem(self, item):
         self._items.append(item)
 
     def count(self):
-        return len(self._items)
+        return len(self._items) + (1 if self._drawer else 0)
 
     def itemAt(self, i):
-        return self._items[i] if 0 <= i < len(self._items) else None
+        if 0 <= i < len(self._items):
+            return self._items[i]
+        return self._drawer[0] if self._drawer and i == len(self._items) else None
 
     def takeAt(self, i):
-        return self._items.pop(i) if 0 <= i < len(self._items) else None
+        if 0 <= i < len(self._items):
+            return self._items.pop(i)
+        if self._drawer and i == len(self._items):
+            item, self._drawer = self._drawer[0], None
+            return item
+        return None
+
+    def open_drawer(self, widget, anchor):
+        """Show `widget` full width directly under the row that holds `anchor` (replaces any open drawer)."""
+        from PySide6.QtWidgets import QWidgetItem
+        self.close_drawer()
+        self.addChildWidget(widget)
+        self._drawer = (QWidgetItem(widget), anchor)
+        widget.show()
+        self.invalidate()
+
+    def close_drawer(self):
+        if self._drawer:
+            w = self._drawer[0].widget()
+            self._drawer = None
+            if w is not None:
+                w.hide(); w.setParent(None); w.deleteLater()
+            self.invalidate()
 
     def expandingDirections(self):
         return Qt.Orientations(0)
@@ -69,6 +94,7 @@ class FlowLayout(QLayout):
         return s
 
     def clear(self):
+        self.close_drawer()
         while self._items:
             w = self._items.pop().widget()
             if w is not None:
@@ -95,6 +121,7 @@ class FlowLayout(QLayout):
         cols = max(1, (r.width() + self._sp) // (self._cell + self._sp))
         cw = (r.width() - self._sp * (cols - 1)) // cols
         y = r.y()
+        drawer, anchor = (self._drawer or (None, None))
         for start in range(0, len(self._items), cols):
             row = self._items[start:start + cols]
             h = 0
@@ -106,6 +133,13 @@ class FlowLayout(QLayout):
                 for i, it in enumerate(row):
                     it.setGeometry(QRect(r.x() + i * (cw + self._sp), y, cw, h))
             y += h + self._sp
+            if drawer is not None and any(it.widget() is anchor for it in row):
+                w = drawer.widget()
+                dh = w.heightForWidth(r.width()) if w.hasHeightForWidth() else -1
+                dh = dh if dh > 0 else drawer.sizeHint().height()
+                if not test:
+                    drawer.setGeometry(QRect(r.x(), y, r.width(), dh))
+                y += dh + self._sp
         return y - self._sp - r.y()
 
 
@@ -203,10 +237,12 @@ class ShelfCard(QFrame):
     play = Signal(str)                 # job id
     add = Signal(str)
     skip = Signal(str)
+    clicked = Signal(str)              # open / close its details right here
 
     def __init__(self, job: dict, a: dict, info: dict):
         super().__init__()
-        self.setObjectName("shelf")
+        self.setObjectName("shelf"); self.setCursor(Qt.PointingHandCursor)
+        self.job, self.a, self.info = job, a, info
         self.job_id = job["id"]
         lay = vbox(self, (0, 0, 0, 12), 5)
         self.art = CoverArt(); lay.addWidget(self.art)
@@ -235,6 +271,76 @@ class ShelfCard(QFrame):
         pm = QPixmap()
         if pm.loadFromData(data):
             self.art.set_pixmap(pm)
+            self.pixmap = pm
+
+    def set_open(self, on: bool):
+        self.setProperty("open", on); self.style().unpolish(self); self.style().polish(self)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.LeftButton and self.rect().contains(e.position().toPoint()):
+            self.clicked.emit(self.job_id)
+        super().mouseReleaseEvent(e)
+
+
+class ShelfDrawer(QFrame):
+    """The details of one shelf track, opened in place under its row."""
+
+    def __init__(self, card: "ShelfCard", theme: str):
+        super().__init__()
+        self.setObjectName("drawer")
+        job, a, info = card.job, card.a, card.info
+        me, mu, f = a.get("meta") or {}, a.get("music") or {}, a.get("facts") or {}
+        lay = hbox(self, (22, 20, 22, 20), 26)
+        art = CoverArt(); art.setFixedSize(180, 180)
+        if getattr(card, "pixmap", None) is not None:
+            art.set_pixmap(card.pixmap)
+        lay.addWidget(art, 0, Qt.AlignTop)
+        left = vbox(spacing=6)
+        left.addWidget(label(info.get("track") or me.get("title") or job.get("original_name", ""), "spintitle"))
+        left.addWidget(label(info.get("artist") or me.get("artist") or "", "spinartist"))
+        left.addWidget(label("  ·  ".join(str(x) for x in (info.get("label"), info.get("year"), info.get("catno"),
+                                                            ", ".join(info.get("styles") or [])) if x), "tilemeta"))
+        from ..media.probe import MediaFacts  # noqa: F401  (facts are a dict here)
+        dur = f.get("duration_s")
+        facts = [(f.get("container") or "").upper(),
+                 f"{f['bitrate_bps'] // 1000} kbps" if f.get("bitrate_bps") else "",
+                 f"{f['sample_rate_hz'] / 1000:g} kHz" if f.get("sample_rate_hz") else "",
+                 f"{int(dur // 60)}:{int(dur % 60):02d}" if dur else "",
+                 f"{mu['bpm']:.0f} BPM" if mu.get("bpm") else "", mu.get("camelot") or ""]
+        left.addWidget(label("  ·  ".join(x for x in facts if x), "copyline"))
+        left.addStretch(1)
+        acts = hbox(spacing=10)
+        self.b_play = button("▶  Play from the drop", "accent", lambda: card.play.emit(card.job_id))
+        b_add = button("Add to library", "primary", lambda: card.add.emit(card.job_id))
+        b_skip = button("Not for me", "ghost", lambda: card.skip.emit(card.job_id))
+        for b in (self.b_play, b_add, b_skip):
+            acts.addWidget(b)
+        acts.addStretch(1)
+        left.addLayout(acts)
+        lay.addLayout(left, 3)
+        right = vbox(spacing=4)
+        from .widgets import club_heading
+        head = club_heading(a, theme)
+        if head is not None:
+            right.addWidget(head)
+        import html as _h
+        from . import theme as T
+        muted = T.colours(theme)["muted"]
+        for c in (a.get("club") or {}).get("checks") or []:
+            word = T.GRADE_WORD.get(c["status"], c["status"])
+            row = hbox(spacing=10)
+            tag = label(word.upper(), "tag", word); tag.setFixedWidth(50); tag.setAlignment(Qt.AlignTop)
+            txt = label(f"<b>{_h.escape(c['title'])}</b> — <span style='color: {muted}'>{_h.escape(c['message'])}</span>", wrap=True)
+            row.addWidget(tag); row.addWidget(txt, 1)
+            right.addLayout(row)
+        right.addStretch(1)
+        lay.addLayout(right, 4)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, w):
+        return max(self.layout().heightForWidth(w) if self.layout().hasHeightForWidth() else 0, self.sizeHint().height(), 220)
 
 
 def chip(text: str, on_click) -> "QWidget":
@@ -426,10 +532,12 @@ class DiscoverPage(QWidget):
         if key == self._shelf_key:
             return
         self._shelf_key = key
+        self._open_id = None
         self.shelf_flow.clear(); self._shelf_cards = {}
         for job, a, info in items:
             card = ShelfCard(job, a, info)
             card.play.connect(self._play_track); card.add.connect(self._add_track); card.skip.connect(self._skip_track)
+            card.clicked.connect(self._toggle_card)
             self.shelf_flow.addWidget(card); self._shelf_cards[job["id"]] = card
         self.shelf_empty.setVisible(not items)
         self.shelf_empty.setText("Nothing on the shelf yet. The first tracks take a few minutes: each one is found, "
@@ -440,6 +548,24 @@ class DiscoverPage(QWidget):
         self._shelf_img_ids = {-(info.get("release_id") or 0): j["id"] for j, _, info in items if info.get("release_id")}
         self._fetch_images([(-(info["release_id"]), info.get("cover") or info.get("thumb"))
                             for _, _, info in items if info.get("release_id") and (info.get("cover") or info.get("thumb"))], tok)
+
+    def _toggle_card(self, job_id: str):
+        """Click a record: its details open right under it. Click it again: they close. Click another: that one opens."""
+        for jid, c in self._shelf_cards.items():
+            c.set_open(False)
+        if getattr(self, "_open_id", None) == job_id:
+            self._open_id = None
+            self.shelf_flow.close_drawer()
+            return
+        card = self._shelf_cards.get(job_id)
+        if card is None:
+            return
+        self._open_id = job_id
+        card.set_open(True)
+        drawer = ShelfDrawer(card, getattr(self.svc.settings, "theme", "light"))
+        self.shelf_flow.open_drawer(drawer, card)
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(60, lambda: self.home_view.ensureWidgetVisible(drawer, 0, 30))
 
     def _play_track(self, job_id: str):
         from .player import Player
@@ -460,6 +586,8 @@ class DiscoverPage(QWidget):
         self.add_track.emit(job_id)
 
     def _skip_track(self, job_id: str):
+        if getattr(self, "_open_id", None) == job_id:
+            self._open_id = None; self.shelf_flow.close_drawer()
         card = self._shelf_cards.pop(job_id, None)
         if card:
             card.hide()
