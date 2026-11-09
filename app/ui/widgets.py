@@ -269,7 +269,7 @@ class TopBar(QWidget):
         self.setObjectName("topbar")
         lay = hbox(self, (48, 22, 48, 4), 22)
         from .brand import Brand
-        self.brand = Brand(); self.brand.clicked.connect(lambda: self.tab_clicked.emit("queue"))
+        self.brand = Brand(); self.brand.clicked.connect(lambda: self.tab_clicked.emit("discover"))
         lay.addWidget(self.brand)
         self.tabs: dict[str, QPushButton] = {}
         for key, text in (("queue", "Queue"), ("search", "Search"), ("ready", "Ready"), ("library", "Library")):
@@ -313,7 +313,7 @@ class Sidebar(QWidget):
     new_crate = Signal()
     crate_menu = Signal(str, str, object)   # id, name, global QPoint (right-click: rename / delete)
 
-    NAV = (("queue", "Home"), ("search", "Search"), ("wishlist", "Wishlist"), ("ready", "Ready"), ("library", "Library"),
+    NAV = (("discover", "Discover"), ("search", "Search"), ("queue", "Queue"), ("wishlist", "Wishlist"), ("library", "Library"),
            ("batch", "Batch"))
 
     def __init__(self):
@@ -324,7 +324,7 @@ class Sidebar(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         lay = vbox(self, (14, 20, 14, 16), 2)
         from .brand import Brand
-        self.brand = Brand(); self.brand.clicked.connect(lambda: self.tab_clicked.emit("queue"))
+        self.brand = Brand(); self.brand.clicked.connect(lambda: self.tab_clicked.emit("discover"))
         bw = QWidget(); bl = hbox(bw, (0, 4, 0, 22)); bl.addWidget(self.brand)
         lay.addWidget(bw)
         self.tabs: dict[str, QPushButton] = {}
@@ -358,9 +358,10 @@ class Sidebar(QWidget):
         self.account_name = label("Account", "muted")
         al.addWidget(self.avatar); al.addWidget(self.account_name, 1)
         lay.addWidget(acc)
-        self.set_active("queue")
+        self.set_active("discover")
 
     def set_active(self, key: str) -> None:
+        key = "queue" if key == "ready" else key         # reviewing a checked track is part of the Queue tab
         for k, b in self.tabs.items():
             set_active(b, k == key)
         for cid, b in self._crate_btns.items():
@@ -382,8 +383,9 @@ class Sidebar(QWidget):
         self.crate_empty.setVisible(not crates)
 
     def set_counts(self, queue: int, ready: int) -> None:
-        self.tabs["queue"].setText(f"Home   {queue}" if queue else "Home")
-        self.tabs["ready"].setText(f"Ready   {ready}" if ready else "Ready")
+        # Queue = downloading, checking and waiting for you; the number that needs you comes first
+        self.tabs["queue"].setText(f"Queue   ● {ready}" if ready else (f"Queue   {queue}" if queue else "Queue"))
+        self.tabs["queue"].setToolTip(f"{ready} checked and waiting for you · {queue} downloading or checking")
 
     def set_wish_count(self, found: int) -> None:
         """How many wishes turned up and haven't been looked at yet."""

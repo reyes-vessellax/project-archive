@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS wishes (
     title TEXT,
     mix TEXT
 );
+CREATE TABLE IF NOT EXISTS discover_cache (url TEXT PRIMARY KEY, json TEXT NOT NULL, fetched_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_source ON jobs(source_path, source_size, source_mtime);
 CREATE INDEX IF NOT EXISTS events_job ON events(job_id, event_type);
@@ -122,6 +123,12 @@ class Database:
             row = self._con.execute("SELECT COUNT(*), MAX(updated_at) FROM jobs").fetchone()
         return f"{row[0]}:{row[1]}"
 
+    def library_version(self) -> str:
+        """Changes only when saved (PROMOTED) tracks change, not on every download progress tick."""
+        with self._lock:
+            row = self._con.execute("SELECT COUNT(*), MAX(updated_at) FROM jobs WHERE state = 'PROMOTED'").fetchone()
+        return f"{row[0]}:{row[1]}"
+
     def update_job(self, job_id: str, **fields) -> None:
         fields["updated_at"] = now()
         sets = ", ".join(f"{k} = ?" for k in fields)
@@ -157,6 +164,16 @@ class Database:
         with self._lock:
             row = self._con.execute(q, (user, remote_path, *states)).fetchone()
         return dict(row) if row else None
+
+    # Discover's cache of MusicBrainz / Discogs answers --------------------------------------
+    def cache_get(self, url: str) -> tuple[dict, str] | None:
+        with self._lock:
+            row = self._con.execute("SELECT json, fetched_at FROM discover_cache WHERE url = ?", (url,)).fetchone()
+        return (json.loads(row[0]), row[1]) if row else None
+
+    def cache_put(self, url: str, data: dict) -> None:
+        with self._lock, self._con:
+            self._con.execute("INSERT OR REPLACE INTO discover_cache VALUES (?,?,?)", (url, json.dumps(data), now()))
 
     def source_rows(self) -> list[dict]:
         """One row per network download, with what reputation needs (see core/reputation.py)."""

@@ -79,12 +79,14 @@ class HomePage(QWidget):
         root = vbox(self); root.addWidget(outer)
 
         # search headline
+        # The Queue tab (it was Home until Discover took that spot): downloads, checks, what's waiting for you.
         srow = hbox(spacing=16)
-        self.q = QLineEdit(); self.q.setObjectName("hero"); self.q.setPlaceholderText("Search for a track…")
-        self.q.returnPressed.connect(lambda: self.search.emit(self.q.text()))
-        srow.addWidget(self.q, 1)
-        self.search_btn = button("Search", "accent", lambda: self.search.emit(self.q.text()))
-        srow.addWidget(self.search_btn)
+        tcol = vbox(spacing=2)
+        tcol.addWidget(label("Queue", "h1"))
+        tcol.addWidget(label("Downloading, checking, and checked tracks waiting for your yes or no.", "muted"))
+        srow.addLayout(tcol, 1)
+        self.q = QLineEdit(); self.q.hide()                  # kept for the window's search wiring; search lives on Discover/Search
+        self.search_btn = button("Search", "accent", lambda: self.search.emit(self.q.text())); self.search_btn.hide()
         self.add_btn = button("Add files", "ghost", self.add_files.emit)
         srow.addWidget(self.add_btn)
         lay.addLayout(srow)
@@ -94,7 +96,7 @@ class HomePage(QWidget):
 
         # queue column
         qcol = vbox(spacing=6)
-        head = hbox(spacing=12); head.addWidget(label("Queue", "h2")); head.addStretch(1)
+        head = hbox(spacing=12); head.addWidget(label("In progress", "h2")); head.addStretch(1)
         self.qnote = label("newest first", "faint"); head.addWidget(self.qnote)
         self.clear_btn = button("Clear finished", "link", self.clear_finished.emit); head.addWidget(self.clear_btn)
         qcol.addLayout(head)
@@ -105,7 +107,7 @@ class HomePage(QWidget):
         self.more_btn = button("", "link", self._show_more); self.more_btn.hide()
         qcol.addWidget(self.more_btn, 0, Qt.AlignLeft)
         self.list_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)     # the list never scrolls sideways
-        self.empty = label("Nothing in the queue. Search above, or drop tracks onto the window.", "faint", wrap=True)
+        self.empty = label("Nothing in the queue. Find something on Discover or Search, or drop tracks onto the window.", "faint", wrap=True)
         qcol.addWidget(self.empty)
         qw = QWidget(); qw.setLayout(qcol); qw.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         body.addWidget(qw, 3)

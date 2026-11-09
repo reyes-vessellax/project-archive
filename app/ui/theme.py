@@ -218,6 +218,15 @@ QFrame#card[tag="Good"] {{ background: {c['panel']}; border: 1px solid {c['line'
 QFrame#card[tag="Look"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['warn']}; }}
 QFrame#card[tag="Broken"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['fail']}; }}
 QFrame#dropcard {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['sel']}; border-top: none; }}
+/* Discover */
+QFrame#tile {{ background: {c['panel']}; border: 1px solid {c['line']}; border-top: 3px solid {c['line']}; border-radius: 3px; }}
+QFrame#tile:hover {{ border-color: {c['line']}; border-top-color: {c['accent']}; background: {c['panel']}; }}
+QLabel#tiletitle {{ font-family: {display}; font-size: 16px; font-weight: 700; }}
+QLabel#tilemeta {{ font-family: {mono}; font-size: 11px; letter-spacing: 0.5px; color: {c['accent']}; }}
+QLabel#section {{ font-family: {display}; font-size: 20px; font-weight: 700; margin-top: 6px; }}
+QFrame#mixrow {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 3px solid {c['accent']}; border-radius: 3px; }}
+QPushButton#pulse {{ background: {c['sel']}; color: {c['sel_text']}; border: none; border-radius: 3px; padding: 0 16px; min-height: 34px; max-height: 34px; font-size: 13px; font-weight: 700; }}
+QPushButton#pulse:hover {{ background: {c['accent']}; color: {c['accent_text']}; }}
 QFrame#menu {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 3px; }}
 QPushButton#menuitem {{ background: none; border: none; border-radius: 3px; text-align: left; padding: 10px 14px; min-height: 0; font-weight: 600; font-size: 14px; }}
 QPushButton#menuitem:hover {{ background: {c['soft']}; }}

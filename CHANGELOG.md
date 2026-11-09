@@ -4,6 +4,16 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.8.0 (2026-11-09) — Discover
+
+- **Discover is the new home page:** search, what's waiting for you, Era crates (Chicago jack, Acid, Detroit deep,
+  NY & Jersey garage, Ghetto house, Deep '90s, French filter, Disco roots; a starter set in app/core/eras.py),
+  Dig your labels, Artists you play, and Mixes with your new tracks (key + tempo, from your own library).
+- **Label and artist pages** from MusicBrainz + Discogs (no account): history, parent/sub-labels or aliases/groups,
+  the whole catalogue by year with label art, what you own ticked; Search for it / Watch it / open artist or label.
+  Polite (MB 1/s, Discogs 1 per 2.5 s, retries when busy) and cached for a week, so it works offline after.
+- **Queue replaces Home and Ready:** downloading, checking and review live in one tab.
+
 ## 0.7.4 (2026-11-09) — Library fixes
 
 - **Library tracks open again.** After the first track opened, later clicks crashed: a scrolling flag had the same

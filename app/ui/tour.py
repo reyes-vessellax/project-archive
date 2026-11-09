@@ -22,16 +22,17 @@ class Step:
     target: str                      # attribute path on the window, e.g. "home.q" or "topbar.avatar"; "" = no spotlight
     title: str
     body: str
-    page: str = "queue"              # tab to show for this step: queue | ready | search | settings
+    page: str = "queue"              # tab to show for this step: discover | queue | ready | search | settings
 
 
 def default_steps() -> list[Step]:
     return [
         Step("", f"Welcome to {APP_NAME}",
              "A quick tour of the five things you'll use. It takes about a minute, and you can skip it any time."),
-        Step("home.q", "Search",
-             "Type an artist, a track, a label, and press Enter. Results come from other users' libraries, "
-             "fastest sources first."),
+        Step("discover.q", "Discover",
+             "Your home page. Search from here (results come from other users' libraries, fastest first), or dig: "
+             "era crates, every record on the labels you own, artists' whole catalogues, and what mixes with your "
+             "newest tracks.", page="discover"),
         Step("home.list_host", "Queue",
              "Everything you've asked for, newest first. The word on the left says where it is: DOWN (downloading), "
              "CHECK (being checked), WAIT (its turn is next), then GOOD, LOOK or BROKEN once it's been checked. "
@@ -40,7 +41,7 @@ def default_steps() -> list[Step]:
              "The spectrogram of the most recent track we checked. A real 320 reaches up to about 20 kHz; a file "
              "made from a low-quality MP3 stops short, and the line shows where."),
         Step("home.review_btn", "Ready for you",
-             "Nothing reaches your library on its own. When tracks are checked they wait here for your decision."),
+             "Nothing reaches your library on its own. Checked tracks wait in the Queue for your decision."),
         Step("review.btn_save", "Download or Delete",
              f"On a checked track: Download to Library moves it into your {APP_NAME} folder. Delete removes it for good. "
              "GOOD gets a plain Download; LOOK asks you to confirm; BROKEN can only be deleted.", page="ready"),
@@ -49,7 +50,7 @@ def default_steps() -> list[Step]:
              "already have.", page="queue"),
         Step("topbar.tabs.wishlist", "Wishlist",
              "Nobody has it today? Watch the search. It's asked for again every half hour for 30 days, and the first "
-             "copy that passes the checks lands on Ready, with a count here."),
+             "copy that passes the checks lands in your Queue, with a count here."),
         Step("topbar.tabs.library", "Library",
              "Everything you've downloaded, with its facts. Search it, and use Show in folder to jump straight to the "
              "file on disk."),

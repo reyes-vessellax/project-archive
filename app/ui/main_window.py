@@ -168,10 +168,12 @@ class MainWindow(QMainWindow):
         self.nowbar.set_volume(self.svc.settings.volume or 0.8)
         self.nowbar.on_volume = self._save_volume
         sl.addWidget(right, 1)
+        from .discover_page import DiscoverPage
+        self.discover = DiscoverPage(self.svc)
         self.home = HomePage(self.svc); self.searchp = SearchPage(self.svc); self.review = ReviewPage(self.svc)
         self.settings = SettingsPage(self.svc); self.library = LibraryPage(self.svc); self.batchp = BatchPage()
         self.wishlistp = WishlistPage(self.svc)
-        for p in (self.home, self.searchp, self.review, self.settings, self.library, self.batchp, self.wishlistp):
+        for p in (self.discover, self.home, self.searchp, self.review, self.settings, self.library, self.batchp, self.wishlistp):
             self.pages.addWidget(p)
         self._wire_wishlist()
         self.library.open_job.connect(self._open_job)
@@ -193,6 +195,8 @@ class MainWindow(QMainWindow):
         self.root.addWidget(shell); self.shell = shell
 
         self.home.search.connect(self._search); self.searchp.search.connect(self._search)
+        self.discover.search.connect(self._search); self.discover.go.connect(self._tab)
+        self.discover.watch.connect(self._watch)
         self.home.open_job.connect(self._open_job); self.home.remove_job.connect(self._remove_entry)
         self.home.review_all.connect(lambda: self._tab("ready")); self.home.add_files.connect(self._pick_files)
         self.searchp.pick.connect(self._pick_candidate)
@@ -259,7 +263,10 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- navigation
     def _tab(self, key: str):
         self.topbar.set_active(key)
-        if key == "queue":
+        if key == "discover":
+            self.discover.show_home(); self.discover.refresh(getattr(self, "_jobs", None))
+            self.pages.setCurrentWidget(self.discover)
+        elif key == "queue":
             self.pages.setCurrentWidget(self.home)
         elif key == "ready":
             if not self.selected or not self.svc.db.job(self.selected):
@@ -301,7 +308,7 @@ class MainWindow(QMainWindow):
         self.wishlistp.remove.connect(lambda wid: (self.svc.wishlist.remove(wid), self._wish_refresh()))
         self.svc.wishlist.log = _applog
         self.svc.wishlist.on_found = lambda w: self.signals.notice.emit(
-            f"Wishlist: “{w['query']}” turned up and passed the checks. It's waiting on Ready.")
+            f"Wishlist: “{w['query']}” turned up and passed the checks. It's waiting in your Queue.")
         self._wish_running = False
         self.wish_timer = QTimer(self, interval=20000, timeout=self._wish_tick); self.wish_timer.start()
         self.topbar.set_wish_count(self.svc.wishlist.unseen())
@@ -313,7 +320,7 @@ class MainWindow(QMainWindow):
         except ValueError as e:
             self.statusBar().showMessage(str(e), 6000); return
         self.statusBar().showMessage(f"Watching “{wish_label(w)}”: asked for again every half hour for 30 days; "
-                                     "a copy that passes the checks lands on Ready.", 8000)
+                                     "a copy that passes the checks lands in your Queue.", 8000)
         self._wish_refresh()
 
     def _wish_refresh(self):
@@ -364,7 +371,7 @@ class MainWindow(QMainWindow):
     def _start_tour(self):
         if getattr(self, "_tour", None):
             return
-        self._tab("queue")
+        self._tab("discover")
         self._tour = TourOverlay(self, default_steps(), self._tour_navigate)
         self._tour.finished.connect(self._tour_finished)
 
@@ -376,13 +383,15 @@ class MainWindow(QMainWindow):
             self._show_review(); self.topbar.set_active("ready")
         elif page == "settings":
             self.pages.setCurrentWidget(self.settings); self.topbar.set_active("")
+        elif page == "discover":
+            self._tab("discover")
         else:
             self._tab("queue")
 
     def _tour_finished(self, completed: bool):
         self._tour = None
         s = self.svc.settings; s.tour_done = True; self.svc.save_settings(s)
-        self._tab("queue")
+        self._tab("discover")
         self.statusBar().showMessage("You can replay the tour any time from your avatar menu." if not completed else
                                      "Tour finished. Happy digging.", 6000)
 
@@ -423,6 +432,8 @@ class MainWindow(QMainWindow):
         self.searchp.set_problem_sources(problems)
         self.home.steps = self.steps
         self.home.refresh(jobs, analyses)
+        if self.pages.currentWidget() is self.discover:
+            self.discover.refresh(jobs)
         ready = sum(1 for j in jobs if j["state"] == J.READY)
         active = sum(1 for j in jobs if j["state"] in (J.QUEUED, J.STAGING, J.ANALYZING))
         self.topbar.set_counts(active, ready)
@@ -732,8 +743,10 @@ class MainWindow(QMainWindow):
         self.searchp.set_filters(s.filters or {})
         if s.selected_job and self.svc.db.job(s.selected_job):
             self.selected = s.selected_job
-        if s.page in ("queue", "search", "ready", "library", "batch"):
+        if s.page in ("search", "ready", "library", "batch"):           # "queue" was Home: Discover is home now
             self._tab(s.page)
+        else:
+            self._tab("discover")
 
     def moveEvent(self, e):
         super().moveEvent(e); self._save_session()
