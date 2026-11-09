@@ -150,3 +150,20 @@ def test_same_named_artist_picks_the_house_one(service):
             return json.dumps({"name": "Fast Eddie"}).encode()
         raise OSError(url)
     assert Discover(service.db, fetch=net, sleep=lambda s: None).artist("Fast Eddie").discogs_id == 1234
+
+
+def test_spin_prefers_a_record_with_a_clip(service):
+    import random
+    net = FakeNet()
+    rels = {1: {"videos": [], "tracklist": [{"position": "A", "title": "Yo Yo Get Funky", "type_": "track"}]},
+            3: {"videos": [{"title": "Phuture - Acid Tracks", "uri": "https://www.youtube.com/watch?v=x"}],
+                "tracklist": [], "styles": ["Acid House"], "images": [{"type": "primary", "uri": "https://i.discogs.com/a.jpg"}]}}
+
+    def fetch(url, timeout=10.0):
+        if "/releases/" in url and "/labels/" not in url:
+            return json.dumps(rels[int(url.rsplit("/", 1)[1])]).encode()
+        return net(url, timeout)
+    d = Discover(service.db, fetch=fetch, sleep=lambda s: None)
+    rel, det, label = d.spin(["Trax Records"], random.Random(4))
+    assert (rel.title, label) == ("Acid Tracks", "Trax Records")
+    assert det["videos"][0][1].startswith("https://www.youtube.com/") and det["cover"].endswith("a.jpg")

@@ -224,6 +224,10 @@ QFrame#tile:hover {{ border-color: {c['line']}; border-top-color: {c['accent']};
 QLabel#tiletitle {{ font-family: {display}; font-size: 16px; font-weight: 700; }}
 QLabel#tilemeta {{ font-family: {mono}; font-size: 11px; letter-spacing: 0.5px; color: {c['accent']}; }}
 QLabel#section {{ font-family: {display}; font-size: 20px; font-weight: 700; margin-top: 6px; }}
+QFrame#spin {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['accent']}; border-radius: 3px; }}
+QLabel#spintitle {{ font-family: {display}; font-size: 26px; font-weight: 700; }}
+QLabel#spinartist {{ font-size: 17px; color: {c['muted']}; }}
+QLabel#clubhead {{ font-family: {mono}; font-size: 12px; font-weight: 700; letter-spacing: 1px; }}
 QFrame#cover {{ background: transparent; border: none; }}
 QLabel#covertitle {{ font-family: {display}; font-size: 14px; font-weight: 700; }}
 QFrame#mixrow {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 3px solid {c['accent']}; border-radius: 3px; }}

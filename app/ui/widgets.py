@@ -992,3 +992,21 @@ class SpectrumView(QLabel):
 def _mmss(ms: int) -> str:
     s = max(0, int(ms // 1000))
     return f"{s // 60}:{s % 60:02d}"
+
+
+def club_heading(a: dict, theme: str):
+    """The CLUB-READY line under a track's checks (None when the track was checked before this existed)."""
+    from . import theme as T
+    club = (a or {}).get("club")
+    if not club:
+        return None
+    c = T.colours(theme)
+    if club.get("ready"):
+        text, colour = "CLUB-READY ✓", c["pass_"]
+        note = f"  ·  {club['notes']} note{'s' if club['notes'] != 1 else ''}" if club.get("notes") else ""
+    else:
+        text, colour, note = "NOT CLUB-READY ✗", c["fail"], ""
+    w = label(f"{text}{note}", "clubhead")
+    w.setStyleSheet(f"color: {colour};")
+    w.setToolTip("Will it load and sound right on a club or festival system? Separate from the verdict above.")
+    return w

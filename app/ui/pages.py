@@ -1059,7 +1059,16 @@ class ReviewPage(QWidget):
                 self.spectrum.clear_view("Spectrogram unavailable." if job["state"] not in J.FINAL else "Staged copy removed.")
             cut = a.get("cutoff_hz")
             self.spec_note.setText(f"Energy reaches about {cut / 1000:.1f} kHz" if cut else "")
-            for c in sorted(a["checks"], key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}[c["status"]]):
+            from .widgets import club_heading
+            club = (a.get("club") or {}).get("checks") or []
+            rows = sorted(a["checks"], key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}[c["status"]])
+            rows += [None] + sorted(club, key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}[c["status"]]) if club else []
+            for c in rows:
+                if c is None:
+                    head = club_heading(a, getattr(self.svc.settings, "theme", "light"))
+                    if head is not None:
+                        head.setContentsMargins(0, 14, 0, 4); self.checks.addWidget(head)
+                    continue
                 row = QWidget(); hl = hbox(row, (0, 10, 0, 10), 14)
                 word = T.GRADE_WORD[c["status"]]
                 t = label(word.upper(), "tag", word); t.setFixedWidth(56); t.setAlignment(Qt.AlignTop)

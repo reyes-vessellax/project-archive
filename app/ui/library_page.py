@@ -486,7 +486,16 @@ class LibraryPage(QWidget):
             w = self.checks_host.takeAt(0).widget()
             if w:
                 w.hide(); w.deleteLater()      # hidden now: no ghost rows painted over the new ones
-        for c in sorted(a.get("checks", []), key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}.get(c["status"], 3)):
+        from .widgets import club_heading
+        club = (a.get("club") or {}).get("checks") or []
+        rows = sorted(a.get("checks", []), key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}.get(c["status"], 3))
+        rows += [None] + sorted(club, key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}.get(c["status"], 3)) if club else []
+        for c in rows:
+            if c is None:
+                head = club_heading(a, getattr(self.svc.settings, "theme", "light"))
+                if head is not None:
+                    head.setContentsMargins(0, 10, 0, 2); self.checks_host.addWidget(head)
+                continue
             row = QWidget(); hl = hbox(row, (0, 2, 0, 2), 10)
             word = T.GRADE_WORD.get(c["status"], c["status"])
             tag = label(word.upper(), "tag", word); tag.setFixedWidth(56); tag.setAlignment(Qt.AlignTop)

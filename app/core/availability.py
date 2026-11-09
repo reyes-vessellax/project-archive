@@ -82,7 +82,7 @@ class Filters:
         return not self.wanted()
 
 
-FORMATS = (("mp3", "MP3"), ("flac", "FLAC"), ("wav", "WAV"), ("aiff", "AIFF"), ("m4a", "M4A / AAC"))
+FORMATS = (("mp3", "MP3"), ("flac", "FLAC"), ("wav", "WAV"), ("aiff", "AIFF"))
 
 
 def fmt_key(ext: str) -> str:

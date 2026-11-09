@@ -293,6 +293,35 @@ class DiscoverPage(QWidget):
         self.pulse.addStretch(1)
         lay.addLayout(self.pulse)
 
+        # Spin the crate: one random record from the classic labels, with a clip to listen to
+        self.spin_box = QFrame(); self.spin_box.setObjectName("spin")
+        sb = hbox(self.spin_box, (20, 20, 24, 20), 24)
+        self.spin_art = CoverArt(); self.spin_art.setFixedWidth(220); self.spin_art.setMinimumHeight(220)
+        sb.addWidget(self.spin_art, 0, Qt.AlignTop)
+        info = vbox(spacing=6)
+        info.addWidget(label("SPIN THE CRATE", "tilemeta"))
+        self.spin_title = label("Press Spin for a random record from the classic labels.", "spintitle"); self.spin_title.setWordWrap(True)
+        self.spin_artist = label("", "spinartist")
+        self.spin_meta = label("", "tilemeta"); self.spin_meta.setWordWrap(True)
+        self.spin_tracks = label("", "muted", wrap=True)
+        for w in (self.spin_title, self.spin_artist, self.spin_meta, self.spin_tracks):
+            info.addWidget(w)
+        info.addStretch(1)
+        acts = hbox(spacing=10)
+        self.spin_listen = button("▶  Listen", "accent", self._spin_listen)
+        self.spin_listen.setToolTip("Plays the clip Discogs lists for this record (opens in your browser)")
+        self.spin_find = button("Search for it", "ghost", lambda: self._spun and self.search.emit(self._spun[0].query))
+        self.spin_watch = button("Watch it", "ghost", self._spin_watch)
+        self.spin_label = button("Open the label", "ghost", lambda: self._spun and self.open_entity("label", self._spun[2]))
+        self.spin_again = button("↻  Spin again", "primary", self.spin)
+        for b in (self.spin_listen, self.spin_find, self.spin_watch, self.spin_label):
+            acts.addWidget(b); b.setEnabled(False)
+        acts.addStretch(1); acts.addWidget(self.spin_again)
+        info.addLayout(acts)
+        sb.addLayout(info, 1)
+        lay.addWidget(self.spin_box)
+        self._spun = None; self._spin_next = None; self._spin_busy = False; self._spin_token = -1
+
         # Today's dig: a wall of records from one classic label, a different one each day
         dig_head = hbox(spacing=12)
         dig_head.addWidget(label("Today's dig", "section"))
@@ -350,6 +379,8 @@ class DiscoverPage(QWidget):
         self._pulse(self.pulse_found, found, f"{found} wishlist find{'s' if found != 1 else ''}  →")
         self._pulse(self.pulse_down, active, f"{active} downloading or checking  →")
         self._load_dig()
+        if self._spun is None and not self._spin_busy:
+            self._prefetch_spin(show=True)                       # queued after the dig: one polite line of requests
         try:
             lib = self.engine.library()
         except Exception:
@@ -362,6 +393,74 @@ class DiscoverPage(QWidget):
         for name, n in lib.artists(30):
             self.artists_flow.addWidget(chip(f"{name}  ·  {n}", lambda _=False, nm=name: self.open_entity("artist", nm)))
         self.artists_empty.setVisible(not lib.artists(1))
+
+    # ---- spin the crate --------------------------------------------------------------------------
+    def _spin_labels(self) -> list[str]:
+        from ..core.eras import ESSENTIAL_LABELS
+        names = [n for n, _ in ESSENTIAL_LABELS] + [l for e in ERAS for l in e["labels"]]
+        return list(dict.fromkeys(names))
+
+    def spin(self):
+        """Show the record that's ready (instant), then fetch the next one in the background."""
+        if self._spin_next is not None:
+            self._show_spin(self._spin_next); self._spin_next = None
+            self._prefetch_spin()
+            return
+        if self._spin_busy:
+            return
+        self.spin_again.setText("Spinning…"); self.spin_again.setEnabled(False)
+        self._prefetch_spin(show=True)
+
+    def _prefetch_spin(self, show: bool = False):
+        if self._spin_busy:
+            return
+        self._spin_busy = True
+        eng, labels = self.engine, self._spin_labels()
+
+        def then(res):
+            self._spin_busy = False
+            self.spin_again.setText("↻  Spin again"); self.spin_again.setEnabled(True)
+            if isinstance(res, Exception) or res is None:
+                if show or self._spun is None:
+                    self.spin_title.setText("Couldn't reach Discogs just now. Try Spin again in a minute.")
+                return
+            if show or self._spun is None:
+                self._show_spin(res); self._prefetch_spin()
+            else:
+                self._spin_next = res
+        self._run(lambda: eng.spin(labels), then)
+
+    def _show_spin(self, res):
+        r, det, lab = res
+        self._spun = res
+        self.spin_title.setText(r.title)
+        self.spin_artist.setText(r.artist)
+        styles = ", ".join(det.get("styles") or [])
+        self.spin_meta.setText("  ·  ".join(str(x) for x in (lab, r.year, r.catno if r.catno and r.catno.lower() != "none" else "",
+                                                             styles, det.get("country")) if x))
+        tracks = det.get("tracks") or []
+        self.spin_tracks.setText("   ".join(f"{p}  {t}" for p, t, _ in tracks[:6]) + ("   …" if len(tracks) > 6 else ""))
+        has_clip = bool(det.get("videos"))
+        self.spin_listen.setEnabled(has_clip)
+        self.spin_listen.setText("▶  Listen" if has_clip else "No clip listed")
+        for b in (self.spin_find, self.spin_watch, self.spin_label):
+            b.setEnabled(True)
+        self.spin_art.set_pixmap(None)
+        self._spin_token = next(self._tokens)
+        url = det.get("cover") or r.thumb
+        if url:
+            self._fetch_images([(-r.id, url)], self._spin_token)       # negative id: the big cover, cached apart
+
+    def _spin_listen(self):
+        if self._spun and self._spun[1].get("videos"):
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl(self._spun[1]["videos"][0][1]))
+
+    def _spin_watch(self):
+        if self._spun:
+            r = self._spun[0]
+            self.watch.emit(r.artist, r.title, "")
 
     # ---- today's dig ---------------------------------------------------------------------------
     DIG_RECORDS = 12
@@ -383,7 +482,10 @@ class DiscoverPage(QWidget):
         def then(res):
             self._dig_busy = False
             if isinstance(res, Exception) or res is None:
-                self.dig_note.setText("Couldn't reach Discogs just now; today's dig shows up when you're back online.")
+                self.dig_note.setText("Couldn't reach Discogs just now; trying again in a minute.")
+                from PySide6.QtCore import QTimer
+                self._dig_name = ""                                   # so the next try isn't skipped
+                QTimer.singleShot(60_000, self._load_dig)
                 return
             picks, seen = [], set()
             for r in res.releases:
@@ -712,6 +814,11 @@ class DiscoverPage(QWidget):
         self.thumbs.start(Fetch())
 
     def _thumb(self, view: int, rid: int, data):
+        if view == self._spin_token:
+            pm = QPixmap()
+            if pm.loadFromData(data):
+                self.spin_art.set_pixmap(pm)
+            return
         if view == self._dig_token and rid in self._dig_cards:
             try:
                 self._dig_cards[rid].set_image(data)

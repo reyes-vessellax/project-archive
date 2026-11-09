@@ -4,6 +4,17 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.8.3 (2026-11-09) — club-ready check, Spin the crate
+
+- **Club-ready check** on every checked track, shown under the verdict as CLUB-READY ✓ / NOT CLUB-READY ✗:
+  decks can load it (CDJs/Rekordbox: no 32-bit float, nothing over 96 kHz, no OGG/WMA), mono-safe (bass that
+  cancels when a rig sums to mono), clipping and true peak, loudness (LUFS), low end present, artwork size for
+  USB. The Good / Have a look / Broken verdict is unchanged. Tracks checked before 0.8.3 get it on Check again.
+- **Spin the crate** on Discover: a random record from the classic labels (original era first) with its cover,
+  label, year, cat #, style and tracklist. Listen plays the clip Discogs lists for it; Search for it / Watch it /
+  Open the label; Spin again is instant (the next one is fetched in the background).
+- M4A taken out of the file-type filter. Discogs lookups back off longer when busy; Today's dig retries itself.
+
 ## 0.8.2 (2026-11-09) — Discover, filled in
 
 - **Discover:** Today's dig (a wall of record covers from a different classic label each day, click to search),

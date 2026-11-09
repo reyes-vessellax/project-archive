@@ -83,6 +83,12 @@ def analyze(path: Path, settings: Settings, progress: Progress = lambda s: None)
             music = analyze_music(path, settings.ffmpeg_path)
         from ..media.musical import prefer_tags
         out["music"] = prefer_tags(music.to_dict(), md.read_tags(path))
+        progress("Checking it's club-ready")
+        try:
+            from ..media.club import club_checks
+            out["club"] = club_checks(path, facts, locals().get("avg"), sr, settings.ffmpeg_path)
+        except Exception:                                   # a nice-to-have: never fail the whole check over it
+            out["club"] = None
         progress("Looking up cover art and details")
         out["meta"] = describe(path, settings)
     return out

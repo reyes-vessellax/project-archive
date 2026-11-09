@@ -119,7 +119,7 @@ class Discover:
             except ValueError:
                 pass
         data = None
-        for attempt in range(4):
+        for attempt in range(6):
             with self._lock:
                 wait = self._last[host] + _GAP[host] - self.clock()
                 if wait > 0:
@@ -130,9 +130,9 @@ class Discover:
                 break
             except Exception as e:
                 busy = getattr(e, "code", None) in (429, 503)          # "slow down": back off and ask again
-                if busy and attempt < 3:
-                    with self._lock:
-                        self._last[host] = self.clock() + 2.0 * (attempt + 1)
+                if busy and attempt < 5:
+                    with self._lock:                                       # 3, 6, 9, 12, 15 s: Discogs' window is a minute
+                        self._last[host] = self.clock() + 3.0 * (attempt + 1)
                     continue
                 if hit is not None:
                     return hit[0]              # stale beats nothing when offline
@@ -202,6 +202,46 @@ class Discover:
                                 r.get("year") or None, "", r.get("format", ""), clean_name(r.get("label", "")),
                                 r.get("thumb", ""), r.get("role", "")))
         return self._page(_dedupe(rels), d.get("pagination") or {}, page)
+
+    # ---- one record, and a random one ----------------------------------------------------------
+    def release(self, release_id: int) -> dict:
+        """Details for a Spin: YouTube clips Discogs lists for it, tracklist, styles, a bigger cover."""
+        d = self._get("discogs", f"{DISCOGS}/releases/{int(release_id)}")
+        videos = [(v.get("title", ""), v["uri"]) for v in d.get("videos") or []
+                  if str(v.get("uri", "")).startswith(("https://www.youtube.com/", "https://youtu.be/"))]
+        tracks = [(t.get("position", ""), t.get("title", ""), t.get("duration", "")) for t in d.get("tracklist") or []
+                  if t.get("type_", "track") == "track"]
+        imgs = d.get("images") or []
+        cover = next((i.get("uri") or i.get("uri150") for i in imgs if i.get("type") == "primary"), "") or \
+            (imgs[0].get("uri") or imgs[0].get("uri150") if imgs else "")
+        return {"videos": videos, "tracks": tracks, "styles": d.get("styles") or [], "genres": d.get("genres") or [],
+                "cover": cover if str(cover).startswith("https://") else "", "url": d.get("uri", ""),
+                "country": d.get("country", "")}
+
+    def spin(self, labels: list[str], rng=None) -> tuple[Release, dict, str] | None:
+        """A random record from a random one of `labels`: (release, details, label name). Prefers records that
+        have a clip to listen to. A handful of requests the first time a label is used; cached after."""
+        import random
+        rng = rng or random.Random()
+        order = list(labels); rng.shuffle(order)
+        for name in order[:4]:
+            ent = self.label(name)
+            if not ent.discogs_id:
+                continue
+            first = self.label_releases(ent.discogs_id, 1)
+            page = first if first.pages <= 1 else self.label_releases(ent.discogs_id, rng.randint(1, min(first.pages, 30)))
+            pool = [r for r in page.releases if r.year and r.artist.lower() not in ("various", "unknown artist")]
+            rng.shuffle(pool)
+            pool.sort(key=lambda r: r.year > 2005)                  # the original era first; reissues only if that's all
+            fallback = None
+            for r in pool[:4]:
+                det = self.release(r.id)
+                if det["videos"]:
+                    return r, det, ent.name
+                fallback = fallback or (r, det, ent.name)
+            if fallback:
+                return fallback
+        return None
 
     def _page(self, rels: list[Release], pg: dict, page: int) -> Page:
         rels.sort(key=lambda r: (r.year is None, r.year or 0))   # undated pressings after the dated ones
