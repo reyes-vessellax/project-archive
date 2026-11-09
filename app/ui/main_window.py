@@ -219,6 +219,8 @@ class MainWindow(QMainWindow):
         theme = self.svc.settings.theme
         if getattr(self, "_applied_theme", None) != theme:
             self._applied_theme = theme
+            from .widgets import KeepColourDelegate
+            KeepColourDelegate.keep_colours = bool(T.colours(theme).get("keep_sel_colours", True))
             QApplication.instance().setStyleSheet(T.stylesheet(theme))
         if hasattr(self, "home"):
             accent = T.colours(self.svc.settings.theme)["accent"]

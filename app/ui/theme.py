@@ -20,12 +20,12 @@ MONO = "IBM Plex Mono"        # measured values and labels
 # Verdict colours stay green / amber / red so Good / Have a look / Broken read at a glance.
 PALETTES = {
     "light": dict(bg="#f6f4ef", panel="#fbfaf7", line="#e4e0d7", text="#141414", muted="#5f5a50", faint="#8a857a",
-                  accent="#dc143c", soft="#fdedf0", pass_="#1f8a4c", warn="#a8650f", fail="#a3162f", bar="#ebe7de",
+                  accent="#dc143c", soft="#fdedf0", sel="#b3102f", sel_text="#ffffff", keep_sel_colours=False, pass_="#1f8a4c", warn="#a8650f", fail="#a3162f", bar="#ebe7de",
                   on_text="#ffffff", accent_text="#ffffff", brand_yellow="#ffd700",
                   nav_bg="#151515", nav_text="#ffd24a", cta_bg="#151515", cta_text="#ffd24a",
                   disp_bg="#161616", disp_line="#2c2c2c", disp_text="#ffb000", disp_label="#8a8476", disp_sub="#b08d4a"),
     "dark": dict(bg="#000000", panel="#0f0f0f", line="#262626", text="#ffffff", muted="#a3a3a3", faint="#6e6e6e",
-                 accent="#ffd700", soft="#211c00", pass_="#4cc38a", warn="#f0a742", fail="#ff5a6e", bar="#1f1f1f",
+                 accent="#ffd700", soft="#211c00", sel="#a50f2d", sel_text="#ffffff", keep_sel_colours=False, pass_="#4cc38a", warn="#f0a742", fail="#ff5a6e", bar="#1f1f1f",
                  on_text="#000000", accent_text="#000000", brand_yellow="#ffd700",
                  nav_bg="#1c1c1c", nav_text="#ffd24a", cta_bg="#ffd700", cta_text="#000000",
                  disp_bg="#141414", disp_line="#2e2e2e", disp_text="#ffb000", disp_label="#8a8476", disp_sub="#b08d4a"),
@@ -217,6 +217,7 @@ QFrame#card {{ background: {c['soft']}; border-radius: 3px; }}
 QFrame#card[tag="Good"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['pass_']}; }}
 QFrame#card[tag="Look"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['warn']}; }}
 QFrame#card[tag="Broken"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['fail']}; }}
+QFrame#dropcard {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['sel']}; border-top: none; }}
 QFrame#menu {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 3px; }}
 QPushButton#menuitem {{ background: none; border: none; border-radius: 3px; text-align: left; padding: 10px 14px; min-height: 0; font-weight: 600; font-size: 14px; }}
 QPushButton#menuitem:hover {{ background: {c['soft']}; }}
@@ -225,7 +226,7 @@ QPushButton#menuitem:hover {{ background: {c['soft']}; }}
 QTreeWidget {{ background: transparent; border: none; alternate-background-color: transparent; outline: 0; }}
 QTreeWidget::item {{ padding: 9px 4px; border-bottom: 1px solid {c['line']}; }}
 QTreeWidget::item:hover {{ background: {c['soft']}; }}
-QTreeWidget::item:selected {{ background: {c['soft']}; }}
+QTreeWidget::item:selected {{ background: {c['sel']}; color: {c['sel_text']}; }}
 QHeaderView {{ background: transparent; border: none; }}
 QHeaderView::section {{ background: transparent; border: none; border-bottom: 1px solid {c['line']}; padding: 6px 4px; font-family: {mono}; font-size: 10px; letter-spacing: 1px; color: {c['faint']}; }}
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 0; }}

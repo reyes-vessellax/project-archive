@@ -4,6 +4,15 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.7.4 (2026-11-09) — Library fixes
+
+- **Library tracks open again.** After the first track opened, later clicks crashed: a scrolling flag had the same
+  name as the Show-in-folder action and overwrote it. Renamed; a test now opens every track twice over.
+- **Selected row is readable:** solid DigMart crimson, a shade darker, with white text (light and dark), instead
+  of white text on pale pink.
+- **No more empty gap in the details panel:** it was measured at the wrong width before opening; now it fits its
+  content. The panel itself is neutral (panel colour, crimson edge) rather than pink.
+
 ## 0.7.3 (2026-11-09) — the rest of the 1.0 roadmap that doesn't need a business decision
 
 - **BPM/key from tags (#5):** if a file already carries BPM/key (Rekordbox, Traktor, the label), that is shown and

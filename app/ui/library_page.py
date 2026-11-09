@@ -287,8 +287,8 @@ class LibraryPage(QWidget):
             self._collapse(); self.tree.clearSelection()
 
     def _build_panel(self) -> QFrame:
-        panel = QFrame(); panel.setObjectName("card")
-        outer = vbox(panel, (20, 16, 20, 16), 14)
+        panel = QFrame(); panel.setObjectName("dropcard")
+        outer = vbox(panel, (20, 14, 20, 14), 12)
         pl = hbox(spacing=24); outer.addLayout(pl)
         left = vbox(spacing=8)
         top = hbox(spacing=14)
@@ -381,8 +381,11 @@ class LibraryPage(QWidget):
         child.setFirstColumnSpanned(True) if hasattr(child, "setFirstColumnSpanned") else None
         self._child = child
         self.panel.setMaximumHeight(16777215)
-        self.panel.adjustSize()
-        full = max(self.panel.sizeHint().height(), 260)
+        width = max(300, self.tree.viewport().width() - 2)
+        self.panel.setFixedWidth(width)                     # measure at the real width: measured narrow, the wrapped
+        lay = self.panel.layout()                           # check text came out tall and left a big empty gap
+        lay.activate()
+        full = max(lay.heightForWidth(width) if lay.hasHeightForWidth() else self.panel.sizeHint().height(), 220)
         self._grow_target = full
         self.panel.setFixedHeight(12 if animate else full)
         self.panel.setFixedWidth(max(300, self.tree.viewport().width() - 2))
@@ -390,7 +393,7 @@ class LibraryPage(QWidget):
         self.tree.setItemWidget(child, 0, self.panel)       # parented into the tree first, shown after
         self.panel.show()
         it.setExpanded(True)
-        self._reveal = animate                               # only a row the user just opened is brought into view;
+        self._scroll_to_panel = animate                            # only a row the user just opened is brought into view;
         if animate:                                          # a refresh re-mounting the panel must not move the list
             self._anim.start()
         else:
@@ -416,8 +419,8 @@ class LibraryPage(QWidget):
             self._child.setSizeHint(0, self.panel.size())   # the view re-measures just this row (a full
         if nh >= self._grow_target:                            # relayout was 70 ms a frame on a big library)
             self._anim.stop()
-            if self._child is not None and getattr(self, "_reveal", False):
-                self._reveal = False
+            if self._child is not None and getattr(self, "_scroll_to_panel", False):
+                self._scroll_to_panel = False
                 self.tree.scrollToItem(self._child, QTreeWidget.EnsureVisible)   # bring the panel into view; no jump to top
 
     def _collapse(self):

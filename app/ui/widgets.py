@@ -568,9 +568,11 @@ class KeepColourDelegate(_QStyledItemDelegate):
     Only paint() is overridden, and only selected coloured cells take the slow path: a Python hook on every
     size calculation made filtering a 2,000-track library lag."""
 
+    keep_colours = True       # off in light mode: the selected row is solid crimson, so every cell reads in white
+
     def paint(self, painter, option, index):
         from PySide6.QtWidgets import QStyle
-        if option.state & QStyle.State_Selected:
+        if KeepColourDelegate.keep_colours and option.state & QStyle.State_Selected:
             fg = index.data(Qt.ForegroundRole)
             if fg is not None:
                 from PySide6.QtGui import QPalette
