@@ -964,6 +964,34 @@ class ArchiveService:
         """What the queue panel shows: everything the user hasn't removed."""
         return self.db.jobs(include_hidden=False)
 
+    def backfill_club(self, should_stop=lambda: False, on_each=lambda job_id: None) -> int:
+        """Run the club-ready check on library tracks checked before it existed. Reads the file in the library
+        (never changes it) and adds the result to the stored analysis. Returns how many were done."""
+        from ..media.club import club_checks
+        from ..media.decode import decode_and_analyze
+        from ..media.probe import probe
+        done = 0
+        for job in self.db.jobs(states=(J.PROMOTED,), limit=100_000):
+            if should_stop():
+                break
+            a = self.db.analysis(job["id"])
+            path = Path(job.get("final_path") or "")
+            if not a or a.get("club") is not None or not path.is_file():
+                continue
+            try:
+                facts = probe(path, self.settings.ffmpeg_path)
+                sr = facts.sample_rate_hz or 44100
+                d = decode_and_analyze(path, sr, facts.duration_s, self.settings.ffmpeg_path,
+                                       timeout=max(120.0, (facts.duration_s or 600) * 1.5))
+                avg = d.avg_spectrum_db(); d.frames = None
+                a["club"] = club_checks(path, facts, avg, sr, self.settings.ffmpeg_path)
+            except Exception as e:                              # unreadable now: record why, don't retry forever
+                a["club"] = {"ready": False, "notes": 0, "checks": [], "error": str(e)[:200]}
+            self.db.save_analysis(job["id"], a)
+            done += 1
+            on_each(job["id"])
+        return done
+
     def make_club_copy(self, job_id: str) -> dict:
         """A verified club-ready AIFF of a checked track, staged as a NEW job (it then gets the normal check).
         The original file and its job are never touched. Raises ActionBlocked with the reason if it can't."""

@@ -227,6 +227,7 @@ QLabel#section {{ font-family: {display}; font-size: 20px; font-weight: 700; mar
 QFrame#spin {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['accent']}; border-radius: 3px; }}
 QLabel#spintitle {{ font-family: {display}; font-size: 26px; font-weight: 700; }}
 QLabel#spinartist {{ font-size: 17px; color: {c['muted']}; }}
+QLabel#copyline {{ font-family: {mono}; font-size: 12px; font-weight: 700; color: {c['pass_']}; }}
 QLabel#clubhead {{ font-family: {mono}; font-size: 12px; font-weight: 700; letter-spacing: 1px; }}
 QFrame#cover {{ background: transparent; border: none; }}
 QLabel#covertitle {{ font-family: {display}; font-size: 14px; font-weight: 700; }}

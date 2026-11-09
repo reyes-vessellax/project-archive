@@ -998,7 +998,7 @@ def club_heading(a: dict, theme: str):
     """The CLUB-READY line under a track's checks (None when the track was checked before this existed)."""
     from . import theme as T
     club = (a or {}).get("club")
-    if not club:
+    if not club or club.get("error"):
         return None
     c = T.colours(theme)
     if club.get("ready"):

@@ -4,6 +4,19 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.8.5 (2026-11-09) — Discover only shows what you can actually get
+
+- **Only records someone is sharing right now:** Spin the crate and Today's dig search the network for each record
+  (its A-side, then the next track) before showing it, and keep it only with a copy that's the right track,
+  lossless or 320, free to send now, and not already in your library. Polite: one search at a time from the
+  shared search budget; label and artist pages stay instant.
+- **Play the drop instead of YouTube:** about 20 seconds from the drop, straight from the person sharing it (no
+  ads, no buffering a video, nothing kept). A busy source falls through to the next ready copy.
+- **Check this file** on the card downloads that exact copy; no second search. Clicking a dig cover opens its card
+  right under the covers.
+- **Club-ready check for the whole library:** tracks checked before 0.8.3 get it in the background on start-up
+  (files are only read, never changed).
+
 ## 0.8.4 (2026-11-09) — search inside Discover, club-ready copy, a stricter club check
 
 - **Search inside Discover:** clicking a record (Today's dig, a label or artist page, Spin's Search for it) or

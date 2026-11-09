@@ -139,6 +139,7 @@ class MainWindow(QMainWindow):
         self.session = self.sessions.load()
         self._update_zip = None; self._update_cmd = None
         self.update_timer = QTimer(self, interval=6 * 3600 * 1000, timeout=self._check_updates); self.update_timer.start()
+        QTimer.singleShot(20_000, self._backfill_club)            # library tracks checked before the club check
         QTimer.singleShot(60_000, self._check_updates)
         if self.session.window and len(self.session.window) == 4:
             self.setGeometry(*self.session.window)
@@ -203,6 +204,9 @@ class MainWindow(QMainWindow):
         self.home.open_job.connect(self._open_job); self.home.remove_job.connect(self._remove_entry)
         self.home.review_all.connect(lambda: self._tab("ready")); self.home.add_files.connect(self._pick_files)
         self.searchp.pick.connect(self._pick_candidate)
+        self.discover.preview.connect(lambda c: self._preview_from(self.discover, c))
+        self.discover.stop_preview.connect(self._stop_preview)
+        self.discover.pick.connect(self._pick_candidate)
         finder = self.discover.finder
         self.discover.find.connect(self._discover_find)
         finder.search.connect(lambda q: self._search(q, page=finder))
@@ -211,7 +215,7 @@ class MainWindow(QMainWindow):
         self.searchp.filters_changed.connect(lambda: self._save_session())
         self.searchp.preview.connect(lambda c: self._preview_from(self.searchp, c)); self.searchp.stop_preview.connect(self._stop_preview)
         from .player import Player
-        for _sp in (self.searchp, self.discover.finder):
+        for _sp in (self.searchp, self.discover.finder, self.discover):
             Player.get().changed.connect(lambda sp=_sp: sp.set_preview_state("") if sp._previewing and not Player.get().playing() else None)
         self._preview_jobs: set[str] = set()
         self.review.select.connect(self._open_job)
@@ -1112,6 +1116,15 @@ class MainWindow(QMainWindow):
             if not self.search_running:
                 self.home.search_btn.setText("Search"); self.home.search_btn.setEnabled(self._connected)
         self._last_results = res
+
+    def _backfill_club(self):
+        """Give every library track the club-ready check, one at a time in the background (files only read)."""
+        def work():
+            n = self.svc.backfill_club(should_stop=lambda: getattr(self, "_closing", False),
+                                       on_each=lambda j: (self._acache.pop(j, None), self.signals.done.emit("")))
+            if n:
+                self.signals.notice.emit(f"Club-ready check added to {n} library track{'s' if n != 1 else ''}.")
+        self.io.start(Task(work, self.signals))
 
     def _club_copy(self, job_id: str):
         self.statusBar().showMessage("Making a club-ready copy and checking it against the original…", 10000)

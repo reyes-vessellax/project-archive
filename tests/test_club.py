@@ -95,3 +95,17 @@ def test_analysis_carries_club_result(service, fixtures):
     a = service.analyze(job["id"])
     assert a["club"]["ready"] and {c["id"] for c in a["club"]["checks"]} >= {"club_load", "club_mono", "club_clip"}
     assert a["overall_status"] in ("PASS", "WARN")                    # the verdict is unchanged by club notes
+
+
+@needs_ffmpeg
+def test_library_tracks_get_the_club_check_afterwards(service, fixtures):
+    import hashlib
+    from pathlib import Path
+    job = service.stage(fixtures["mp3_320"]); a = service.analyze(job["id"])
+    a.pop("club", None); service.db.save_analysis(job["id"], a)          # as if checked before 0.8.3
+    target = service.promote(job["id"])
+    before = hashlib.sha256(Path(target).read_bytes()).hexdigest()
+    assert service.backfill_club() == 1
+    assert service.db.analysis(job["id"])["club"]["ready"]
+    assert hashlib.sha256(Path(target).read_bytes()).hexdigest() == before   # the library file is only read
+    assert service.backfill_club() == 0                                      # done once
