@@ -445,7 +445,8 @@ class LibraryPage(QWidget):
         self.p_title.setText(it.text(0) + (f"  ·  {it.text(2)}" if it.text(2) else ""))
         self.p_artist.setText(it.text(1))
         meta, mu = a.get("meta") or {}, a.get("music") or {}
-        self.p_meta.setText("  ·  ".join(x for x in (meta.get("label"), meta.get("year"), meta.get("genre")) if x))
+        from ..media.metadata import clean_label
+        self.p_meta.setText("  ·  ".join(x for x in (clean_label(meta.get("label") or ""), meta.get("year"), meta.get("genre")) if x))
         cov = meta.get("cover_path")
         pm = QPixmap(cov) if cov and Path(cov).exists() else QPixmap()
         self.p_cover.setVisible(not pm.isNull())

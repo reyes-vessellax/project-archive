@@ -246,7 +246,7 @@ def scroll(inner: QWidget) -> QScrollArea:
     return s
 
 
-def page(margins=(48, 28, 48, 40), spacing=24, max_width: int = 1180) -> tuple[QWidget, QVBoxLayout]:
+def page(margins=(48, 28, 48, 40), spacing=24, max_width: int = 1600) -> tuple[QWidget, QVBoxLayout]:
     """A centred, width-capped content column — the v5 page grid."""
     outer = QWidget(); outer.setObjectName("page")
     row = hbox(outer)

@@ -8,7 +8,7 @@ and is shown only as a broad range. Never fake precision.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..adapters.base import Candidate
 
@@ -63,14 +63,32 @@ def availability(c: Candidate) -> Availability:
 # ------------------------------------------------------------------------------------------- filters
 @dataclass
 class Filters:
-    lossless: bool = False        # FLAC / WAV / AIFF
-    mp3_320: bool = False         # MP3 claiming 320 (CBR) - the check confirms it later
+    formats: list = field(default_factory=list)   # the file-type drop-down: [] = any, or one of "mp3", "flac", "wav", "aiff", "m4a"
+    mp3_320: bool = False         # MP3s must claim 320 (the check confirms it later); other formats unaffected
     ready_now: bool = False       # only sharers with a free slot
-    mix: str = ""                 # "" = any; "extended", "original", "radio", "dub", "remix", "edit"
     show_private: bool = False
+    lossless: bool = False        # FLAC / WAV / AIFF only
+    mix: str = ""                 # older sessions only: the mix filter was removed (file names don't say it reliably)
+
+    def wanted(self) -> set[str]:
+        """The file types that may show: the drop-down's type, narrowed by Lossless (both = their overlap)."""
+        f = {fmt_key(x) for x in self.formats}
+        if self.lossless:
+            f = (f & {"flac", "wav", "aiff"}) if f else {"flac", "wav", "aiff"}
+            return f or {"none"}                            # e.g. MP3 + Lossless: nothing can match
+        return f
 
     def any_format(self) -> bool:
-        return not (self.lossless or self.mp3_320)
+        return not self.wanted()
+
+
+FORMATS = (("mp3", "MP3"), ("flac", "FLAC"), ("wav", "WAV"), ("aiff", "AIFF"), ("m4a", "M4A / AAC"))
+
+
+def fmt_key(ext: str) -> str:
+    """File extension -> the format chip it belongs to."""
+    e = (ext or "").lower().lstrip(".")
+    return {"aif": "aiff", "aac": "m4a", "alac": "m4a", "mp4": "m4a"}.get(e, e)
 
 
 MIX_WORDS = {
@@ -96,16 +114,17 @@ def mix_kind_matches(c: Candidate, kind: str) -> bool:
 
 
 def passes(c: Candidate, f: Filters) -> bool:
-    ext = (c.extension or "").lower()
-    if not f.any_format():
-        ok = (f.lossless and ext in LOSSLESS) or (f.mp3_320 and ext == "mp3" and (c.bitrate_kbps or 0) >= 320)
-        if not ok:
-            return False
+    ext = fmt_key(c.extension)
+    want = f.wanted()
+    if want and ext not in want:
+        return False
+    if f.mp3_320 and ext == "mp3" and (c.bitrate_kbps or 0) < 320:
+        return False
     if f.ready_now and not c.free_slot:
         return False
     if c.locked and not f.show_private:
         return False
-    return mix_kind_matches(c, f.mix)
+    return True
 
 
 def apply(cands: list[Candidate], f: Filters) -> tuple[list[Candidate], int, int]:

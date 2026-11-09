@@ -28,9 +28,11 @@ from .widgets import KeepColourDelegate, button, hbox, label, page, scroll, smoo
 class FlowLayout(QLayout):
     """Left-to-right, wrapping: chips and tiles that reflow with the window."""
 
-    def __init__(self, parent=None, spacing: int = 8):
+    def __init__(self, parent=None, spacing: int = 8, cell: int = 0):
+        """cell > 0: a grid that fills the row. As many columns of at least `cell` px as fit, each stretched so
+        the row ends flush with the page (no ragged gap on the right)."""
         super().__init__(parent)
-        self._items, self._sp = [], spacing
+        self._items, self._sp, self._cell = [], spacing, cell
         self.setContentsMargins(0, 0, 0, 0)
 
     def addItem(self, item):
@@ -73,6 +75,8 @@ class FlowLayout(QLayout):
                 w.setParent(None); w.deleteLater()
 
     def _lay(self, r: QRect, test: bool) -> int:
+        if self._cell:
+            return self._grid(r, test)
         x, y, line = r.x(), r.y(), 0
         for it in self._items:
             hint = it.sizeHint()
@@ -85,14 +89,35 @@ class FlowLayout(QLayout):
         return y + line - r.y()
 
 
+    def _grid(self, r: QRect, test: bool) -> int:
+        if not self._items:
+            return 0
+        cols = max(1, (r.width() + self._sp) // (self._cell + self._sp))
+        cw = (r.width() - self._sp * (cols - 1)) // cols
+        y = r.y()
+        for start in range(0, len(self._items), cols):
+            row = self._items[start:start + cols]
+            h = 0
+            for it in row:
+                w = it.widget()
+                hh = w.heightForWidth(cw) if (w is not None and w.hasHeightForWidth()) else -1
+                h = max(h, hh if hh > 0 else it.sizeHint().height(), it.minimumSize().height())
+            if not test:
+                for i, it in enumerate(row):
+                    it.setGeometry(QRect(r.x() + i * (cw + self._sp), y, cw, h))
+            y += h + self._sp
+        return y - self._sp - r.y()
+
+
 class Tile(QFrame):
     """A clickable card: a bold name, a mono line, an optional muted note."""
     clicked = Signal()
 
-    def __init__(self, title: str, meta: str = "", note: str = "", width: int = 252, tall: bool = False):
+    def __init__(self, title: str, meta: str = "", note: str = "", width: int = 0, tall: bool = False):
         super().__init__()
         self.setObjectName("tile"); self.setAttribute(Qt.WA_Hover); self.setCursor(Qt.PointingHandCursor)
-        self.setFixedWidth(width)
+        if width:
+            self.setFixedWidth(width)
         lay = vbox(self, (16, 14, 16, 14), 4)
         t = label(title, "tiletitle"); t.setWordWrap(True); lay.addWidget(t)
         if meta:
@@ -102,6 +127,70 @@ class Tile(QFrame):
         lay.addStretch(1)
         if tall:
             self.setMinimumHeight(132)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.LeftButton and self.rect().contains(e.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(e)
+
+
+class CoverArt(QWidget):
+    """A square record cover that fills its column (placeholder disc until the image arrives)."""
+
+    def __init__(self):
+        super().__init__()
+        self._pm = None
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, w):
+        return w
+
+    def sizeHint(self):
+        return QSize(150, 150)
+
+    def set_pixmap(self, pm):
+        self._pm = pm; self.update()
+
+    def paintEvent(self, e):
+        from PySide6.QtGui import QPainter
+        p = QPainter(self); p.setRenderHint(QPainter.SmoothPixmapTransform)
+        side = min(self.width(), self.height())
+        r = QRect(0, 0, self.width(), side)
+        if self._pm is not None and not self._pm.isNull():
+            pm = self._pm.scaled(r.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            p.drawPixmap(r, pm, QRect((pm.width() - r.width()) // 2, (pm.height() - r.height()) // 2, r.width(), r.height()))
+        else:
+            p.fillRect(r, QColor(128, 128, 128, 40))
+            p.setPen(Qt.NoPen); p.setBrush(QColor(20, 20, 20, 160))
+            c = r.center(); rad = side * 0.38
+            p.drawEllipse(c, int(rad), int(rad))
+            p.setBrush(QColor(220, 20, 60)); p.drawEllipse(c, int(rad * 0.3), int(rad * 0.3))
+        p.end()
+
+
+class CoverCard(QFrame):
+    """One record: cover, title, artist, year and cat #. Click = search for it."""
+    clicked = Signal()
+
+    def __init__(self, r: Release):
+        super().__init__()
+        self.setObjectName("cover"); self.setAttribute(Qt.WA_Hover); self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip(f"{r.artist} – {r.title}\n{r.year or ''}  {r.catno or ''}\nClick to search for it")
+        lay = vbox(self, (0, 0, 0, 8), 4)
+        self.art = CoverArt(); lay.addWidget(self.art)
+        t = label(r.title, "covertitle"); t.setWordWrap(False); lay.addWidget(t)
+        a = label(r.artist, "muted"); lay.addWidget(a)
+        lay.addWidget(label("  ·  ".join(str(x) for x in (r.year, r.catno) if x and str(x).lower() != "none"), "tilemeta"))
+        for w in (t, a):
+            w.setMinimumWidth(10)
+
+    def set_image(self, data: bytes):
+        pm = QPixmap()
+        if pm.loadFromData(data):
+            self.art.set_pixmap(pm)
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.LeftButton and self.rect().contains(e.position().toPoint()):
@@ -204,35 +293,40 @@ class DiscoverPage(QWidget):
         self.pulse.addStretch(1)
         lay.addLayout(self.pulse)
 
+        # Today's dig: a wall of records from one classic label, a different one each day
+        dig_head = hbox(spacing=12)
+        dig_head.addWidget(label("Today's dig", "section"))
+        self.dig_label = label("", "tilemeta"); dig_head.addWidget(self.dig_label, 0, Qt.AlignBottom)
+        dig_head.addStretch(1)
+        self.dig_open = button("Open the whole label  →", "link", lambda: self._dig_name and self.open_entity("label", self._dig_name))
+        dig_head.addWidget(self.dig_open, 0, Qt.AlignBottom)
+        lay.addLayout(dig_head)
+        self.dig_note = label("Pulling records from Discogs…", "faint"); lay.addWidget(self.dig_note)
+        self.dig_flow = FlowLayout(spacing=14, cell=150)
+        dw = QWidget(); dw.setLayout(self.dig_flow); lay.addWidget(dw)
+        self._dig_name, self._dig_token, self._dig_cards = "", -1, {}
+
         lay.addLayout(self._section("Era crates", "Hand-picked doors into house history. Open one to dig its labels and artists."))
-        eras = FlowLayout(spacing=14)
+        eras = FlowLayout(spacing=14, cell=200)
         for e in ERAS:
             t = Tile(e["name"], e["years"], e["blurb"], tall=True)
             t.clicked.connect(lambda k=e["key"]: self.open_era(k))
             eras.addWidget(t)
         ew = QWidget(); ew.setLayout(eras); lay.addWidget(ew)
 
-        lay.addLayout(self._section("Dig your labels", "The labels you own most. Open one to see everything it ever "
-                                                         "put out, with what you already have ticked."))
-        self.labels_flow = FlowLayout(spacing=14)
-        lw = QWidget(); lw.setLayout(self.labels_flow); lay.addWidget(lw)
-        self.labels_empty = label("Labels show up here as your library grows (they come from each track's tags and "
-                                  "the online lookup). Try an era crate above, or type a label and press Dig a label.",
-                                  "faint", wrap=True)
-        lay.addWidget(self.labels_empty)
+        from ..core.eras import ESSENTIAL_LABELS
+        lay.addLayout(self._section("Essential labels", "The cornerstones. Every record they put out, oldest first."))
+        ess = FlowLayout(spacing=14, cell=200)
+        for name, city in ESSENTIAL_LABELS:
+            t = Tile(name, city.upper())
+            t.clicked.connect(lambda nm=name: self.open_entity("label", nm))
+            ess.addWidget(t)
+        sw = QWidget(); sw.setLayout(ess); lay.addWidget(sw)
 
         lay.addLayout(self._section("Artists you play", "Open one for their whole catalogue, aliases and groups."))
         self.artists_flow = FlowLayout(spacing=8)
         aw = QWidget(); aw.setLayout(self.artists_flow); lay.addWidget(aw)
-        self.artists_empty = label("Nothing yet.", "faint"); lay.addWidget(self.artists_empty)
-
-        lay.addLayout(self._section("Mixes with your new tracks", "From your own library: a key next door on the "
-                                                                   "Camelot wheel and a tempo within about 4 %."))
-        self.mixes_host = vbox(spacing=12)
-        lay.addLayout(self.mixes_host)
-        self.mixes_empty = label("Save a few checked tracks to your library and their mixing partners show up here.",
-                                 "faint", wrap=True)
-        lay.addWidget(self.mixes_empty)
+        self.artists_empty = label("The artists in your library show up here.", "faint"); lay.addWidget(self.artists_empty)
         lay.addStretch(1)
 
     def _section(self, title: str, note: str = ""):
@@ -255,6 +349,7 @@ class DiscoverPage(QWidget):
         self._pulse(self.pulse_waiting, waiting, f"{waiting} checked and waiting for you  →")
         self._pulse(self.pulse_found, found, f"{found} wishlist find{'s' if found != 1 else ''}  →")
         self._pulse(self.pulse_down, active, f"{active} downloading or checking  →")
+        self._load_dig()
         try:
             lib = self.engine.library()
         except Exception:
@@ -263,42 +358,49 @@ class DiscoverPage(QWidget):
         if getattr(self, "_lib_key", None) == key:
             return
         self._lib_key = key
-        self.labels_flow.clear()
-        for name, n in lib.labels(12):
-            t = Tile(name, f"{n} in your library", width=220)
-            t.clicked.connect(lambda nm=name: self.open_entity("label", nm))
-            self.labels_flow.addWidget(t)
-        self.labels_empty.setVisible(not lib.labels(1))
         self.artists_flow.clear()
-        for name, n in lib.artists(24):
+        for name, n in lib.artists(30):
             self.artists_flow.addWidget(chip(f"{name}  ·  {n}", lambda _=False, nm=name: self.open_entity("artist", nm)))
         self.artists_empty.setVisible(not lib.artists(1))
-        while self.mixes_host.count():
-            w = self.mixes_host.takeAt(0).widget()
-            if w:
-                w.deleteLater()
-        shown = 0
-        for t in lib.recent(6):
-            partners = lib.mixes_with(t)
-            if not partners:
-                continue
-            row = QFrame(); row.setObjectName("mixrow")
-            rl = vbox(row, (16, 12, 16, 12), 6)
-            top = hbox(spacing=10)
-            top.addWidget(label(f"{t.title}", "tiletitle"))
-            top.addWidget(label(t.artist, "muted"))
-            top.addStretch(1)
-            top.addWidget(label(f"{t.bpm:.0f} BPM  ·  {t.camelot}", "tilemeta"))
-            rl.addLayout(top)
-            fl = FlowLayout(spacing=8)
-            for p in partners:
-                fl.addWidget(chip(f"{p.title} — {p.artist}   {p.bpm:.0f} · {p.camelot}", lambda _=False: self.go.emit("library")))
-            fw = QWidget(); fw.setLayout(fl); rl.addWidget(fw)
-            self.mixes_host.addWidget(row)
-            shown += 1
-            if shown == 3:
-                break
-        self.mixes_empty.setVisible(shown == 0)
+
+    # ---- today's dig ---------------------------------------------------------------------------
+    DIG_RECORDS = 12
+
+    def _load_dig(self):
+        from datetime import date
+        from ..core.eras import label_of_the_day
+        name = label_of_the_day(date.today().toordinal())
+        if name == self._dig_name and (self._dig_cards or getattr(self, "_dig_busy", False)):
+            return
+        self._dig_name, self._dig_busy = name, True
+        self.dig_label.setText(name.upper())
+        eng = self.engine
+
+        def work():
+            ent = eng.label(name)
+            return eng.label_releases(ent.discogs_id, 1) if ent.discogs_id else None
+
+        def then(res):
+            self._dig_busy = False
+            if isinstance(res, Exception) or res is None:
+                self.dig_note.setText("Couldn't reach Discogs just now; today's dig shows up when you're back online.")
+                return
+            picks, seen = [], set()
+            for r in res.releases:
+                if not (r.thumb and r.year) or r.artist.lower() in ("various", "unknown artist") or r.artist in seen:
+                    continue
+                seen.add(r.artist); picks.append(r)          # one record per artist: a crate, not a discography
+                if len(picks) == self.DIG_RECORDS:
+                    break
+            self.dig_flow.clear(); self._dig_cards = {}
+            for r in picks:
+                card = CoverCard(r)
+                card.clicked.connect(lambda rr=r: self.search.emit(rr.query))
+                self.dig_flow.addWidget(card); self._dig_cards[r.id] = card
+            self.dig_note.setVisible(not picks)
+            self._dig_token = next(self._tokens)
+            self._fetch_images([(r.id, r.thumb) for r in picks], self._dig_token)
+        self._run(work, then)
 
     @staticmethod
     def _pulse(b, n: int, text: str):
@@ -325,7 +427,7 @@ class DiscoverPage(QWidget):
         lay.addLayout(th)
         self.era_blurb = label("", "muted", wrap=True); lay.addWidget(self.era_blurb)
         lay.addLayout(self._section("Labels", "Each opens its whole catalogue, oldest first."))
-        self.era_labels = FlowLayout(spacing=14)
+        self.era_labels = FlowLayout(spacing=14, cell=220)
         w = QWidget(); w.setLayout(self.era_labels); lay.addWidget(w)
         lay.addLayout(self._section("Artists"))
         self.era_artists = FlowLayout(spacing=8)
@@ -347,7 +449,7 @@ class DiscoverPage(QWidget):
             owned = {}
         for name in e["labels"]:
             n = owned.get(name.lower(), 0)
-            t = Tile(name, f"{n} in your library" if n else "Open the catalogue", width=220)
+            t = Tile(name, f"{n} in your library" if n else "Open the catalogue")
             t.clicked.connect(lambda nm=name: self.open_entity("label", nm))
             self.era_labels.addWidget(t)
         for name in e["artists"]:
@@ -584,7 +686,38 @@ class DiscoverPage(QWidget):
                     time.sleep(0.15)
         self.thumbs.start(Fetch())
 
+    def _fetch_images(self, todo: list[tuple[int, str]], token: int):
+        """(release id, image url) -> bridge.thumb(token, id, bytes), cached on disk."""
+        bridge, d = self.bridge, self._thumb_dir()
+        cached = [(rid, d / f"{rid}.jpg") for rid, _ in todo if (d / f"{rid}.jpg").exists()]
+        for rid, p in cached:
+            self._thumb(token, rid, p.read_bytes())
+        rest = [(rid, url, d / f"{rid}.jpg") for rid, url in todo if not (d / f"{rid}.jpg").exists()]
+        if not rest:
+            return
+
+        class Fetch(QRunnable):
+            def run(self_inner):
+                from ..media.metadata import http_get
+                import time
+                for rid, url, p in rest:
+                    if not url.startswith("https://"):
+                        continue
+                    try:
+                        data = http_get(url, 8.0); p.write_bytes(data)
+                        bridge.thumb.emit(token, rid, data)
+                    except Exception:
+                        pass
+                    time.sleep(0.15)
+        self.thumbs.start(Fetch())
+
     def _thumb(self, view: int, rid: int, data):
+        if view == self._dig_token and rid in self._dig_cards:
+            try:
+                self._dig_cards[rid].set_image(data)
+            except RuntimeError:
+                pass
+            return
         if view != self._view_token:
             return
         for i in range(self.tree.topLevelItemCount()):

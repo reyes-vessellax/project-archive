@@ -84,3 +84,17 @@ ERAS = [
 
 def era(key: str) -> dict | None:
     return next((e for e in ERAS if e["key"] == key), None)
+
+
+# Essential labels for Discover: the cornerstones, whatever is in the user's library. (name as Discogs spells it, city)
+ESSENTIAL_LABELS = [
+    ("Trax Records", "Chicago"), ("DJ International Records", "Chicago"), ("Dance Mania", "Chicago"),
+    ("Strictly Rhythm", "New York"), ("Nu Groove Records", "New York"), ("Nervous Records", "New York"),
+    ("KMS", "Detroit"), ("Transmat", "Detroit"), ("Prescription", "Chicago"), ("Relief Records", "Chicago"),
+    ("Cajual Records", "Chicago"), ("Henry Street Music", "New York"),
+]
+
+
+def label_of_the_day(day_ordinal: int) -> str:
+    """Today's dig rotates through the essential labels, one a day."""
+    return ESSENTIAL_LABELS[day_ordinal % len(ESSENTIAL_LABELS)][0]

@@ -31,9 +31,15 @@ def test_format_filters():
     flac = cand(extension="flac")
     mp3_320 = cand(extension="mp3", bitrate_kbps=320)
     mp3_192 = cand(extension="mp3", bitrate_kbps=192)
-    f = av.Filters(lossless=True, mp3_320=True)
-    assert [av.passes(c, f) for c in (flac, mp3_320, mp3_192)] == [True, True, False]
-    assert all(av.passes(c, av.Filters()) for c in (flac, mp3_320, mp3_192))     # no format chosen = any
+    wav, aif, m4a = cand(extension="wav"), cand(extension="aif"), cand(extension="m4a")
+    every = (flac, mp3_320, mp3_192, wav, aif, m4a)
+    assert all(av.passes(c, av.Filters()) for c in every)                        # no type chosen = every type
+    pick = lambda **kw: [av.passes(c, av.Filters(**kw)) for c in every]
+    assert pick(formats=["flac", "wav"]) == [True, False, False, True, False, False]
+    assert pick(formats=["aiff"]) == [False, False, False, False, True, False]     # .aif counts as AIFF
+    assert pick(formats=["mp3"], mp3_320=True) == [False, True, False, False, False, False]
+    assert pick(mp3_320=True) == [True, True, False, True, True, True]            # 320 only touches MP3s
+    assert pick(lossless=True) == [True, False, False, True, True, False]         # an older saved session still works
 
 
 def test_ready_now_and_private_filters():
@@ -50,3 +56,9 @@ def test_mix_filter():
     assert [av.mix_kind_matches(c, "extended") for c in (ext, radio, plain)] == [True, False, False]
     assert av.mix_kind_matches(radio, "radio") and not av.mix_kind_matches(radio, "edit")
     assert av.mix_kind_matches(plain, "original")
+
+
+def test_type_dropdown_and_lossless_combine():
+    flac, mp3 = cand(extension="flac"), cand(extension="mp3", bitrate_kbps=320)
+    assert av.passes(flac, av.Filters(formats=["flac"], lossless=True))
+    assert not av.passes(mp3, av.Filters(formats=["mp3"], lossless=True))       # contradictory: shows nothing

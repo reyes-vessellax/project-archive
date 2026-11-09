@@ -157,3 +157,13 @@ def test_catalogue_number_in_brackets_is_not_a_mix(fixtures, tmp_path):
     s = Settings(); s.online_lookup = False
     assert describe(f, s)["mix"] == ""
     assert describe(g, s)["mix"] == "Extended Mix"
+
+
+def test_download_sites_are_not_labels():
+    from app.media.metadata import clean_label, is_site_name
+    for junk in ("DJDownloadMe.com", "www.musicpool.ru", "Promo Only", "320kbps", "[none]", "Not On Label", "MP3 Pool",
+                 "https://x.example", "Unknown Label"):
+        assert clean_label(junk) == "", junk
+    for real in ("Trax Records", "Dance Mania", "KMS", "Strictly Rhythm", "Downtown 161", "Relief Records"):
+        assert clean_label(real) == real
+    assert is_site_name("DJDownloadMe.com") and not is_site_name("Fast Eddie")

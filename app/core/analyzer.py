@@ -98,7 +98,7 @@ def describe(path: Path, settings: Settings, fetch=None) -> dict:
     if f_mix and not MIX_WORDS.search(f_mix):
         f_mix = ""                                             # "[M.A.D 019]", "[Defected]": a catalogue/label, not a mix
     meta = md.Meta(title=tags["title"] or f_title, artist=tags["artist"] or f_artist, mix=f_mix,
-                   album=tags["album"], label=tags["label"], genre=tags["genre"], year=tags["year"], source="file")
+                   album=tags["album"], label=md.clean_label(tags["label"]), genre=tags["genre"], year=tags["year"], source="file")
     if tags["title"] and f_mix and f_mix.lower() in tags["title"].lower():
         meta.mix = ""                                          # the tag already says "(Extended Mix)"
     cover = md.cover_from_file(path, path.parent / "cover") if tags["has_cover"] else None

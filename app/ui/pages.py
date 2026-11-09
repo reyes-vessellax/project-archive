@@ -287,21 +287,27 @@ class SearchPage(QWidget):
         self.state = label("", "faint"); head.addWidget(self.state); head.addStretch(1)
         head.addWidget(label("What you see is what each source reports. Every file is checked before it can reach your library.", "faint"))
         lay.addLayout(head)
-        # filters (design v6): format, ready now, mix kind, private
-        from ..core.availability import Filters
+        # filters: a file-type drop-down, Lossless, 320 only (MP3s), ready now, private
+        from PySide6.QtWidgets import QComboBox
+        from ..core.availability import FORMATS, Filters
         self.filters = Filters()
         fr = hbox(spacing=8)
+        self.fmt_box = QComboBox()
+        self.fmt_box.addItem("Any file type", "")
+        for key, text in FORMATS:
+            self.fmt_box.addItem(text, key)
+        self.fmt_box.setToolTip("Show only one file type")
+        self.fmt_box.currentIndexChanged.connect(lambda _: self._set_format(self.fmt_box.currentData()))
+        fr.addWidget(self.fmt_box)
         self._fbtns = {}
-        for key, text in (("lossless", "Lossless"), ("mp3_320", "MP3 320"), ("ready_now", "Ready now"), ("show_private", "Show private")):
+        for key, text, tip in (("lossless", "Lossless", "FLAC, WAV and AIFF only"),
+                               ("mp3_320", "320 only", "MP3s must say 320 kbps (the check confirms it after download)"),
+                               ("ready_now", "Ready now", "Only sources with a free slot right now"),
+                               ("show_private", "Show private", "Include folders their owner only shares with friends")):
             b = button(text, "chip", lambda _=False, k=key: self._toggle_filter(k)); b.setCheckable(True)
+            b.setToolTip(tip)
             self._fbtns[key] = b; fr.addWidget(b)
-        from PySide6.QtWidgets import QComboBox
-        self.mix_box = QComboBox()
-        for text, val in (("Any mix", ""), ("Extended", "extended"), ("Original", "original"), ("Radio edit", "radio"),
-                          ("Dub", "dub"), ("Remix", "remix"), ("Edit", "edit")):
-            self.mix_box.addItem(text, val)
-        self.mix_box.currentIndexChanged.connect(lambda _: self._set_mix(self.mix_box.currentData()))
-        fr.addWidget(self.mix_box); fr.addStretch(1)
+        fr.addStretch(1)
         self.hidden_note = label("", "faint"); fr.addWidget(self.hidden_note)
         lay.addLayout(fr)
         self._last_res = None; self._last_searching = False
@@ -415,17 +421,20 @@ class SearchPage(QWidget):
         setattr(self.filters, key, self._fbtns[key].isChecked())
         self._refilter()
 
-    def _set_mix(self, kind: str):
-        self.filters.mix = kind or ""
+    def _set_format(self, key: str):
+        self.filters.formats = [key] if key else []
         self._refilter()
 
     def set_filters(self, d: dict):
         from ..core.availability import Filters
         self.filters = Filters(**{k: v for k, v in (d or {}).items() if k in Filters.__dataclass_fields__})
+        self.filters.mix = ""
+        if len(self.filters.formats) > 1:
+            self.filters.formats = []                       # the drop-down holds one type
         for k, b in self._fbtns.items():
             b.blockSignals(True); b.setChecked(bool(getattr(self.filters, k))); b.blockSignals(False)
-        i = self.mix_box.findData(self.filters.mix)
-        self.mix_box.blockSignals(True); self.mix_box.setCurrentIndex(max(0, i)); self.mix_box.blockSignals(False)
+        i = self.fmt_box.findData(self.filters.formats[0] if self.filters.formats else "")
+        self.fmt_box.blockSignals(True); self.fmt_box.setCurrentIndex(max(0, i)); self.fmt_box.blockSignals(False)
 
     def _refilter(self):
         if self._last_res is not None:
@@ -1024,7 +1033,8 @@ class ReviewPage(QWidget):
             self.facts_key_name = mu.get("key", "")
             self.facts["Key"].setToolTip("From the file's own tags (Camelot code and key name)" if mu.get("key_from_tags")
                                          else "Estimated from the audio (Camelot code and key name)")
-            bits = [me.get("label"), me.get("year"), me.get("genre")]
+            from ..media.metadata import clean_label
+            bits = [clean_label(me.get("label") or ""), me.get("year"), me.get("genre")]
             self.meta_line.setText("  ·  ".join(b for b in bits if b))
             self.meta_line.setToolTip("From " + ", ".join(me.get("sources") or ["the file"]) if me else "")
             cov = me.get("cover_path")

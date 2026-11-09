@@ -131,7 +131,7 @@ def from_musicbrainz(artist: str, title: str, fetch: Fetch) -> Meta | None:
             m = Meta(artist=credit, album=rel.get("title", ""), year=(rel.get("date") or "")[:4], source="MusicBrainz")
             info = _json(fetch, f"https://musicbrainz.org/ws/2/release/{rel['id']}?inc=labels+genres&fmt=json")
             li = (info.get("label-info") or [{}])[0] if info.get("label-info") else {}
-            m.label = ((li.get("label") or {}).get("name") or "")
+            m.label = clean_label((li.get("label") or {}).get("name") or "")
             m.catalog = li.get("catalog-number") or ""
             g = info.get("genres") or []
             m.genre = g[0]["name"].title() if g else ""
@@ -196,6 +196,30 @@ def download_cover(url: str, dest: Path, fetch: Fetch = http_get) -> Path | None
         return None                                        # not an image: never write it
     dest.write_bytes(data)
     return dest
+
+
+# ------------------------------------------------------------------------------------------ junk in tags
+# Download sites, record pools and rippers stamp their name where the label (or artist) should be:
+# "DJDownloadMe.com", "www.xyz.ru", "Promo Only", "320kbps". None of that is a label you can dig.
+_URL = re.compile(r"(https?://|www\.|\b[a-z0-9-]+\.(com|net|org|info|ru|to|cc|me|io|biz|co|us|uk|de|fm|club|xyz|pw|top|site|online|store)\b)", re.I)
+_JUNK = re.compile(r"\b(download|downloads|mp3|kbps|320|flac|free\s*dl|zippy|promo\s*only|record\s*pool|dj\s*pool|"
+                   r"beatport|traxsource|juno\s*download|bandcamp|soundcloud|youtube|spotify|deezer|telegram|vk\.com|"
+                   r"ripped|vinyl\s*rip|unknown|not\s+on\s+label|no\s+label|n/?a)\b", re.I)
+
+
+def clean_label(text: str) -> str:
+    """A label as found in tags or a lookup, or "" when it's a download site, URL or placeholder."""
+    t = (text or "").strip().strip("[]()").strip()
+    if (not t or len(t) > 80 or _URL.search(t) or _JUNK.search(t) or re.search(r"\d\s*kbps", t, re.I)
+            or t.lower() in ("none", "null", "label", "records", "untitled", "white label", "self released", "self-released")
+            or not re.search(r"[A-Za-z]", t)):
+        return ""
+    return t
+
+
+def is_site_name(text: str) -> bool:
+    """For artists: only an obvious web address is thrown out (artist names legitimately contain any word)."""
+    return bool(_URL.search(text or ""))
 
 
 # ------------------------------------------------------------------------------------------ the file

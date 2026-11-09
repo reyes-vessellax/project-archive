@@ -4,6 +4,16 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.8.2 (2026-11-09) — Discover, filled in
+
+- **Discover:** Today's dig (a wall of record covers from a different classic label each day, click to search),
+  Essential labels, Era crates and Artists you play. "Dig your labels" and "Mixes with your new tracks" removed.
+  Cards stretch to fill each row; pages use up to 1600 px instead of stopping at 1180.
+- **Search filters:** a File type drop-down (MP3, FLAC, WAV, AIFF, M4A) plus Lossless, 320 only, Ready now and
+  Show private. The Mix filter is gone (file names don't say the mix reliably).
+- **No more junk labels:** download sites and placeholders in the label tag ("DJDownloadMe.com", "www…", "Promo
+  Only", "320kbps", "Not On Label") are ignored everywhere, and never written back into tags.
+
 ## 0.8.1 (2026-11-09) — headphones
 
 - **Sound follows your headphones:** playback now moves to whatever the system's output is (headphones plugged

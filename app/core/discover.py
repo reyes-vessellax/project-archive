@@ -268,12 +268,16 @@ class LibraryIndex:
     @classmethod
     def build(cls, db) -> "LibraryIndex":
         from ..adapters.base import parse_track
+        from ..media.metadata import clean_label, is_site_name
         tracks = []
         for j in db.jobs(states=(J.PROMOTED,), limit=100_000):
             a = db.analysis(j["id"]) or {}
             me, mu = a.get("meta") or {}, a.get("music") or {}
             p_artist, p_title, _ = parse_track(j.get("original_name") or "")
-            tracks.append(Track(j["id"], me.get("artist") or p_artist, me.get("title") or p_title, me.get("label") or "",
+            artist = me.get("artist") or p_artist
+            if is_site_name(artist):
+                artist = p_artist if not is_site_name(p_artist) else ""
+            tracks.append(Track(j["id"], artist, me.get("title") or p_title, clean_label(me.get("label") or ""),
                                 str(me.get("year") or ""), mu.get("bpm"), mu.get("camelot") or "",
                                 (j.get("updated_at") or "")[:19]))
         idx = cls(tracks)

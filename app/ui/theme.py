@@ -224,6 +224,8 @@ QFrame#tile:hover {{ border-color: {c['line']}; border-top-color: {c['accent']};
 QLabel#tiletitle {{ font-family: {display}; font-size: 16px; font-weight: 700; }}
 QLabel#tilemeta {{ font-family: {mono}; font-size: 11px; letter-spacing: 0.5px; color: {c['accent']}; }}
 QLabel#section {{ font-family: {display}; font-size: 20px; font-weight: 700; margin-top: 6px; }}
+QFrame#cover {{ background: transparent; border: none; }}
+QLabel#covertitle {{ font-family: {display}; font-size: 14px; font-weight: 700; }}
 QFrame#mixrow {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 3px solid {c['accent']}; border-radius: 3px; }}
 QPushButton#pulse {{ background: {c['sel']}; color: {c['sel_text']}; border: none; border-radius: 3px; padding: 0 16px; min-height: 34px; max-height: 34px; font-size: 13px; font-weight: 700; }}
 QPushButton#pulse:hover {{ background: {c['accent']}; color: {c['accent_text']}; }}
