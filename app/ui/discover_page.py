@@ -324,6 +324,140 @@ class RecordCard(QFrame):
         self.status.setText(msg)
 
 
+class TrackTile(QFrame):
+    """One track in a crate row: cover, title, artist, format. Tap: its card opens under the row."""
+    clicked = Signal(object)
+
+    def __init__(self, t):
+        super().__init__()
+        self.track = t
+        self.setObjectName("cover"); self.setCursor(Qt.PointingHandCursor); self.setFixedWidth(158)
+        lay = vbox(self, (0, 0, 0, 6), 3)
+        self.art = CoverArt(); self.art.setFixedSize(158, 158); lay.addWidget(self.art)
+        ti = label(t.title, "covertitle"); ti.setToolTip(f"{t.artist} – {t.title}" + (f" ({t.mix})" if t.mix else ""))
+        lay.addWidget(ti)
+        lay.addWidget(label(t.artist, "muted"))
+        ext = (t.best.extension or "").upper()
+        lay.addWidget(label(ext + (f" {t.best.bitrate_kbps}" if ext == "MP3" and t.best.bitrate_kbps else ""), "copyline"))
+
+    def set_image(self, data: bytes):
+        pm = QPixmap()
+        if pm.loadFromData(data):
+            self.art.set_pixmap(pm)
+
+    def set_open(self, on: bool):
+        self.setProperty("open", on); self.style().unpolish(self); self.style().polish(self)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.LeftButton and self.rect().contains(e.position().toPoint()):
+            self.clicked.emit(self)
+        super().mouseReleaseEvent(e)
+
+
+class CrateRow(QWidget):
+    """A label's crate: a header, a sideways strip of tracks shared right now, and room for the open card."""
+    tapped = Signal(object, object)    # row, tile
+    see_all = Signal(str)
+
+    def __init__(self, name: str, tag: str = ""):
+        super().__init__()
+        self.name = name
+        lay = vbox(self, (0, 0, 0, 0), 8)
+        head = hbox(spacing=12)
+        if tag:
+            head.addWidget(label(tag, "tilemeta"), 0, Qt.AlignBottom)
+        head.addWidget(label(name, "rowtitle"))
+        self.count = label("", "faint"); head.addWidget(self.count, 0, Qt.AlignBottom)
+        head.addStretch(1)
+        self.more = button("See everything  →", "link", lambda: self.see_all.emit(self.name))
+        head.addWidget(self.more, 0, Qt.AlignBottom)
+        lay.addLayout(head)
+        from PySide6.QtWidgets import QScrollArea
+        self.strip_host = QWidget(); self.strip_host.setObjectName("page")
+        self.strip = hbox(self.strip_host, (0, 0, 0, 0), 14); self.strip.addStretch(1)
+        self.area = QScrollArea(); self.area.setWidget(self.strip_host); self.area.setWidgetResizable(True)
+        self.area.setFrameShape(QFrame.NoFrame); self.area.setFixedHeight(262)
+        self.area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        lay.addWidget(self.area)
+        self.note = label("Looking for what people are sharing right now…", "faint"); lay.addWidget(self.note)
+        self.drawer_slot = vbox(spacing=0); lay.addLayout(self.drawer_slot)
+        self.tiles: list[TrackTile] = []
+
+    def fill(self, tracks):
+        for t in self.tiles:
+            t.setParent(None); t.deleteLater()
+        self.tiles = []
+        for tr in tracks:
+            tile = TrackTile(tr); tile.clicked.connect(lambda tl: self.tapped.emit(self, tl))
+            self.strip.insertWidget(self.strip.count() - 1, tile); self.tiles.append(tile)
+        self.count.setText(f"{len(tracks)} ready now" if tracks else "")
+        self.note.setVisible(not tracks)
+        self.area.setVisible(bool(tracks))
+        if not tracks:
+            self.note.setText("Nobody's sharing this label in good quality right now. It's tried again later.")
+
+    def offline(self):
+        self.note.setText("Connect to the network to see what people are sharing."); self.note.show(); self.area.hide()
+
+
+class SpinBar(QFrame):
+    """Spin the crate, slim: one random track from the crates below, ready to play. ↻ is instant."""
+    play = Signal(object)
+    stop = Signal()
+    check = Signal(object)
+    spin = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("spinbar")
+        self.found = None
+        self._previewing = False
+        self._img_token = None
+        lay = hbox(self, (14, 12, 16, 12), 16)
+        self.art = CoverArt(); self.art.setFixedSize(76, 76); lay.addWidget(self.art)
+        txt = vbox(spacing=2)
+        top = hbox(spacing=10)
+        top.addWidget(label("SPIN THE CRATE", "tilemeta"))
+        self.where = label("", "tilemeta"); top.addWidget(self.where); top.addStretch(1)
+        txt.addLayout(top)
+        self.title = label("Loading the crates…", "spinbartitle")
+        self.sub = label("", "muted")
+        txt.addWidget(self.title); txt.addWidget(self.sub)
+        lay.addLayout(txt, 1)
+        self.b_play = button("▶  Play the drop", "accent", self._play)
+        self.b_check = button("Check this file", "primary", lambda: self.found and self.check.emit(self.found.best))
+        self.b_spin = button("↻", "ghost", self.spin.emit); self.b_spin.setToolTip("Another one"); self.b_spin.setFixedWidth(52)
+        for b in (self.b_play, self.b_check, self.b_spin):
+            lay.addWidget(b)
+        self.b_play.setEnabled(False); self.b_check.setEnabled(False)
+        self.status = None
+
+    def show_found(self, f):
+        self.found = f
+        self.title.setText(f.track)
+        c = f.best
+        ext = (c.extension or "").upper() + (f" {c.bitrate_kbps}" if c.bitrate_kbps and (c.extension or "").lower() == "mp3" else "")
+        self.sub.setText(f"{f.release.artist}")
+        self.where.setText("  ·  ".join(x for x in (f.label, f.release.catno, ext, "ready now") if x))
+        self.b_play.setEnabled(True); self.b_check.setEnabled(True); self.b_check.setText("Check this file")
+        self.set_preview_state("")
+        self.art.set_pixmap(None)
+
+    def _play(self):
+        if self._previewing:
+            self.stop.emit()
+        elif self.found:
+            self.play.emit(self.found.best)
+
+    def set_preview_state(self, state: str, msg: str = ""):
+        self._previewing = state in ("loading", "playing")
+        self.b_play.setText("■  Stop" if self._previewing else "▶  Play the drop")
+        if msg:
+            self.sub.setText(msg)
+        elif self.found:
+            self.sub.setText(self.found.release.artist)
+
+
 def chip(text: str, on_click) -> "QWidget":
     b = button(text, "chip", on_click)
     b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -368,7 +502,6 @@ class DiscoverPage(QWidget):
         self.thumbs = QThreadPool(self); self.thumbs.setMaxThreadCount(2)
         self.vpool = QThreadPool(self); self.vpool.setMaxThreadCount(1)     # "who's sharing it" checks, one at a time
         self.bridge = _Bridge(); self.bridge.done.connect(self._done); self.bridge.thumb.connect(self._thumb)
-        self.bridge.found.connect(self._dig_found_one)
         self._tokens = itertools.count(1)
         self._want: dict[int, callable] = {}
         self._history: list[tuple] = []
@@ -405,24 +538,20 @@ class DiscoverPage(QWidget):
 
     # ---- home ------------------------------------------------------------------------------
     def _build_home(self):
-        outer, lay = page(spacing=26)
+        outer, lay = page(spacing=22)
         host = QWidget(); host.setObjectName("page"); vbox(host).addWidget(outer)
         self.home_view = scroll(host); smooth(self.home_view)
         self.stack.addWidget(self.home_view)
 
-        head = vbox(spacing=4)
+        top = hbox(spacing=16)
+        head = vbox(spacing=2)
         head.addWidget(label("Discover", "h1"))
-        head.addWidget(label("House music from the first Chicago 12\"s to this year's records. Dig through the labels, artists and "
-                             "eras behind it.", "muted", wrap=True))
-        lay.addLayout(head)
-
-        srow = hbox(spacing=16)
-        self.q = QLineEdit(); self.q.setObjectName("hero"); self.q.setPlaceholderText("Search for a track, artist or label…")
+        head.addWidget(label("What people are sharing right now, label by label. Play the drop, check the file.", "muted"))
+        top.addLayout(head, 1)
+        self.q = QLineEdit(); self.q.setPlaceholderText("Search a track, artist or label…"); self.q.setMinimumWidth(340)
         self.q.returnPressed.connect(self._search_typed)
-        srow.addWidget(self.q, 1)
-        srow.addWidget(button("Search", "accent", self._search_typed))
-        srow.addWidget(button("Dig a label", "ghost", self._dig_typed))
-        lay.addLayout(srow)
+        top.addWidget(self.q, 0, Qt.AlignBottom)
+        lay.addLayout(top)
 
         self.pulse = hbox(spacing=10)
         self.pulse_waiting = button("", "pulse", lambda: self.go.emit("queue"))
@@ -433,57 +562,44 @@ class DiscoverPage(QWidget):
         self.pulse.addStretch(1)
         lay.addLayout(self.pulse)
 
-        # Spin the crate: one random record that someone is sharing right now
-        self.spin_again = button("↻  Spin again", "primary", self.spin)
-        self.spin_card = RecordCard("SPIN THE CRATE  ·  SOMEONE'S SHARING THIS RIGHT NOW", extra=self.spin_again)
-        self.spin_card.message("Finding a record someone is sharing right now…")
-        lay.addWidget(self.spin_card)
-        self._found_next = None; self._spin_busy = False
+        # era chips: which labels' crates are shown (and spun)
+        self.era_btns = {}
+        fl = FlowLayout(spacing=8)
+        for key, name in [("", "Everything")] + [(e["key"], e["name"]) for e in ERAS]:
+            b = button(name, "chip", lambda _=False, k=key: self.set_era(k)); b.setCheckable(True)
+            self.era_btns[key] = b; fl.addWidget(b)
+        fw = QWidget(); fw.setLayout(fl); lay.addWidget(fw)
+        self.era = getattr(self.svc.settings, "discover_era", "") or ""
 
-        # Today's dig: records from one label (a different one each day), only the ones someone is sharing now
-        dig_head = hbox(spacing=12)
-        dig_head.addWidget(label("Today's dig", "section"))
-        self.dig_label = label("", "tilemeta"); dig_head.addWidget(self.dig_label, 0, Qt.AlignBottom)
-        dig_head.addStretch(1)
-        self.dig_open = button("Open the whole label  →", "link", lambda: self._dig_name and self.open_entity("label", self._dig_name))
-        dig_head.addWidget(self.dig_open, 0, Qt.AlignBottom)
-        lay.addLayout(dig_head)
-        self.dig_note = label("Looking for records people are sharing right now…", "faint"); lay.addWidget(self.dig_note)
-        self.dig_flow = FlowLayout(spacing=14, cell=150)
-        dw = QWidget(); dw.setLayout(self.dig_flow); lay.addWidget(dw)
-        self.dig_card = RecordCard("TODAY'S DIG"); self.dig_card.hide()      # opens in place, under the tapped cover's row
-        self._dig_open = None
-        self._dig_name, self._dig_token, self._dig_cards, self._dig_found = "", -1, {}, {}
-        for card in (self.spin_card, self.dig_card):
-            card.play.connect(lambda c, cd=card: self._card_play(cd, c))
-            card.stop.connect(self.stop_preview.emit)
-            card.check.connect(lambda c, cd=card: self._card_check(cd, c))
-            card.watch.connect(lambda a, t: self.watch.emit(a, t, ""))
-            card.open_label.connect(lambda nm: self.open_entity("label", nm))
-        self._active_card = self.spin_card
+        self.spin_bar = SpinBar()
+        self.spin_bar.play.connect(lambda c: self._card_play(self.spin_bar, c))
+        self.spin_bar.stop.connect(self.stop_preview.emit)
+        self.spin_bar.check.connect(lambda c: self._card_check(self.spin_bar, c))
+        self.spin_bar.spin.connect(self.spin)
+        lay.addWidget(self.spin_bar)
 
-        lay.addLayout(self._section("Era crates", "Hand-picked doors into house, every era. Open one to dig its labels and artists."))
-        eras = FlowLayout(spacing=14, cell=200)
-        for e in ERAS:
-            t = Tile(e["name"], e["years"], e["blurb"], tall=True)
-            t.clicked.connect(lambda k=e["key"]: self.open_era(k))
-            eras.addWidget(t)
-        ew = QWidget(); ew.setLayout(eras); lay.addWidget(ew)
+        self.rows_box = vbox(spacing=30); lay.addLayout(self.rows_box)
+        self.rows: dict[str, CrateRow] = {}
 
-        from ..core.eras import ESSENTIAL_LABELS
-        lay.addLayout(self._section("Essential labels", "Old and new cornerstones. Every record they put out, by year."))
-        ess = FlowLayout(spacing=14, cell=200)
-        for name, city in ESSENTIAL_LABELS:
-            t = Tile(name, city.upper())
-            t.clicked.connect(lambda nm=name: self.open_entity("label", nm))
-            ess.addWidget(t)
-        sw = QWidget(); sw.setLayout(ess); lay.addWidget(sw)
+        # the card a tapped track opens (one at a time, moved to the row it belongs to)
+        self.track_card = RecordCard("READY NOW"); self.track_card.hide()
+        self.track_card.play.connect(lambda c: self._card_play(self.track_card, c))
+        self.track_card.stop.connect(self.stop_preview.emit)
+        self.track_card.check.connect(lambda c: self._card_check(self.track_card, c))
+        self.track_card.watch.connect(lambda a, t: self.watch.emit(a, t, ""))
+        self.track_card.open_label.connect(lambda nm: self.find.emit(nm))
+        self.track_card.b_label.setText("More from this label")
+        self._open_tile = None
+        self._active_card = self.spin_bar
+        self._tiles_token = next(self._tokens)
+        self._tiles_by_img: dict[int, list] = {}
 
-        lay.addLayout(self._section("Artists you play", "Open one for their whole catalogue, aliases and groups."))
+        lay.addLayout(self._section("Artists you play", "From your library. Tap one to see what of theirs people are sharing."))
         self.artists_flow = FlowLayout(spacing=8)
         aw = QWidget(); aw.setLayout(self.artists_flow); lay.addWidget(aw)
         self.artists_empty = label("The artists in your library show up here.", "faint"); lay.addWidget(self.artists_empty)
         lay.addStretch(1)
+        self._loaded_for = None
 
     def _section(self, title: str, note: str = ""):
         box = vbox(spacing=4)
@@ -493,7 +609,6 @@ class DiscoverPage(QWidget):
         return box
 
     def refresh(self, jobs: list[dict] | None = None):
-        """Cheap: the library index is cached until a job changes."""
         jobs = jobs if jobs is not None else self.svc.jobs()
         from ..core import jobs as J
         waiting = sum(1 for j in jobs if j["state"] == J.READY)
@@ -505,9 +620,7 @@ class DiscoverPage(QWidget):
         self._pulse(self.pulse_waiting, waiting, f"{waiting} checked and waiting for you  →")
         self._pulse(self.pulse_found, found, f"{found} wishlist find{'s' if found != 1 else ''}  →")
         self._pulse(self.pulse_down, active, f"{active} downloading or checking  →")
-        self._load_dig()
-        if self.spin_card.found is None and not self._spin_busy:
-            self._prefetch_spin(show=True)
+        self._load_rows()
         try:
             lib = self.engine.library()
         except Exception:
@@ -518,52 +631,163 @@ class DiscoverPage(QWidget):
         self._lib_key = key
         self.artists_flow.clear()
         for name, n in lib.artists(30):
-            self.artists_flow.addWidget(chip(f"{name}  ·  {n}", lambda _=False, nm=name: self.open_entity("artist", nm)))
+            self.artists_flow.addWidget(chip(f"{name}  ·  {n}", lambda _=False, nm=name: self.find.emit(nm)))
         self.artists_empty.setVisible(not lib.artists(1))
 
-    # ---- spin the crate --------------------------------------------------------------------------
-    def _spin_labels(self) -> list[str]:
+    # ---- crate rows ------------------------------------------------------------------------------
+    def _row_labels(self) -> list[str]:
         from ..core.eras import ESSENTIAL_LABELS
-        names = [n for n, _ in ESSENTIAL_LABELS] + [l for e in ERAS for l in e["labels"]]
-        return list(dict.fromkeys(names))
+        if self.era:
+            e = find_era(self.era)
+            if e:
+                return list(dict.fromkeys(e["labels"]))
+        return [n for n, _ in ESSENTIAL_LABELS]
 
-    def _connected(self) -> bool:
-        return getattr(self.svc, "adapter", None) is not None
+    def set_era(self, key: str):
+        self.era = key
+        s = self.svc.settings
+        if getattr(s, "discover_era", "") != key:
+            s.discover_era = key; self.svc.save_settings(s)
+        self._loaded_for = None
+        self._load_rows()
+
+    def _load_rows(self):
+        """Build the rows for the current era and fill each from memory or ONE search, top to bottom."""
+        from datetime import date
+        from ..core.eras import label_of_the_day
+        for k, b in self.era_btns.items():
+            b.setChecked(k == self.era)
+        connected = getattr(self.svc, "adapter", None) is not None
+        want = (self.era, connected)
+        if self._loaded_for == want:
+            return
+        self._loaded_for = want
+        self._close_card()
+        while self.rows_box.count():
+            w = self.rows_box.takeAt(0).widget()
+            if w:
+                w.setParent(None); w.deleteLater()
+        self.rows = {}
+        self._tiles_by_img = {}
+        day_label = label_of_the_day(date.today().toordinal())
+        names = [day_label] + [n for n in self._row_labels() if n != day_label]
+        for i, name in enumerate(names):
+            row = CrateRow(name, "LABEL OF THE DAY" if i == 0 else "")
+            row.tapped.connect(self._tap_tile); row.see_all.connect(self.find.emit)
+            self.rows_box.addWidget(row); self.rows[name] = row
+            if not connected:
+                row.offline()
+        self.spin_bar.title.setText("Loading the crates…" if connected else "Connect to the network to spin the crate.")
+        if not connected:
+            return
+        gen = self._rows_gen = next(self._tokens)
+        lib = self.engine.library()
+        svc = self.svc
+        from ..core.crates import crate
+        for name in names:
+            def work(nm=name):
+                return crate(svc, nm, owns=lib.owns, cancelled=lambda: self._rows_gen != gen)
+
+            def then(res, nm=name):
+                if self._rows_gen != gen or nm not in self.rows:
+                    return
+                if isinstance(res, Exception) or res is None:
+                    self.rows[nm].fill([]); return
+                self.rows[nm].fill(res)
+                self._covers_for(nm, res)
+                if self.spin_bar.found is None:
+                    self.spin()
+            self._run_bg(work, then)
+
+    def _covers_for(self, name: str, tracks):
+        """Covers from Discogs: match the crate's tracks to the label's records (cached after the first time)."""
+        import zlib
+        eng = self.engine
+        row = self.rows.get(name)
+
+        def paint():
+            for tile in (row.tiles if row else []):
+                if tile.track.thumb:
+                    rid = zlib.crc32(tile.track.thumb.encode()) & 0x7FFFFFFF
+                    self._tiles_by_img.setdefault(rid, []).append(tile)
+            todo = {}
+            for rid, tiles in self._tiles_by_img.items():
+                if tiles and tiles[0].track.thumb:
+                    todo[rid] = tiles[0].track.thumb
+            self._fetch_images(list(todo.items()), self._tiles_token)
+
+        if all(t.thumb for t in tracks):
+            paint(); return
+
+        def work():
+            ent = eng.label(name)
+            if not ent.discogs_id:
+                return None
+            recs = []
+            first = eng.label_releases(ent.discogs_id, 1)
+            recs += first.releases
+            for pg in range(2, min(first.pages, 3) + 1):
+                recs += eng.label_releases(ent.discogs_id, pg).releases
+            return recs
+
+        def then(recs):
+            if isinstance(recs, Exception) or not recs or row is None:
+                return
+            from ..core.discover import norm
+            for t in tracks:
+                if t.thumb:
+                    continue
+                a = norm(t.artist)
+                for r in recs:
+                    if r.thumb and a and a in norm(r.artist) and (norm(t.title) in norm(r.title) or norm(r.title) in norm(t.title)
+                                                                  or (t.catno and t.catno.replace(" ", "").lower() in (r.catno or "").replace(" ", "").lower())):
+                        t.thumb = r.thumb; break
+            from ..core.crates import remember
+            remember(self.svc.db, name, tracks)
+            paint()
+        self._run(work, then)
+
+    def _found_for(self, row_name: str, t):
+        from ..core.discover import Release
+        from ..core.discover_avail import Found
+        rel = Release(0, t.title, t.artist, None, t.catno, "", row_name, t.thumb)
+        return Found(rel, {"cover": t.thumb}, row_name, t.title + (f" ({t.mix})" if t.mix else ""), t.best, list(t.alts))
+
+    def _tap_tile(self, row, tile):
+        """Tap a track: its card opens under that row. Tap it again: closed. Tap another: that one opens."""
+        if self._open_tile is tile:
+            self._close_card(); return
+        self._close_card()
+        self._open_tile = tile
+        tile.set_open(True)
+        row.drawer_slot.addWidget(self.track_card)
+        f = self._found_for(row.name, tile.track)
+        self._show_found(self.track_card, f)
+        self.track_card.show()
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(60, lambda: self.home_view.ensureWidgetVisible(self.track_card, 0, 30))
+
+    def _close_card(self):
+        if self._open_tile is not None:
+            try:
+                self._open_tile.set_open(False)
+            except RuntimeError:
+                pass
+        self._open_tile = None
+        if self.track_card._previewing:
+            self.stop_preview.emit()
+        self.track_card.hide()
 
     def spin(self):
-        """Show the record that's ready (instant), then find the next one in the background."""
-        if self._found_next is not None:
-            self._show_found(self.spin_card, self._found_next); self._found_next = None
-            self._prefetch_spin()
+        """A random track from the crates on screen: instant."""
+        import random
+        pool = [(name, t) for name, row in self.rows.items() for t in (tl.track for tl in row.tiles)]
+        if not pool:
             return
-        if self._spin_busy:
-            return
-        self.spin_again.setText("Finding one…"); self.spin_again.setEnabled(False)
-        self._prefetch_spin(show=True)
-
-    def _prefetch_spin(self, show: bool = False):
-        if self._spin_busy:
-            return
-        if not self._connected():
-            self.spin_card.message("Discover only shows records someone is sharing right now, so it needs the network. "
-                                   "It fills in as soon as you're connected.")
-            return
-        self._spin_busy = True
-        eng, svc, labels = self.engine, self.svc, self._spin_labels()
-        from ..core.discover_avail import spin_found
-
-        def then(res):
-            self._spin_busy = False
-            self.spin_again.setText("↻  Spin again"); self.spin_again.setEnabled(True)
-            if isinstance(res, Exception) or res is None:
-                if show or self.spin_card.found is None:
-                    self.spin_card.message("Nobody's sharing those right now. Spin again in a moment.")
-                return
-            if show or self.spin_card.found is None:
-                self._show_found(self.spin_card, res); self._prefetch_spin()
-            else:
-                self._found_next = res
-        self._run_bg(lambda: spin_found(eng, svc, labels), then)
+        cur = self.spin_bar.found
+        choices = [p for p in pool if not cur or p[1].best.key != cur.best.key] or pool
+        name, t = random.choice(choices)
+        self._show_found(self.spin_bar, self._found_for(name, t))
 
     def _show_found(self, card, f):
         if card._previewing:
@@ -573,18 +797,8 @@ class DiscoverPage(QWidget):
         card._img_token = tok
         url = f.details.get("cover") or f.release.thumb
         if url:
-            self._fetch_images([(-f.release.id, url)], tok)
-        if not f.details:                                     # found by its title: fetch style and the big cover now
-            eng = self.engine
-
-            def then(det):
-                if isinstance(det, Exception) or not det:
-                    return
-                f.details = det
-                card.update_meta(f)
-                if card.found is f and det.get("cover"):
-                    self._fetch_images([(-f.release.id - 10**9, det["cover"])], card._img_token)
-            self._run(lambda: eng.release(f.release.id), then)
+            import zlib
+            self._fetch_images([(zlib.crc32(url.encode()) & 0x7FFFFFFF, url)], tok)
 
     def _card_play(self, card, cand):
         if self._active_card is not card and self._active_card._previewing:
@@ -594,8 +808,7 @@ class DiscoverPage(QWidget):
 
     def _card_check(self, card, cand):
         self.pick.emit(cand)
-        card.status.setText("Requested. It downloads into quarantine, gets checked, then waits in your Queue.")
-        card.b_check.setEnabled(False)
+        card.b_check.setEnabled(False); card.b_check.setText("Requested ✓")
 
     # the window drives previews through these (same as the Search page)
     @property
@@ -614,96 +827,6 @@ class DiscoverPage(QWidget):
         f = self._active_card.found
         return next((c for c in (f.alts if f else []) if c.key not in tried and c is not failed), None)
 
-    # ---- today's dig ---------------------------------------------------------------------------
-    DIG_RECORDS = 8           # shown (each one checked as shared right now)
-    DIG_TRIES = 18            # records looked at to find them
-
-    def _load_dig(self):
-        from datetime import date
-        from ..core.eras import label_of_the_day
-        name = label_of_the_day(date.today().toordinal())
-        if name == self._dig_name and (self._dig_cards or getattr(self, "_dig_busy", False)):
-            return
-        if not self._connected():
-            self.dig_note.setText("Today's dig shows records people are sharing right now; it fills in once you're connected.")
-            return
-        self._dig_name, self._dig_busy = name, True
-        self.dig_label.setText(name.upper())
-        self.dig_flow.clear(); self._dig_cards = {}; self._dig_found = {}; self._dig_open = None
-        self.dig_note.setText("Looking for records people are sharing right now…"); self.dig_note.show()
-        eng, svc, day = self.engine, self.svc, date.today().toordinal()
-        tok = self._dig_token = next(self._tokens)
-        bridge = self.bridge
-        from ..core.discover_avail import verify
-
-        def work():
-            ent = eng.label(name)
-            if not ent.discogs_id:
-                return 0
-            first = eng.label_releases(ent.discogs_id, 1)
-            page = first if first.pages <= 1 else eng.label_releases(ent.discogs_id, 1 + (day * 7) % min(first.pages, 30))
-            pool, seen = [], set()
-            for r in page.releases:
-                if r.thumb and r.year and r.artist.lower() not in ("various", "unknown artist") and r.artist not in seen:
-                    seen.add(r.artist); pool.append(r)
-            shown = 0
-            for r in pool[:self.DIG_TRIES]:
-                if shown >= self.DIG_RECORDS or self._dig_token != tok:
-                    break
-                try:
-                    f = verify(eng, svc, r, ent.name, cancelled=lambda: self._dig_token != tok)
-                except Exception:
-                    f = None
-                if f:
-                    shown += 1
-                    bridge.found.emit(tok, f)
-            return shown
-
-        def then(res):
-            self._dig_busy = False
-            if isinstance(res, Exception):
-                self.dig_note.setText("Couldn't reach Discogs just now; trying again in a minute.")
-                from PySide6.QtCore import QTimer
-                self._dig_name = ""
-                QTimer.singleShot(60_000, self._load_dig)
-                return
-            if not self._dig_cards:
-                self.dig_note.setText(f"Nobody's sharing {name} records right now. Tomorrow's dig is a different label.")
-            else:
-                self.dig_note.hide()
-        self._run_bg(work, then)
-
-    def _dig_found_one(self, tok: int, f):
-        if tok != self._dig_token:
-            return
-        r = f.release
-        card = CoverCard(r)
-        card.clicked.connect(lambda ff=f: self._open_dig(ff))
-        self.dig_flow.addWidget(card); self._dig_cards[r.id] = card; self._dig_found[r.id] = f
-        self.dig_note.setText(f"{len(self._dig_cards)} found so far, still looking…")
-        self._fetch_images([(r.id, r.thumb)], self._dig_token)
-
-    def _open_dig(self, f):
-        """Tap a cover: its card opens right under that row. Tap it again: closed. Tap another: that one opens."""
-        rid = f.release.id
-        for c in self._dig_cards.values():
-            c.set_open(False)
-        if self._dig_open == rid:
-            self._dig_open = None
-            if self.dig_card._previewing:
-                self.stop_preview.emit()
-            self.dig_flow.close_drawer()
-            return
-        cover = self._dig_cards.get(rid)
-        if cover is None:
-            return
-        self._dig_open = rid
-        cover.set_open(True)
-        self._show_found(self.dig_card, f)
-        self.dig_flow.open_drawer(self.dig_card, cover)
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(60, lambda: self.home_view.ensureWidgetVisible(self.dig_card, 0, 30))
-
     @staticmethod
     def _pulse(b, n: int, text: str):
         b.setText(text); b.setVisible(n > 0)
@@ -711,11 +834,6 @@ class DiscoverPage(QWidget):
     def _search_typed(self):
         if self.q.text().strip():
             self.find.emit(self.q.text().strip())
-
-    def _dig_typed(self):
-        name = self.q.text().strip()
-        if name:
-            self.open_entity("label", name)
 
     # ---- era crate -------------------------------------------------------------------------
     def _build_era(self):
@@ -1014,17 +1132,18 @@ class DiscoverPage(QWidget):
         self.thumbs.start(Fetch())
 
     def _thumb(self, view: int, rid: int, data):
-        for card in (self.spin_card, self.dig_card):
+        for card in (self.spin_bar, self.track_card):
             if card._img_token == view:
                 pm = QPixmap()
                 if pm.loadFromData(data):
                     card.art.set_pixmap(pm)
                 return
-        if view == self._dig_token and rid in self._dig_cards:
-            try:
-                self._dig_cards[rid].set_image(data)
-            except RuntimeError:
-                pass
+        if view == self._tiles_token:
+            for tile in self._tiles_by_img.get(rid, []):
+                try:
+                    tile.set_image(data)
+                except RuntimeError:
+                    pass
             return
         if view != self._view_token:
             return

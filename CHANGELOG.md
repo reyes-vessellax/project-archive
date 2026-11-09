@@ -4,6 +4,17 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.8.9 (2026-11-09) — Discover as crate rows, much faster
+
+- **Crate rows:** Label of the day on top, then one row per label (era chips choose which), each a sideways strip
+  of tracks people are sharing right now, with real label art from Discogs. "See everything" searches the label
+  inside Discover. Artists you play stays at the bottom.
+- **About 10x faster:** one network search per label fills a whole row (instead of one search per record), and
+  rows are remembered for 3 hours, so Discover reopens instantly.
+- **Spin the crate is a slim bar:** it picks from the rows already loaded, so ↻ is instant.
+- **Tap a track:** its card (Play the drop, Check this file, Watch it, More from this label) opens right under that
+  row. Tap again to close; tap another to switch.
+
 ## 0.8.8 (2026-11-09) — back to the Discover layout, with previews
 
 - **The 0.8.5 layout is back** (Spin the crate, Today's dig, eras, labels) and 0.8.6's shelf is gone: no more
