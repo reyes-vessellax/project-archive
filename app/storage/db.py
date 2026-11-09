@@ -78,7 +78,9 @@ MIGRATIONS = {
     "jobs": {"remote_user": "TEXT", "remote_path": "TEXT", "remote_size": "INTEGER",
              "transfer_id": "TEXT", "progress": "REAL", "hidden": "INTEGER NOT NULL DEFAULT 0",
              "retries": "INTEGER NOT NULL DEFAULT 0", "retry_at": "TEXT",
-             "playlist": "TEXT"},                       # batch playlist it came from (its library sub-folder)
+             "playlist": "TEXT",                        # batch playlist it came from (its library sub-folder)
+             "origin": "TEXT",                          # "discover": dug ahead by Discover (hidden from the Queue)
+             "discover_json": "TEXT"},                  # the record it came from (cover, label, year, era)
 }
 
 

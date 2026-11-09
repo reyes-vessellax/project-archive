@@ -10,6 +10,7 @@ Two ways a track enters quarantine:
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -543,8 +544,9 @@ class ArchiveService:
             if ledger.exists() and all(not p.exists() for p in seen):
                 ledger.unlink(missing_ok=True)
 
-    def request_download(self, cand: Candidate, playlist: str = "") -> dict:
-        """User picked a search result: ask the client to download it and track it as a QUEUED job."""
+    def request_download(self, cand: Candidate, playlist: str = "", origin: str = "", info: dict | None = None) -> dict:
+        """User picked a search result: ask the client to download it and track it as a QUEUED job.
+        origin="discover": Discover dug it ahead; it stays out of the Queue until it's on the shelf."""
         adapter = self._adapter_or_block()
         with self._lock:
             if self.db.find_remote(cand.user, cand.remote_path, tuple(J.NON_FINAL)):
@@ -561,7 +563,9 @@ class ArchiveService:
             expires = (datetime.now(timezone.utc) + timedelta(hours=s.retention_hours)).isoformat(timespec="seconds")
             self.db.insert_job(id=job_id, source_kind=cand.source_kind, source_path=None, original_name=name,
                                state=J.QUEUED, expires_at=expires, remote_user=cand.user, remote_path=cand.remote_path,
-                               remote_size=cand.size, progress=0.0, message="Requested", playlist=playlist or None)
+                               remote_size=cand.size, progress=0.0, message="Requested", playlist=playlist or None,
+                               origin=origin or None, hidden=1 if origin == "discover" else 0,
+                               discover_json=json.dumps(info) if info else None)
         try:
             t = adapter.request_download(cand)
         except ConnectorError as e:

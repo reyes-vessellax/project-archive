@@ -4,6 +4,17 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.8.6 (2026-11-09) — Discover is a shelf of ready-to-take tracks
+
+- **Everything on Discover can be taken right now:** DigMart digs ahead in the background (records from the
+  chosen era's labels that someone is sharing), downloads each into quarantine and runs the full check. Only
+  tracks that are Good AND club-ready go on the shelf; the rest are deleted automatically.
+- On the shelf: ▶ plays it from the drop (it's already here, no waiting), Add to library is instant, ✕ deletes it.
+- Era chips choose what it digs (Everything, Chicago jack, Acid, … Tech & bass house).
+- Bounded: about 12 tracks on the shelf, 2 downloads at a time, searches from the shared budget; dug tracks stay
+  out of the Queue and expire with the normal quarantine retention if not taken.
+- The catalogue pages, Spin card and Today's dig are gone from Discover (you couldn't download from them directly).
+
 ## 0.8.5 (2026-11-09) — Discover only shows what you can actually get
 
 - **Only records someone is sharing right now:** Spin the crate and Today's dig search the network for each record
