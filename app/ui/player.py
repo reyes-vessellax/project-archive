@@ -40,12 +40,30 @@ class Player(QObject):
             self.out = QAudioOutput(self)
             self.out.setVolume(self.volume)
             self.media.setAudioOutput(self.out)
+            # Follow the system's output: plug in headphones (or pick AirPods / an interface in the OS) and
+            # playback moves there. A QAudioOutput otherwise stays on the device it was created with.
+            from PySide6.QtMultimedia import QMediaDevices
+            self._devices = QMediaDevices(self)
+            self._devices.audioOutputsChanged.connect(self.follow_default_output)
+            self.follow_default_output()
             self.media.playbackStateChanged.connect(lambda *_: self.changed.emit())
             self.media.errorOccurred.connect(lambda *_: self.changed.emit())
             return True
         except Exception:
             self.media = self.out = None
             return False
+
+    def follow_default_output(self) -> None:
+        """Point playback at the current default output device, if it changed."""
+        if self.out is None:
+            return
+        try:
+            from PySide6.QtMultimedia import QMediaDevices
+            dev = QMediaDevices.defaultAudioOutput()
+            if not dev.isNull() and dev.id() != self.out.device().id():
+                self.out.setDevice(dev)
+        except Exception:
+            pass                                      # never let a device hiccup stop playback
 
     def set_volume(self, v: float) -> None:
         self.volume = max(0.0, min(1.0, float(v)))
@@ -68,6 +86,7 @@ class Player(QObject):
         self._stop_at.stop()
         if not self._ensure():
             return
+        self.follow_default_output()                  # the OS doesn't always announce a change; check on every play
         if self.media.source().toLocalFile() != path:
             self.media.stop()
             self.media.setSource(QUrl.fromLocalFile(path))
@@ -94,6 +113,7 @@ class Player(QObject):
         if self.playing():
             self.media.pause()
         elif self.path and self._ensure():
+            self.follow_default_output()
             self.media.play()
         self.changed.emit()
 

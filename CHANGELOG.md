@@ -4,6 +4,12 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.8.1 (2026-11-09) — headphones
+
+- **Sound follows your headphones:** playback now moves to whatever the system's output is (headphones plugged
+  in, AirPods connected, an interface picked in the OS). It used to stay on the speakers it started with.
+- Discover: "*" name-variation marks cleaned from credits joined with "And".
+
 ## 0.8.0 (2026-11-09) — Discover
 
 - **Discover is the new home page:** search, what's waiting for you, Era crates (Chicago jack, Acid, Detroit deep,

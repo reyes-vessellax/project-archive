@@ -44,7 +44,7 @@ _SUFFIX = re.compile(r"\s*\(\d+\)$")          # Discogs disambiguation: "Fast Ed
 def clean_name(name: str) -> str:
     """Discogs display name -> the name people use: drops "(2)" and the "*" that marks a name variation, in every
     part of a split credit ("Jack Master Funk* / Jack Master Funk (2)")."""
-    parts = re.split(r"(\s+/\s+|,\s+|\s+&\s+|\s+Feat\.?\s+|\s+Vs\.?\s+)", (name or "").strip())
+    parts = re.split(r"(\s+/\s+|,\s+|\s+&\s+|\s+And\s+|\s+Feat\.?\s+|\s+Vs\.?\s+)", (name or "").strip())
     return "".join(p if i % 2 else _SUFFIX.sub("", p.strip().rstrip("*")).strip() for i, p in enumerate(parts)).strip()
 
 
