@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
         self._acache: dict[str, dict] = {}                   # finished analyses never change; read each once
         self.signals.failed.connect(self._on_failed)
         self.signals.results.connect(self._on_results)
-        self.signals.progress_search.connect(lambda r, f, more: self.searchp.set_progress(r, f, more))
+        self.signals.progress_search.connect(lambda r, f, more: self._sp.set_progress(r, f, more))
         self.signals.status.connect(self._on_status)
         self.signals.staged.connect(self._start_analysis)
         self.steps: dict[str, str] = {}
@@ -171,6 +171,9 @@ class MainWindow(QMainWindow):
         from .discover_page import DiscoverPage
         self.discover = DiscoverPage(self.svc)
         self.home = HomePage(self.svc); self.searchp = SearchPage(self.svc); self.review = ReviewPage(self.svc)
+        # Two independent search pages: the Search tab, and Discover's own finder (a record clicked in Discover is
+        # searched there, so Back returns to the same spot). The running search / preview belongs to one of them.
+        self._sp = self._pv_page = self.searchp
         self.settings = SettingsPage(self.svc); self.library = LibraryPage(self.svc); self.batchp = BatchPage()
         self.wishlistp = WishlistPage(self.svc)
         for p in (self.discover, self.home, self.searchp, self.review, self.settings, self.library, self.batchp, self.wishlistp):
@@ -195,20 +198,27 @@ class MainWindow(QMainWindow):
         self.root.addWidget(shell); self.shell = shell
 
         self.home.search.connect(self._search); self.searchp.search.connect(self._search)
-        self.discover.search.connect(self._search); self.discover.go.connect(self._tab)
+        self.discover.go.connect(self._tab)
         self.discover.watch.connect(self._watch)
         self.home.open_job.connect(self._open_job); self.home.remove_job.connect(self._remove_entry)
         self.home.review_all.connect(lambda: self._tab("ready")); self.home.add_files.connect(self._pick_files)
         self.searchp.pick.connect(self._pick_candidate)
+        finder = self.discover.finder
+        self.discover.find.connect(self._discover_find)
+        finder.search.connect(lambda q: self._search(q, page=finder))
+        finder.pick.connect(self._pick_candidate); finder.watch.connect(self._watch)
+        finder.preview.connect(lambda c: self._preview_from(finder, c)); finder.stop_preview.connect(self._stop_preview)
         self.searchp.filters_changed.connect(lambda: self._save_session())
-        self.searchp.preview.connect(self._preview_candidate); self.searchp.stop_preview.connect(self._stop_preview)
+        self.searchp.preview.connect(lambda c: self._preview_from(self.searchp, c)); self.searchp.stop_preview.connect(self._stop_preview)
         from .player import Player
-        Player.get().changed.connect(lambda: self.searchp.set_preview_state("") if self.searchp._previewing and not Player.get().playing() else None)
+        for _sp in (self.searchp, self.discover.finder):
+            Player.get().changed.connect(lambda sp=_sp: sp.set_preview_state("") if sp._previewing and not Player.get().playing() else None)
         self._preview_jobs: set[str] = set()
         self.review.select.connect(self._open_job)
         self.review.promote.connect(self._promote); self.review.reject.connect(self._reject)
         self.review.cancel.connect(self._cancel); self.review.rerun.connect(self._recheck)
         self.review.retry.connect(self._retry_download)
+        self.review.club_copy.connect(self._club_copy); self.library.club_copy.connect(self._club_copy)
         self.review.open_folder.connect(self._open_folder)
         self.settings.saved.connect(self._settings_saved); self.settings.sign_out.connect(self._sign_out)
         self.settings.account_changed.connect(self._refresh_account)
@@ -429,7 +439,7 @@ class MainWindow(QMainWindow):
                 a = self._analysis(j)
                 if a and a["overall_status"] == "FAIL":
                     problems[key] = "broken file"
-        self.searchp.set_problem_sources(problems)
+        self.searchp.set_problem_sources(problems); self.discover.finder.set_problem_sources(problems)
         self.home.steps = self.steps
         self.home.refresh(jobs, analyses)
         if self.pages.currentWidget() is self.discover:
@@ -594,7 +604,7 @@ class MainWindow(QMainWindow):
             self._batches_resumed = True
             QTimer.singleShot(3000, self._batch_resume_all)      # unfinished playlists carry on once connected
         self.home.set_connected(self._connected, st.message)
-        self.searchp.set_connected(self._connected)
+        self.searchp.set_connected(self._connected); self.discover.finder.set_connected(self._connected)
         if self._waiting_screen():
             c = self.onboarding.connecting
             phase = getattr(self.svc, "phase", "")
@@ -938,17 +948,28 @@ class MainWindow(QMainWindow):
         QApplication.instance().quit()
 
     # ---------------------------------------------------------------- search
-    def _search(self, q: str):
+    def _discover_find(self, q: str):
+        """A record clicked (or typed) in Discover: search for it inside Discover; Back returns to where you were."""
+        self.discover.show_find(q)
+        self._search(q, page=self.discover.finder)
+
+    def _search(self, q: str, page=None):
         q = q.strip()
         if not q:
             return
         if self.svc.managed_mode and not self._connected:
             self.statusBar().showMessage("Still connecting. Search opens as soon as you're signed in.", 5000)
             return
-        self.home.q.setText(q); self.searchp.q.setText(q)
-        self.pages.setCurrentWidget(self.searchp); self.topbar.set_active("search")
+        page = page or self.searchp
+        if self._sp is not page and self.search_running:
+            self._sp.end_search()                               # the other page's search hands over cleanly
+        self._sp = page
+        page.q.setText(q)
+        if page is self.searchp:
+            self.home.q.setText(q)
+            self.pages.setCurrentWidget(self.searchp); self.topbar.set_active("search")
         self.search_id = None                                    # results from the previous search stop landing
-        self.searchp.begin_search(q)
+        page.begin_search(q)
         self.home.search_btn.setText("Searching…"); self.home.search_btn.setEnabled(False)
         self.search_running = True
 
@@ -1082,15 +1103,25 @@ class MainWindow(QMainWindow):
         """Whatever path a search took to its end, the two Search buttons must read "Search" again."""
         if not self.search_running:
             self.home.search_btn.setText("Search"); self.home.search_btn.setEnabled(self._connected)
-            self.searchp.end_search()
+            self._sp.end_search()
 
     def _on_results(self, res: SearchResult):
         _applog(f"on_results id={str(res.search_id)[:8]} mine={str(self.search_id)[:8]} n={len(res.candidates)} running={self.search_running}")
         if res.search_id == self.search_id:
-            self.searchp.show_results(res, searching=self.search_running)
+            self._sp.show_results(res, searching=self.search_running)
             if not self.search_running:
                 self.home.search_btn.setText("Search"); self.home.search_btn.setEnabled(self._connected)
         self._last_results = res
+
+    def _club_copy(self, job_id: str):
+        self.statusBar().showMessage("Making a club-ready copy and checking it against the original…", 10000)
+
+        def work():
+            new = self.svc.make_club_copy(job_id)          # raises ActionBlocked with the reason; shown by _on_failed
+            self.signals.notice.emit("Club-ready copy made and verified. It's being checked now and will wait in "
+                                     "your Queue; the original is unchanged.")
+            self.signals.staged.emit(new["id"])
+        self.io.start(Task(work, self.signals))
 
     def _pick_candidate(self, cand: Candidate):
         def work():
@@ -1099,7 +1130,13 @@ class MainWindow(QMainWindow):
         self.io.start(Task(work, self.signals))
         self.statusBar().showMessage(f"Requested “{cand.title or cand.display_name}”. It goes to quarantine first.", 6000)
 
-    # ---------------------------------------------------------------- preview (Search only)
+    # ---------------------------------------------------------------- preview (Search tab or Discover's finder)
+    def _preview_from(self, page, cand: Candidate):
+        if self._pv_page is not page:
+            self._stop_preview()
+        self._pv_page = page
+        self._preview_candidate(cand)
+
     def _preview_candidate(self, cand: Candidate, retry_of: str = ""):
         """~20 seconds from the middle WITHOUT downloading the track (header, jump, fetch the slice, cancel, delete).
         If a copy that looked ready queues us after all, it's marked busy and the next ready copy of the same
@@ -1111,7 +1148,7 @@ class MainWindow(QMainWindow):
             self._pv_tried = set()
         self._pv_tried.add(cand.key)
         self._pv_cand = cand
-        self.searchp.set_preview_state("loading", retry_of or f"Getting a preview of “{name}”…")
+        self._pv_page.set_preview_state("loading", retry_of or f"Getting a preview of “{name}”…")
 
         def work():
             try:
@@ -1128,19 +1165,19 @@ class MainWindow(QMainWindow):
     def _preview_busy(self, message: str):
         """The copy queued us: show it as busy and try another ready copy of the same track."""
         failed = getattr(self, "_pv_cand", None)
-        self.searchp.mark_busy(failed)
-        alt = self.searchp.ready_alternative(failed, getattr(self, "_pv_tried", set())) if failed else None
+        self._pv_page.mark_busy(failed)
+        alt = self._pv_page.ready_alternative(failed, getattr(self, "_pv_tried", set())) if failed else None
         if alt is not None and len(self._pv_tried) < 3 and not self._pv_stop_flag:
             self._preview_candidate(alt, retry_of=f"{message} Trying another ready copy ({alt.user})…")
             return
-        self.searchp.set_preview_state("", message + " No other copy of this track is ready right now; "
+        self._pv_page.set_preview_state("", message + " No other copy of this track is ready right now; "
                                                      "press Check this file to wait in line for it.")
 
     def _stop_preview(self):
         self._pv_stop_flag = True
         from .player import Player
         Player.get().stop()
-        self.searchp.set_preview_state("")
+        self._pv_page.set_preview_state("")
 
     def _poll_downloads(self):
         if self.svc.adapter is None or self._polling:
@@ -1265,18 +1302,18 @@ class MainWindow(QMainWindow):
 
     def _notice(self, message: str):
         if message.startswith("PREVIEW_PROGRESS "):
-            self.searchp.set_preview_state("loading", message.split(" ", 1)[1]); return
+            self._pv_page.set_preview_state("loading", message.split(" ", 1)[1]); return
         if message.startswith("PREVIEW_BUSY "):
             self._preview_busy(message.split(" ", 1)[1]); return
         if message.startswith("PREVIEW_FAILED "):
-            self.searchp.set_preview_state("", message.split(" ", 1)[1]); return
+            self._pv_page.set_preview_state("", message.split(" ", 1)[1]); return
         if message.startswith("PREVIEW_READY "):
             wav, start, name, artist = message.split(" ", 1)[1].split("\t")
             from .player import Player
             pos = int(float(start))
             Player.get().play(wav, name, f"{artist + ' · ' if artist else ''}preview from {pos // 60}:{pos % 60:02d} · not downloaded",
                               stop_after_s=21)
-            self.searchp.set_preview_state("playing", "Playing a preview from the middle. Nothing was kept; press Check this file to download it.")
+            self._pv_page.set_preview_state("playing", "Playing a preview from the middle. Nothing was kept; press Check this file to download it.")
             return
         if message.startswith("UPDATE_READY "):
             self.topbar.set_update(f"Update to {message.split()[1]} · restart")

@@ -226,7 +226,7 @@ class _Job(QRunnable):
 
 # ------------------------------------------------------------------------------------------ the page
 class DiscoverPage(QWidget):
-    search = Signal(str)
+    find = Signal(str)                 # search for this inside Discover (its own finder; Back returns here)
     watch = Signal(str, str, str)      # artist, title, mix
     go = Signal(str)                   # sidebar key: "queue", "wishlist", "library"
 
@@ -246,6 +246,7 @@ class DiscoverPage(QWidget):
         self._build_home()
         self._build_era()
         self._build_entity()
+        self._build_find()
         self.stack.setCurrentWidget(self.home_view)
 
     # ---- plumbing ---------------------------------------------------------------------------
@@ -272,8 +273,8 @@ class DiscoverPage(QWidget):
 
         head = vbox(spacing=4)
         head.addWidget(label("Discover", "h1"))
-        head.addWidget(label("Classic and underground house. Dig through the labels, artists and eras behind "
-                             "what you already play.", "muted", wrap=True))
+        head.addWidget(label("House music from the first Chicago 12\"s to this year's records. Dig through the labels, artists and "
+                             "eras behind it.", "muted", wrap=True))
         lay.addLayout(head)
 
         srow = hbox(spacing=16)
@@ -300,7 +301,7 @@ class DiscoverPage(QWidget):
         sb.addWidget(self.spin_art, 0, Qt.AlignTop)
         info = vbox(spacing=6)
         info.addWidget(label("SPIN THE CRATE", "tilemeta"))
-        self.spin_title = label("Press Spin for a random record from the classic labels.", "spintitle"); self.spin_title.setWordWrap(True)
+        self.spin_title = label("Press Spin for a random record from the labels below.", "spintitle"); self.spin_title.setWordWrap(True)
         self.spin_artist = label("", "spinartist")
         self.spin_meta = label("", "tilemeta"); self.spin_meta.setWordWrap(True)
         self.spin_tracks = label("", "muted", wrap=True)
@@ -310,7 +311,7 @@ class DiscoverPage(QWidget):
         acts = hbox(spacing=10)
         self.spin_listen = button("▶  Listen", "accent", self._spin_listen)
         self.spin_listen.setToolTip("Plays the clip Discogs lists for this record (opens in your browser)")
-        self.spin_find = button("Search for it", "ghost", lambda: self._spun and self.search.emit(self._spun[0].query))
+        self.spin_find = button("Search for it", "ghost", lambda: self._spun and self.find.emit(self._spun[0].query))
         self.spin_watch = button("Watch it", "ghost", self._spin_watch)
         self.spin_label = button("Open the label", "ghost", lambda: self._spun and self.open_entity("label", self._spun[2]))
         self.spin_again = button("↻  Spin again", "primary", self.spin)
@@ -335,7 +336,7 @@ class DiscoverPage(QWidget):
         dw = QWidget(); dw.setLayout(self.dig_flow); lay.addWidget(dw)
         self._dig_name, self._dig_token, self._dig_cards = "", -1, {}
 
-        lay.addLayout(self._section("Era crates", "Hand-picked doors into house history. Open one to dig its labels and artists."))
+        lay.addLayout(self._section("Era crates", "Hand-picked doors into house, every era. Open one to dig its labels and artists."))
         eras = FlowLayout(spacing=14, cell=200)
         for e in ERAS:
             t = Tile(e["name"], e["years"], e["blurb"], tall=True)
@@ -344,7 +345,7 @@ class DiscoverPage(QWidget):
         ew = QWidget(); ew.setLayout(eras); lay.addWidget(ew)
 
         from ..core.eras import ESSENTIAL_LABELS
-        lay.addLayout(self._section("Essential labels", "The cornerstones. Every record they put out, oldest first."))
+        lay.addLayout(self._section("Essential labels", "Old and new cornerstones. Every record they put out, by year."))
         ess = FlowLayout(spacing=14, cell=200)
         for name, city in ESSENTIAL_LABELS:
             t = Tile(name, city.upper())
@@ -475,9 +476,16 @@ class DiscoverPage(QWidget):
         self.dig_label.setText(name.upper())
         eng = self.engine
 
+        day = date.today().toordinal()
+
         def work():
             ent = eng.label(name)
-            return eng.label_releases(ent.discogs_id, 1) if ent.discogs_id else None
+            if not ent.discogs_id:
+                return None
+            first = eng.label_releases(ent.discogs_id, 1)
+            if first.pages <= 1:
+                return first
+            return eng.label_releases(ent.discogs_id, 1 + (day * 7) % min(first.pages, 30))   # any era of the label
 
         def then(res):
             self._dig_busy = False
@@ -497,7 +505,7 @@ class DiscoverPage(QWidget):
             self.dig_flow.clear(); self._dig_cards = {}
             for r in picks:
                 card = CoverCard(r)
-                card.clicked.connect(lambda rr=r: self.search.emit(rr.query))
+                card.clicked.connect(lambda rr=r: self.find.emit(rr.query))
                 self.dig_flow.addWidget(card); self._dig_cards[r.id] = card
             self.dig_note.setVisible(not picks)
             self._dig_token = next(self._tokens)
@@ -510,7 +518,7 @@ class DiscoverPage(QWidget):
 
     def _search_typed(self):
         if self.q.text().strip():
-            self.search.emit(self.q.text().strip())
+            self.find.emit(self.q.text().strip())
 
     def _dig_typed(self):
         name = self.q.text().strip()
@@ -854,7 +862,7 @@ class DiscoverPage(QWidget):
     def _search_selected(self):
         r = self._current()
         if r:
-            self.search.emit(r.query)
+            self.find.emit(r.query)
 
     def _watch_selected(self):
         r = self._current()
@@ -878,9 +886,32 @@ class DiscoverPage(QWidget):
             from PySide6.QtGui import QDesktopServices
             QDesktopServices.openUrl(QUrl(self._ent.url))
 
+    # ---- find: search for a record without leaving Discover ----------------------------------------
+    def _build_find(self):
+        from .pages import SearchPage
+        self.find_view = QWidget(); self.find_view.setObjectName("page")
+        fl = vbox(self.find_view, (0, 0, 0, 0), 0)
+        bar = QWidget(); bl = hbox(bar, (36, 18, 36, 0), 14)
+        bl.addWidget(button("←  Back", "link", self.back))
+        self.find_note = label("", "faint"); bl.addWidget(self.find_note); bl.addStretch(1)
+        fl.addWidget(bar)
+        self.finder = SearchPage(self.svc)        # its own results, separate from the Search tab
+        fl.addWidget(self.finder, 1)
+        self.stack.addWidget(self.find_view)
+
+    def show_find(self, q: str):
+        """Called by the window just before it starts the search here."""
+        here = self.stack.currentWidget()
+        if here is not self.find_view:
+            self._history.append(("find", q, here))
+        self.find_note.setText(f"In Discover  ·  back takes you to where you were")
+        self.stack.setCurrentWidget(self.find_view)
+
     def back(self):
-        if self._history:
-            self._history.pop()
+        last = self._history.pop() if self._history else None
+        if last and last[0] == "find":
+            self.stack.setCurrentWidget(last[2])                # exactly as you left it: scroll, selection, list
+            return
         self._view_token = next(self._tokens)                 # drop any lookup still on its way
         if not self._history:
             self.stack.setCurrentWidget(self.home_view); return

@@ -26,18 +26,21 @@ from ..core.rules import FAIL, PASS, WARN, Check
 from .tools import find_tool, run
 
 LOADS = {"mp3", "wav", "aiff", "aif", "flac", "m4a"}
-SR_OK = (44100, 48000, 88200, 96000)
+TRACK_S = 90                 # shorter than this is a sample, a loop or an edit: no loudness / low-end verdicts
 
 
 def club_checks(path: Path, facts, avg_spectrum_db=None, decode_sr: int | None = None, ffmpeg_override: str = "",
                 timeout: float = 180.0) -> dict:
     checks = [_loads(path, facts)]
     stats = _measure(path, ffmpeg_override, timeout)
+    dur = facts.duration_s or stats.get("duration") or 0
     checks.append(_mono(path, facts, ffmpeg_override, timeout))
-    checks.append(_clipping(stats))
-    checks.append(_loudness(stats))
-    if avg_spectrum_db is not None and decode_sr:
-        checks.append(_low_end(avg_spectrum_db, decode_sr))
+    checks.append(_clipping(stats, dur))
+    is_track = dur >= TRACK_S                                  # loudness and bass only mean something for a track
+    if is_track:
+        checks.append(_loudness(stats))
+        if avg_spectrum_db is not None and decode_sr:
+            checks.append(_low_end(avg_spectrum_db, decode_sr))
     checks.append(_usb(path))
     checks = [c for c in checks if c is not None]
     return {"ready": not any(c.status == FAIL for c in checks),
@@ -60,12 +63,19 @@ def _loads(path: Path, f) -> Check:
         return Check("club_load", FAIL, "Decks can load it", f"{sr / 1000:g} kHz: CDJs play up to 96 kHz.")
     if ext == "m4a":
         return Check("club_load", WARN, "Decks can load it",
-                     "M4A/AAC loads in Rekordbox and on CDJs, but older players and USB sticks are fussier with it. "
-                     "AIFF, WAV, FLAC or MP3 are the safe picks.")
-    if sr and sr not in SR_OK:
+                     "M4A/AAC loads in Rekordbox and on CDJ-2000NXS2/3000, but older players are fussier with it. "
+                     "AIFF, WAV or MP3 play on every deck.")
+    if sr in (88200, 96000):
+        return Check("club_load", WARN, "Decks can load it",
+                     f"{sr / 1000:g} kHz plays on CDJ-3000 and NXS2, but older CDJ-2000/900 and many XDJs only play "
+                     "44.1 or 48 kHz. A club-ready copy plays on all of them.")
+    if sr and sr not in (44100, 48000):
         return Check("club_load", WARN, "Decks can load it", f"Unusual sample rate ({sr} Hz); 44.1 or 48 kHz is safest.")
     detail = f"{ext.upper()}, {sr / 1000:g} kHz" + (f", {f.bit_depth}-bit" if f.bit_depth else "")
-    return Check("club_load", PASS, "Decks can load it", f"{detail}: plays on CDJs and in Rekordbox.")
+    if ext == "flac":
+        return Check("club_load", PASS, "Decks can load it",
+                     f"{detail}: plays in Rekordbox and on CDJ-3000/NXS2. (Pre-NXS2 CDJ-2000s don't read FLAC.)")
+    return Check("club_load", PASS, "Decks can load it", f"{detail}: plays on every CDJ and in Rekordbox.")
 
 
 # 2 ------------------------------------------------------------------------------------------------
@@ -87,27 +97,33 @@ def _mono(path: Path, f, override: str, timeout: float) -> Check | None:
 
 
 def mono_verdict(L: np.ndarray, R: np.ndarray, sr: int) -> Check:
-    """Overall phase correlation, plus what happens to the bass (< 150 Hz) when the system sums to mono."""
+    """What a mono-summed system does to it: the level lost overall, and the bass lost below 150 Hz.
+    Bass is only judged when the file has real bass (a hat loop's "bass" is noise and proves nothing)."""
     eL, eR = float(np.dot(L, L)), float(np.dot(R, R))
     if eL < 1e-9 or eR < 1e-9:
         return Check("club_mono", PASS, "Mono-safe", "One side is silent; it sums to mono unchanged.")
     corr = float(np.dot(L, R) / np.sqrt(eL * eR))
-    M, S = (L + R) / 2, (L - R) / 2
+    M = (L + R) / 2
+    loss_all = 10 * np.log10(max(float(np.dot(M, M)), 1e-12) / ((eL + eR) / 2))   # 0 dB = identical sides
     n = 8192
-    low_m = low_s = 0.0
+    st_low = m_low = total = 0.0
     for i in range(0, len(M) - n, n * 4):                     # every 4th block is plenty
-        fm, fs = np.fft.rfft(M[i:i + n]), np.fft.rfft(S[i:i + n])
+        fl, fr = np.fft.rfft(L[i:i + n]), np.fft.rfft(R[i:i + n])
         k = int(150 * n / sr)
-        low_m += float(np.sum(np.abs(fm[1:k]) ** 2)); low_s += float(np.sum(np.abs(fs[1:k]) ** 2))
-    bass_side = low_s / (low_m + low_s + 1e-12)                # share of the bass that disappears in mono
-    if bass_side > 0.5 or corr < -0.2:
+        st_low += float(np.sum(np.abs(fl[1:k]) ** 2 + np.abs(fr[1:k]) ** 2)) / 2
+        m_low += float(np.sum(np.abs((fl[1:k] + fr[1:k]) / 2) ** 2))
+        total += float(np.sum(np.abs(fl) ** 2 + np.abs(fr) ** 2)) / 2
+    has_bass = total > 0 and st_low / total > 0.05             # at least 5 % of the energy below 150 Hz
+    loss_bass = 10 * np.log10(max(m_low, 1e-12) / st_low) if has_bass and st_low > 0 else 0.0
+    if (has_bass and loss_bass < -6) or loss_all < -6:
+        what = f"the bass drops {abs(loss_bass):.0f} dB" if has_bass and loss_bass < -6 else f"it drops {abs(loss_all):.0f} dB"
         return Check("club_mono", FAIL, "Mono-safe",
-                     f"Out of phase: on a mono-summed system about {bass_side * 100:.0f}% of the bass cancels "
-                     f"(correlation {corr:+.2f}). The kick and bass can vanish on a big rig.")
-    if bass_side > 0.2 or corr < 0.2:
+                     f"Out of phase: on a mono-summed system {what} (correlation {corr:+.2f}). "
+                     "The kick and bass can vanish on a big rig.")
+    if (has_bass and loss_bass < -3) or loss_all < -4:
+        what = f"the bass drops {abs(loss_bass):.1f} dB" if has_bass and loss_bass < -3 else f"it drops {abs(loss_all):.1f} dB"
         return Check("club_mono", WARN, "Mono-safe",
-                     f"Very wide stereo (correlation {corr:+.2f}, {bass_side * 100:.0f}% of the bass in the sides). "
-                     "It may lose weight on a mono system.")
+                     f"Wide stereo: on a mono-summed system {what} (correlation {corr:+.2f}). It may lose weight there.")
     return Check("club_mono", PASS, "Mono-safe", f"Sums to mono cleanly (correlation {corr:+.2f}).")
 
 
@@ -144,26 +160,28 @@ def parse_stats(err: str) -> dict:
     return out
 
 
-def _clipping(st: dict) -> Check | None:
-    pk, n, flat = st.get("peak_db"), st.get("peak_count"), st.get("flat")
+def _clipping(st: dict, dur: float) -> Check | None:
+    """Sustained clipping only: a master that sits on full scale hundreds of times, not a peak that touches it."""
+    pk, n = st.get("peak_db"), st.get("peak_count") or 0
     if pk is None:
         return None
-    if pk >= -0.05 and ((n or 0) >= 200 or (flat or 0) >= 1.0):
+    per_min = n / max(dur / 60, 0.5)
+    if pk >= -0.1 and n >= 500 and per_min >= 100:
         return Check("club_clip", WARN, "Clipping",
-                     f"Hits full scale {int(n or 0):,} times: flat-topped peaks that turn harsh on a big system.")
+                     f"Sits on full scale {int(n):,} times: flat-topped peaks that turn harsh on a big system.")
     tp = st.get("true_peak")
-    if tp is not None and tp > 1.0:
-        return Check("club_clip", WARN, "Clipping", f"True peak {tp:+.1f} dBTP: it overshoots once converted to analogue.")
+    if tp is not None and tp > 2.0:
+        return Check("club_clip", WARN, "Clipping", f"True peak {tp:+.1f} dBTP: hot enough to distort some converters.")
     return Check("club_clip", PASS, "Clipping", "No clipping found" + (f" (true peak {tp:+.1f} dBTP)." if tp is not None else "."))
 
 
 def _loudness(st: dict) -> Check | None:
     i = st.get("lufs")
-    if i is None:
+    if i is None or i <= -69:                                 # -70 is EBU R128's "nothing measurable", not a level
         return None
     if i < -20:
-        return Check("club_loud", WARN, "Loudness", f"{i:.1f} LUFS: much quieter than club records (about -10 to -6). "
-                                                     "You'll be riding the gain.")
+        return Check("club_loud", WARN, "Loudness", f"{i:.1f} LUFS: much quieter than most club records (about -14 to -6). "
+                                                     "You'll need a lot more gain on this one.")
     if i > -4.5:
         return Check("club_loud", WARN, "Loudness", f"{i:.1f} LUFS: squashed very hard; it may sound flat and tiring loud.")
     return Check("club_loud", PASS, "Loudness", f"{i:.1f} LUFS: in the range of club records.")
@@ -180,8 +198,8 @@ def _low_end(avg_db: np.ndarray, sr: int) -> Check | None:
         return None
     diff = 10 * np.log10(low / mid)
     if diff < -20:
-        return Check("club_low", WARN, "Low end", f"Thin bottom: the bass sits {abs(diff):.0f} dB under the mids "
-                                                  "(a rolled-off rip, or a track with little bass).")
+        return Check("club_low", WARN, "Low end", f"Little bass: it sits {abs(diff):.0f} dB under the mids. Fine for an "
+                                                  "acapella, intro or tool; on a full track it usually means a rolled-off rip.")
     return Check("club_low", PASS, "Low end", "Bass is there.")
 
 

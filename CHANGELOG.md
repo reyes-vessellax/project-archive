@@ -4,6 +4,22 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.8.4 (2026-11-09) — search inside Discover, club-ready copy, a stricter club check
+
+- **Search inside Discover:** clicking a record (Today's dig, a label or artist page, Spin's Search for it) or
+  typing in Discover's search box finds it right there, with Preview and Check this file. Back returns to exactly
+  where you were. The Search tab keeps its own results.
+- **Discover is every era:** new crates for the 2000s (deep & soulful), 2010s (lo-fi & outsider) and tech & bass
+  house; essential labels from Trax and Strictly Rhythm to Defected, Dirtybird, L.I.E.S. and Rhythm Section.
+- **Make a club-ready copy** (Library details and the review page) for files the decks can't load, or older decks
+  can't: AIFF, 24-bit (16 when the source is 16), 44.1/48 kHz. Each copy is proved against the original (decoded
+  length within 20 ms, loudness within 0.2 LU, peaks not raised, audio match >= 0.995) then checked like a new
+  file. Any failure: no copy, and the reason. The original is never changed.
+- **Club check, tightened against real files** (a run over the user's own library found false alarms on loops and
+  one-shots): loudness and low end only judged on files over 90 s; "-70 LUFS" (unmeasurable) no longer reported;
+  mono judged by the dB actually lost when summed, and bass only when there is bass; clipping needs sustained
+  full-scale hits; true-peak note from +2 dBTP; 88.2/96 kHz is a note (older CDJs play only 44.1/48).
+
 ## 0.8.3 (2026-11-09) — club-ready check, Spin the crate
 
 - **Club-ready check** on every checked track, shown under the verdict as CLUB-READY ✓ / NOT CLUB-READY ✗:

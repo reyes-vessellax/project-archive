@@ -1,4 +1,4 @@
-"""Discover: dig for classic and underground house from what you already own.
+"""Discover: dig for house music, every era, from the labels, artists and records behind it.
 
 Where the data comes from (all public, no account):
 - MusicBrainz finds a label or artist by name and links it to its Discogs page (url relations).
@@ -232,7 +232,6 @@ class Discover:
             page = first if first.pages <= 1 else self.label_releases(ent.discogs_id, rng.randint(1, min(first.pages, 30)))
             pool = [r for r in page.releases if r.year and r.artist.lower() not in ("various", "unknown artist")]
             rng.shuffle(pool)
-            pool.sort(key=lambda r: r.year > 2005)                  # the original era first; reissues only if that's all
             fallback = None
             for r in pool[:4]:
                 det = self.release(r.id)

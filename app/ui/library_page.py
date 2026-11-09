@@ -36,6 +36,7 @@ def reveal_in_folder(path: Path) -> None:
 class LibraryPage(QWidget):
     open_job = Signal(str)
     delete_job = Signal(str)          # move the file to the Trash and take it out of the library
+    club_copy = Signal(str)           # make a verified club-ready copy
     crates_changed = Signal()
     COLS = ["Title", "Artist", "Mix", "BPM", "Key", "Format", "Bitrate", "Length", "Checked", "Added", "File"]
     WIDTHS = [210, 150, 100, 60, 50, 64, 84, 56, 80, 110, 160]
@@ -320,12 +321,15 @@ class LibraryPage(QWidget):
         self.btn_close = button("Close", "ghost", self._collapse)
         self.btn_crate = button("Add to crate ▾", "ghost", self._crate_menu)
         self.btn_uncrate = button("Remove from crate", "ghost", self._remove_from_crate)
+        self.btn_club = button("Make a club-ready copy", "ghost", lambda: self._open_id and self.club_copy.emit(self._open_id))
+        self.btn_club.setToolTip("Converts the format so every CDJ and Rekordbox loads it, proves the copy matches the "
+                                 "original, then checks it like any new file. The original is never changed.")
         self.btn_delete = button("Delete from library", "danger", self._delete)
         self.btn_delete.setToolTip(f"Moves the file to the {'Recycle Bin' if sys.platform == 'win32' else 'Trash'} "
                                    "(you can still get it back from there)")
-        acts.addWidget(self.btn_reveal); acts.addWidget(self.btn_crate); acts.addWidget(self.btn_uncrate)
+        acts.addWidget(self.btn_reveal); acts.addWidget(self.btn_crate); acts.addWidget(self.btn_uncrate); acts.addWidget(self.btn_club)
         acts.addStretch(1); acts.addWidget(self.btn_delete); acts.addWidget(self.btn_close)
-        for b in (self.btn_reveal, self.btn_close, self.btn_crate, self.btn_uncrate, self.btn_delete):
+        for b in (self.btn_reveal, self.btn_close, self.btn_crate, self.btn_uncrate, self.btn_delete, self.btn_club):
             b.setMinimumWidth(b.sizeHint().width() + 8)       # a squeezed button cut its own label off
         pl.addLayout(right, 2)
         outer.addLayout(acts)                                  # across the whole drop-down, under both columns
@@ -505,6 +509,8 @@ class LibraryPage(QWidget):
             hl.addWidget(tag); hl.addWidget(txt, 1)
             self.checks_host.addWidget(row)
         self.btn_reveal.setEnabled(exists)
+        from ..media.clubcopy import needs_copy
+        self.btn_club.setVisible(exists and needs_copy(a.get("club")))
 
     def _bpm_range(self) -> tuple[float, float] | None:
         import re as _re

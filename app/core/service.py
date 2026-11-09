@@ -964,6 +964,34 @@ class ArchiveService:
         """What the queue panel shows: everything the user hasn't removed."""
         return self.db.jobs(include_hidden=False)
 
+    def make_club_copy(self, job_id: str) -> dict:
+        """A verified club-ready AIFF of a checked track, staged as a NEW job (it then gets the normal check).
+        The original file and its job are never touched. Raises ActionBlocked with the reason if it can't."""
+        from ..media.clubcopy import CopyFailed, make_club_copy, needs_copy
+        from ..media.probe import probe
+        job = self._require(job_id)
+        a = self.db.analysis(job_id) or {}
+        if not needs_copy(a.get("club")):
+            raise ActionBlocked("This track doesn't need a club-ready copy (or a copy can't fix what's wrong with it).")
+        src = Path(job.get("final_path") or "") if job["state"] == J.PROMOTED else Path(job.get("staged_path") or "")
+        if not src.is_file():
+            raise ActionBlocked("The file isn't there any more, so there's nothing to copy.")
+        work = self.settings.staging_root() / f"clubcopy-{uuid.uuid4().hex[:8]}"
+        work.mkdir(parents=True, exist_ok=True)
+        try:
+            dest = work / safe_filename(f"{Path(job['original_name']).stem} (club-ready).aiff")
+            try:
+                make_club_copy(src, probe(src), dest, self.settings.ffmpeg_path)
+            except CopyFailed as e:
+                raise ActionBlocked(f"No copy made: {e}") from e
+            new = self.stage(dest)
+            if job.get("playlist"):
+                self.db.update_job(new["id"], playlist=job["playlist"])
+            self.db.event(new["id"], "club_copy_of", job_id)
+            return self.db.job(new["id"])
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
     def make_report(self, note: str = "") -> Path:
         """Settings -> Send a report: app.log + engine.log + settings (secrets removed) + the user's note, zipped."""
         from ..config import data_dir

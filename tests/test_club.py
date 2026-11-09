@@ -14,6 +14,14 @@ def _status(res, cid):
     return next(c for c in res["checks"] if c["id"] == cid)["status"]
 
 
+def test_hat_loop_with_no_bass_is_not_judged_on_bass():
+    sr = 11025
+    rng = np.random.default_rng(3)
+    L = rng.standard_normal(sr * 8); R = 0.2 * L + rng.standard_normal(sr * 8)       # wide, but no bass to lose
+    hp = lambda x: np.diff(x, prepend=0) * 0.5                                         # crude high-pass: no real bass
+    assert mono_verdict(hp(L), hp(R), sr).status == PASS
+
+
 def test_mono_verdict_phase():
     sr = 11025
     t = np.arange(sr * 8) / sr
@@ -72,14 +80,18 @@ def test_clipped_and_quiet(tmp_path, fixtures):
     hot = tmp_path / "hot.wav"
     ff("-i", str(fixtures["source_wav"]), "-t", "10", "-af", "volume=24dB", "-c:a", "pcm_s16le", str(hot))
     assert _status(club_checks(hot, probe(hot)), "club_clip") == WARN
-    quiet = tmp_path / "quiet.wav"
-    ff("-i", str(fixtures["source_wav"]), "-t", "10", "-af", "volume=-24dB", "-c:a", "pcm_s16le", str(quiet))
+    quiet = tmp_path / "quiet.wav"                                   # loudness is only judged on a full track
+    ff("-stream_loop", "2", "-i", str(fixtures["source_wav"]), "-af", "volume=-24dB", "-c:a", "pcm_s16le", str(quiet))
     assert _status(club_checks(quiet, probe(quiet)), "club_loud") == WARN
+    short = tmp_path / "oneshot.wav"
+    ff("-i", str(fixtures["source_wav"]), "-t", "2", "-af", "volume=-24dB", "-c:a", "pcm_s16le", str(short))
+    ids = {c["id"] for c in club_checks(short, probe(short))["checks"]}
+    assert "club_loud" not in ids and "club_low" not in ids                # a sample gets no loudness/bass verdict
 
 
 @needs_ffmpeg
 def test_analysis_carries_club_result(service, fixtures):
     job = service.stage(fixtures["mp3_320"])
     a = service.analyze(job["id"])
-    assert a["club"]["ready"] and {c["id"] for c in a["club"]["checks"]} >= {"club_load", "club_mono", "club_loud"}
+    assert a["club"]["ready"] and {c["id"] for c in a["club"]["checks"]} >= {"club_load", "club_mono", "club_clip"}
     assert a["overall_status"] in ("PASS", "WARN")                    # the verdict is unchanged by club notes

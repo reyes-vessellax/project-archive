@@ -779,6 +779,7 @@ class ReviewPage(QWidget):
     reject = Signal(str)
     cancel = Signal(str)
     rerun = Signal(str)
+    club_copy = Signal(str)          # make a verified club-ready copy of this track
     open_folder = Signal(str)
     reveal = Signal(str)
     remove_job = Signal(str)
@@ -874,6 +875,10 @@ class ReviewPage(QWidget):
         self.btn_delete = button("Delete", "danger", lambda: self.reject.emit(self.job_id))
         self.btn_cancel = button("Cancel download", "ghost", lambda: self.cancel.emit(self.job_id))
         self.btn_rerun = button("Re-check", "ghost", lambda: self.rerun.emit(self.job_id))
+        self.btn_club = button("Make a club-ready copy", "ghost", lambda: self.club_copy.emit(self.job_id))
+        self.btn_club.setToolTip("Converts the format so every CDJ and Rekordbox loads it, proves the copy matches the "
+                                 "original, then checks it like any new file. The original is never changed.")
+        self.btn_club.hide()
         self.btn_retry = button("Retry download", "primary", lambda: self.retry.emit(self.job_id))
         self.btn_retry.setToolTip("Ask the same source for the file again")
         self.btn_open = button("Open folder", "ghost", lambda: self.open_folder.emit(self.job_id))
@@ -884,7 +889,7 @@ class ReviewPage(QWidget):
         for b in (self.btn_save, self.btn_anyway, self.btn_retry, self.btn_delete, self.btn_cancel, self.btn_remove):
             actions.addWidget(b)
         actions.addStretch(1)
-        actions.addWidget(self.btn_rerun); actions.addWidget(self.btn_reveal); actions.addWidget(self.btn_open)
+        actions.addWidget(self.btn_rerun); actions.addWidget(self.btn_club); actions.addWidget(self.btn_reveal); actions.addWidget(self.btn_open)
         # the verdict sits right where the decision is made, above Download / Delete
         self.verdict = label("", "verdict"); self.verdict_sub = label("", "faint")
         vrow = hbox(spacing=12); vrow.addWidget(self.verdict, 0, Qt.AlignBottom)
@@ -1087,6 +1092,8 @@ class ReviewPage(QWidget):
             elif job.get("message"):
                 self.checks.addWidget(label(job["message"], "muted", wrap=True))
         ready = job["state"] == J.READY and bool(a)
+        from ..media.clubcopy import needs_copy
+        self.btn_club.setVisible(bool(a) and job["state"] in (J.READY, J.PROMOTED) and needs_copy(a.get("club")))
         self.btn_save.setVisible(ready and status == "PASS")
         self.btn_anyway.setVisible(ready and status == "WARN")
         for b in (self.btn_save, self.btn_anyway, self.btn_remove, self.btn_retry):

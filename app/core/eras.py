@@ -1,4 +1,4 @@
-"""Era crates: hand-picked doors into the history of house, for Discover.
+"""Era crates: hand-picked doors into house music, from the first Chicago 12"s to now, for Discover.
 
 A STARTER SET, written to be edited by people who know the scene (Reyes, Chris). Each crate names the labels
 and artists to dig through; Discover looks each one up on MusicBrainz / Discogs when it's opened, so a name
@@ -82,16 +82,48 @@ ERAS = [
 ]
 
 
+ERAS += [
+    {
+        "key": "deep00s",
+        "name": "Deep & soulful 2000s",
+        "years": "2000–2009",
+        "blurb": "Detroit soul, Berlin minimal-deep and London's warm side: the decade house went quietly deep.",
+        "labels": ["Mahogani Music", "Freerange Records", "Innervisions", "Get Physical Music", "Mojuba", "Moods & Grooves"],
+        "artists": ["Omar-S", "Jimpster", "Âme", "Dixon", "Henrik Schwarz", "Osunlade", "Kerri Chandler", "Moodymann"],
+    },
+    {
+        "key": "lofi",
+        "name": "Lo-fi & outsider",
+        "years": "2010–2018",
+        "blurb": "Tape hiss, drum machines through cheap mixers, and a new generation digging the old way.",
+        "labels": ["L.I.E.S.", "Lobster Theremin", "Rhythm Section International", "Shall Not Fade", "Local Talk",
+                   "Running Back"],
+        "artists": ["Legowelt", "DJ Seinfeld", "Ross From Friends", "Palms Trax", "Mall Grab", "Chaos In The CBD",
+                    "Kassem Mosse", "Floating Points"],
+    },
+    {
+        "key": "tech",
+        "name": "Tech & bass house",
+        "years": "2010–now",
+        "blurb": "Big rooms, rolling bass and the labels that run the summer festivals.",
+        "labels": ["Dirtybird", "Hot Creations", "Toolroom", "Defected", "Solid Grooves Records", "Crosstown Rebels"],
+        "artists": ["Claude VonStroke", "Jamie Jones", "Patrick Topping", "Fisher", "MK", "Mark Knight", "Michael Bibi"],
+    },
+]
+
+
 def era(key: str) -> dict | None:
     return next((e for e in ERAS if e["key"] == key), None)
 
 
-# Essential labels for Discover: the cornerstones, whatever is in the user's library. (name as Discogs spells it, city)
+# Essential labels for Discover: old and new cornerstones, whatever is in the user's library. (name, city · era)
 ESSENTIAL_LABELS = [
-    ("Trax Records", "Chicago"), ("DJ International Records", "Chicago"), ("Dance Mania", "Chicago"),
-    ("Strictly Rhythm", "New York"), ("Nu Groove Records", "New York"), ("Nervous Records", "New York"),
-    ("KMS", "Detroit"), ("Transmat", "Detroit"), ("Prescription", "Chicago"), ("Relief Records", "Chicago"),
-    ("Cajual Records", "Chicago"), ("Henry Street Music", "New York"),
+    ("Trax Records", "Chicago · 1980s"), ("Strictly Rhythm", "New York · 1990s"), ("KMS", "Detroit · 1980s"),
+    ("Dance Mania", "Chicago · 1980s"), ("Nu Groove Records", "New York · 1980s"), ("Prescription", "Chicago · 1990s"),
+    ("Relief Records", "Chicago · 1990s"), ("Defected", "London · 1999–"), ("Mahogani Music", "Detroit · 2000s–"),
+    ("Freerange Records", "London · 1990s–"), ("Innervisions", "Berlin · 2005–"), ("Classic Music Company", "Chicago/London · 1990s–"),
+    ("Dirtybird", "San Francisco · 2005–"), ("L.I.E.S.", "New York · 2010–"), ("Lobster Theremin", "London · 2013–"),
+    ("Rhythm Section International", "London · 2014–"),
 ]
 
 
