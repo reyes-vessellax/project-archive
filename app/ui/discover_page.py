@@ -218,14 +218,19 @@ class CoverArt(QWidget):
         return QSize(150, 150)
 
     def set_pixmap(self, pm):
-        self._pm = pm; self.update()
+        self._pm = pm; self._fit = None; self.update()
 
     def paintEvent(self, e):
         p = QPainter(self); p.setRenderHint(QPainter.SmoothPixmapTransform)
         side = min(self.width(), self.height())
         r = QRect(0, 0, self.width(), side)
         if self._pm is not None and not self._pm.isNull():
-            pm = self._pm.scaled(r.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            # the cover scaled to this tile is made once and kept: scaling it again on every repaint (60 covers,
+            # every frame of a scroll) is what made the page stutter
+            fit = getattr(self, "_fit", None)
+            if fit is None or fit[0] != r.size():
+                fit = self._fit = (r.size(), self._pm.scaled(r.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
+            pm = fit[1]
             p.drawPixmap(r, pm, QRect((pm.width() - r.width()) // 2, (pm.height() - r.height()) // 2, r.width(), r.height()))
         elif self._sleeve:
             self._paint_sleeve(p, r)
@@ -555,7 +560,11 @@ class CrateRow(QWidget):
             while page is not None and not hasattr(page, "verticalScrollBar"):
                 page = page.parent()
             if page is not None:
-                vb = page.verticalScrollBar(); vb.setValue(vb.value() - d.y())
+                glide = getattr(page, "_smoothwheel", None)
+                if glide is not None and not ev.pixelDelta().y():
+                    glide.nudge(d.y())                       # the page's own glide: setting the bar here fought it
+                else:
+                    vb = page.verticalScrollBar(); vb.setValue(vb.value() - (ev.pixelDelta().y() or d.y()))
             return True
         return False
 

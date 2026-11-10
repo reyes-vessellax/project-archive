@@ -208,27 +208,33 @@ class SmoothWheel(QObject):
         if ev.type() == QEvent.Wheel and ev.angleDelta().y() != 0 and not ev.pixelDelta().y():
             if ev.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier):
                 return False
-            notches = ev.angleDelta().y() / 120.0
-            running = self.anim.state() == QPropertyAnimation.Running and self.target is not None
-            base = self.target if running else self.bar.value()
-            self.target = int(max(self.bar.minimum(), min(self.bar.maximum(), base - notches * self.PX_PER_NOTCH)))
-            distance = abs(self.target - self.bar.value())
-            if distance == 0:
-                ev.accept(); return True
-            ms = int(max(self.MIN_MS, min(self.MAX_MS, self.MIN_MS + distance * 0.9)))
-            self.anim.stop()
-            self.anim.setDuration(ms)
-            self.anim.setStartValue(self.bar.value()); self.anim.setEndValue(self.target); self.anim.start()
+            self.nudge(ev.angleDelta().y())
             ev.accept()
             return True
         return False
+
+    def nudge(self, angle_dy: float) -> None:
+        """Scroll by a wheel movement (120 = one notch), gliding. Anything that forwards a wheel to this area
+        (a row inside the page, say) must come through here: moving the bar directly while a glide is running
+        makes the page jump there and back."""
+        notches = angle_dy / 120.0
+        running = self.anim.state() == QPropertyAnimation.Running and self.target is not None
+        base = self.target if running else self.bar.value()
+        self.target = int(max(self.bar.minimum(), min(self.bar.maximum(), base - notches * self.PX_PER_NOTCH)))
+        distance = abs(self.target - self.bar.value())
+        if distance == 0:
+            return
+        ms = int(max(self.MIN_MS, min(self.MAX_MS, self.MIN_MS + distance * 0.9)))
+        self.anim.stop()
+        self.anim.setDuration(ms)
+        self.anim.setStartValue(self.bar.value()); self.anim.setEndValue(self.target); self.anim.start()
 
 
 def smooth(area) -> None:
     """Attach SmoothWheel to a scroll area / item view (idempotent)."""
     if not area.property("smoothwheel"):
         area.setProperty("smoothwheel", True)
-        SmoothWheel(area)
+        area._smoothwheel = SmoothWheel(area)
 
 
 def keep_scroll(area, rebuild) -> None:
