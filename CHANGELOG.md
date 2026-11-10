@@ -7,16 +7,18 @@ one line changes and this file gets a note.
 ## 0.9.19 (2026-11-10) — the Queue panel fits, quietly
 
 - **No scrolling in the Queue's track panel:** everything about a track fits at a normal window size (checked on
-  every track in the library). Checks that passed are one line ("Every check passed" / "All 9 other checks
-  passed"); only what needs a look is listed. Long titles get a smaller font instead of pushing things down.
+  every track in the library). The BPM / Key / Length / Format boxes are smaller; every check is one line with
+  what it found (hover for the full text); the club checks are the CLUB badges (hover for detail). Long titles get
+  a smaller font instead of pushing things down.
 - **No more "from a Soulseek user"** on the panel.
 - **Loading happens in the background:** no download percentage, "Downloading into quarantine…", "Being checked…"
   or moving dots in the panel, no engine status ("InProgress") on queue rows, and no "checking · downloading"
   counts in the sidebar. A row's DOWN / CHECK tag says enough.
 - The CLUB badges are shorter (CLUB ✓ · CDJ · MONO · PEAK · LUFS · BASS · USB) so they fit on one line.
 - **Sleeves carry the DigMart mark:** a track without cover art gets a sleeve with the starburst-and-smiley (no
-  wordmark) in the middle instead of a plain circle, in six colour versions of the brand's own mark file (crimson,
-  yellow, black, white), so the sleeves don't all look the same.
+  wordmark) inside the centre circle, like a record sleeve, in six colour versions of the brand's own mark file
+  (crimson, yellow, black, white), so the sleeves don't all look the same. The artist's name (two lines at most)
+  stays above the circle and the title below it.
 
 ## 0.9.18 (2026-11-10) — no repeats, more artists, rows remembered again
 

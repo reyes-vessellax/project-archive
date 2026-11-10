@@ -131,6 +131,7 @@ QFrame#display {{ background: {c['disp_bg']}; border: 1px solid {c['disp_line']}
 QFrame#display QLabel {{ background: transparent; }}
 QLabel#disptag {{ font-family: {mono}; font-size: 10px; letter-spacing: 2px; color: {c['disp_label']}; }}
 QLabel#tile, QLabel#tilekey {{ font-family: {mono}; font-size: 28px; font-weight: 500; color: {c['disp_text']}; }}
+QLabel#tilesm {{ font-family: {mono}; font-size: 18px; font-weight: 500; color: {c['disp_text']}; }}
 QLabel#dispsub {{ font-family: {mono}; font-size: 11px; color: {c['disp_sub']}; }}
 QLabel#monotext {{ font-family: {mono}; font-size: 13px; }}
 QLabel#steplight {{ font-size: 18px; font-weight: 800; color: {c['faint']}; }}

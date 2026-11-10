@@ -851,9 +851,9 @@ class ReviewPage(QWidget):
         from PySide6.QtWidgets import QFrame, QGraphicsDropShadowEffect
         for k in ("BPM", "Key", "Length", "Format"):
             tile = QFrame(); tile.setObjectName("display")
-            tl = vbox(tile, (14, 8, 14, 8), 2)
+            tl = vbox(tile, (10, 5, 10, 5), 0)                 # small: the checks below get the room
             tl.addWidget(label(k.upper(), "disptag"))
-            v = label("–", "tile"); tl.addWidget(v)
+            v = label("–", "tilesm"); tl.addWidget(v)
             glow = QGraphicsDropShadowEffect(v); glow.setOffset(0, 0); glow.setBlurRadius(14)
             glow.setColor(QColor(255, 176, 0, 110)); v.setGraphicsEffect(glow)             # the amber readout glow
             sub = label("", "dispsub"); tl.addWidget(sub)
@@ -880,7 +880,7 @@ class ReviewPage(QWidget):
         sh.addStretch(1)
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
         det.addLayout(sh)
-        self.spectrum = SpectrumView(112); det.addWidget(self.spectrum)
+        self.spectrum = SpectrumView(96); det.addWidget(self.spectrum)
         self.level_host = QWidget(); lv = hbox(self.level_host, spacing=12); lv.addWidget(label("LEVEL", "disptag"))
         self.level = LevelStrip(); lv.addWidget(self.level, 1)
         det.addWidget(self.level_host)
@@ -1134,30 +1134,24 @@ class ReviewPage(QWidget):
             self.spec_note.setText(f"Energy reaches about {cut / 1000:.1f} kHz" if cut else "")
             from .widgets import club_badges, club_heading
             club = (a.get("club") or {}).get("checks") or []
-            # only what needs a look is listed; everything that passed is one line (the panel fits without scrolling)
-            issues_ = [c for c in a["checks"] if c["status"] != "PASS"]
-            club_issues = [c for c in club if c["status"] != "PASS"]
-            passed = sum(1 for c in a["checks"] + club if c["status"] == "PASS")
-            rows = sorted(issues_, key=lambda c: {"FAIL": 0, "WARN": 1}[c["status"]])
-            rows += [None] + sorted(club_issues, key=lambda c: {"FAIL": 0, "WARN": 1}[c["status"]]) if club else []
-            for c in rows:
-                if c is None:
-                    head = club_badges(a, getattr(self.svc.settings, "theme", "light"))
-                    if head is not None:
-                        head.setContentsMargins(0, 14, 0, 4); self.checks.addWidget(head)
-                    continue
-                row = QWidget(); hl = hbox(row, (0, 6, 0, 6), 14)
+            # every check with what it found (problems first); the facts boxes are small so it all fits
+            rows = sorted(a["checks"], key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}[c["status"]])
+            rows += [None] + sorted(club, key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}[c["status"]]) if club else []
+            # every check on one line: its result, its name and what it found (hover for the full text); the club
+            # checks are the CLUB badges below (hover each for its detail). Together they fit without scrolling.
+            from .discover_page import ElideLabel
+            for c in [c for c in rows if c is not None][:len(a["checks"])]:
+                cell = QWidget(); hl = hbox(cell, (0, 3, 0, 3), 10)
                 word = T.GRADE_WORD[c["status"]]
-                t = label(word.upper(), "tag", word); t.setFixedWidth(56); t.setAlignment(Qt.AlignTop)
-                muted = T.colours(getattr(self.svc.settings, "theme", "light"))["muted"]
-                txt = label(f"<b>{html.escape(c['title'])}</b> — <span style='color: {muted}'>{html.escape(c['message'])}</span>", wrap=True)
-                txt.setTextFormat(Qt.RichText)
+                t = label(word.upper(), "tag", word); t.setFixedWidth(52)
+                txt = ElideLabel(f"{c['title']} — {c['message']}", "")
+                txt.setToolTip(f"{c['title']}: {c['message']}"); txt.setStyleSheet("font-size: 12px;")
                 hl.addWidget(t); hl.addWidget(txt, 1)
-                self.checks.addWidget(row); self.checks.addWidget(rule())
-            if passed:
-                ok = label(("Every check passed" if not issues_ and not club_issues else
-                            f"All {passed} other check{'s' if passed != 1 else ''} passed"), "faint")
-                ok.setContentsMargins(0, 8, 0, 0); self.checks.addWidget(ok)
+                self.checks.addWidget(cell)
+            if club:
+                head = club_badges(a, getattr(self.svc.settings, "theme", "light"))
+                if head is not None:
+                    head.setContentsMargins(0, 8, 0, 0); self.checks.addWidget(head)
         else:
             for v in self.facts.values(): v.setText("–")
             self.spectrum.clear_view("" if busy else "No spectrogram."); self.spec_note.setText("")

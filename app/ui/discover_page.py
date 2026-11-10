@@ -276,27 +276,32 @@ class CoverArt(QWidget):
         p.setRenderHint(QPainter.Antialiasing); p.setRenderHint(QPainter.SmoothPixmapTransform)
         side = r.height()
         c = r.center()
-        mark = _sleeve_mark(idx)                                # our mark in the middle, coloured for this sleeve
+        # the centre circle of a record sleeve, with our mark inside it; the name (2 lines at most) ends above it and
+        # the title starts below it, so text and circle never touch
+        rad = int(side * 0.17)
+        cy = r.top() + int(side * 0.58)
+        dark_bg = QColor(bg).lightness() < 128
+        p.setPen(Qt.NoPen); p.setBrush(QColor(255, 255, 255, 34) if dark_bg else QColor(0, 0, 0, 30))
+        p.drawEllipse(QPoint(c.x(), cy), rad, rad)
+        mark = _sleeve_mark(idx)                                # coloured for this sleeve
         if not mark.isNull():
-            w = int(side * 0.40); h = int(w * mark.height() / max(1, mark.width()))
-            p.drawPixmap(QRect(c.x() - w // 2, r.top() + int(side * 0.56) - h // 2, w, h), mark)   # clear of a 2-line name
-        else:
-            p.setPen(Qt.NoPen); p.setBrush(QColor(0, 0, 0, 40))
-            p.drawEllipse(c, int(side * 0.19), int(side * 0.19))
+            w = int(rad * 1.7); h = int(w * mark.height() / max(1, mark.width()))
+            p.drawPixmap(QRect(c.x() - w // 2, cy - h // 2, w, h), mark)
         pad = int(side * 0.08)
-        f = QFont("Poppins"); f.setBold(True); f.setPixelSize(max(10, int(side * 0.115)))
+        f = QFont("Poppins"); f.setBold(True); f.setPixelSize(max(9, int(side * 0.095)))
         p.setFont(f); p.setPen(QColor(fg))
-        p.drawText(QRect(r.left() + pad, r.top() + pad, r.width() - 2 * pad, int(side * 0.36)),
+        name_h = int(side * 0.58) - int(side * 0.17) - pad - int(side * 0.05)   # stops short of the circle
+        name_h = min(name_h, p.fontMetrics().lineSpacing() * 2)                  # two lines at most
+        p.drawText(QRect(r.left() + pad, r.top() + pad, r.width() - 2 * pad, name_h),
                    int(Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap), (lab or "").upper()[:40])
-        f2 = QFont("Open Sans"); f2.setPixelSize(max(9, int(side * 0.075)))
+        f2 = QFont("Open Sans"); f2.setPixelSize(max(9, int(side * 0.072)))
         p.setFont(f2)
-        tr = QRect(r.left() + pad, int(r.bottom() - pad - side * 0.22), r.width() - 2 * pad, int(side * 0.22))
-        p.drawText(tr, int(Qt.AlignLeft | Qt.AlignBottom | Qt.TextWordWrap),
-                   p.fontMetrics().elidedText(title, Qt.ElideRight, (r.width() - 2 * pad) * 2))
-        if cat:
-            f3 = QFont("IBM Plex Mono"); f3.setPixelSize(max(8, int(side * 0.065))); p.setFont(f3); p.setPen(QColor(sub))
-            p.drawText(QRect(r.left() + pad, r.top() + int(side * 0.42), r.width() - 2 * pad, int(side * 0.1)),
-                       int(Qt.AlignLeft), cat)
+        circle_bottom = r.top() + int(side * 0.58) + int(side * 0.17)
+        tr = QRect(r.left() + pad, circle_bottom + int(side * 0.03), r.width() - 2 * pad,
+                   r.bottom() - pad - circle_bottom - int(side * 0.03))
+        p.drawText(tr, int(Qt.AlignLeft | Qt.AlignBottom),
+                   p.fontMetrics().elidedText(title, Qt.ElideRight, r.width() - 2 * pad))   # one line, below the circle
+        # (the catalogue number would sit where the circle is: it's on the track card instead)
 
 
 class CoverCard(QFrame):
