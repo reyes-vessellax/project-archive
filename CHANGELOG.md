@@ -4,6 +4,16 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.21 (2026-11-10) — Dig the crate never gets stuck; a bigger spectrogram
+
+- **Fix: Dig the crate stuck on "Finding you a track…".** After Dig again with nothing loaded, the next track that
+  finished loading was only shown if the panel was empty, and it still held the previous track, so it waited
+  forever. Now it shows (and plays) the moment one is ready. It also keeps 5 ready instead of 3, loads two at once,
+  and gives busy sources another go instead of stopping once every track on the page was tried.
+- **Bigger spectrogram in the Queue** (138 px, was 80); the panel still fits without scrolling. The line repeating
+  bitrate / rate / "plays all the way through" is gone (the checks say it).
+- **Queue rows highlight on hover**, the same as the Library.
+
 ## 0.9.20 (2026-11-10) — one version for both of us
 
 Reyes's 0.9.19 joined with JR's work of the same day.

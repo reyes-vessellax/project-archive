@@ -127,3 +127,36 @@ def test_play_works_after_switching_genre(service):
     d.set_preview_state(""); d._play_tile(row, row.tiles[0])
     assert len(played) == 2 and d.track_card.isVisible()
     d.deleteLater(); app.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
+def test_dig_again_with_none_ready_shows_the_next_one_that_loads(service, tmp_path):
+    """'Finding you a track…' stayed up for good: a track that finished loading was only shown if the panel was
+    empty, and after Dig again it still held the previous one."""
+    import time as _t
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QApplication
+    from app.adapters.base import Candidate
+    from app.core.crates import CrateTrack
+    from app.ui.discover_page import CrateRow, DiscoverPage
+    app = QApplication.instance() or QApplication([])
+    d = DiscoverPage(service); d.resize(1300, 900); d.show(); app.processEvents()
+    row = CrateRow("Deep house"); d.rows_box.addWidget(row); d.rows[row.name] = row
+    tracks = [CrateTrack(f"Artist {i}", f"Track {i}", "", Candidate("soulseek", f"u{i}", f"p{i}", 1, extension="flac",
+              free_slot=True)) for i in range(6)]
+    for t in tracks:
+        t.alts = [t.best]
+    row.fill(tracks); app.processEvents()
+
+    def fake_preview(c, background=False, **kw):
+        _t.sleep(0.05); w = tmp_path / f"{c.user}.wav"; w.write_bytes(b"RIFF"); return w, 30.0
+    service.snippet_preview = fake_preview
+    d._show_found(d.spin_bar, d._found_for("Deep house", tracks[0]))   # something is already on show
+    d._spins.clear(); d._spin_tried = {tracks[0].best.key}
+    d.spin()                                                            # Dig again with nothing loaded yet
+    assert "Finding" in d.spin_bar.title.text()
+    end = _t.monotonic() + 5
+    while _t.monotonic() < end and "Finding" in d.spin_bar.title.text():
+        app.processEvents(); d.auxpool.waitForDone(100)
+    assert "Finding" not in d.spin_bar.title.text() and d.spin_bar.found.best.user != "u0"
+    d.auxpool.waitForDone(3000); app.processEvents()
+    d.deleteLater(); app.sendPostedEvents(None, QEvent.DeferredDelete)

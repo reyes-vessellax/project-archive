@@ -517,6 +517,8 @@ class QueueRow(QWidget):
         super().__init__()
         self.job_id = job_id
         self.setObjectName("row")
+        self.setAttribute(Qt.WA_Hover, True)                 # :hover only fires with this…
+        self.setAttribute(Qt.WA_StyledBackground, True)      # …and a plain QWidget only paints a background with this
         self.setProperty("tag", tag)
         self.setCursor(Qt.PointingHandCursor)
         self.setMinimumHeight(48)

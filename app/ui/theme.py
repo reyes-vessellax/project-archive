@@ -213,7 +213,8 @@ QPushButton#navitem[active="true"] {{ background: {c['nav_bg']}; color: {c['nav_
 
 /* rows and lists */
 QWidget#row {{ background: transparent; border-bottom: 1px solid {c['line']}; }}
-QWidget#row:hover, QWidget#row[flash="true"] {{ background: {c['pass_']}22; border-color: {c['pass_']}; }}
+QWidget#row:hover {{ background: {c['soft']}; border-radius: 3px; }}
+QWidget#row[flash="true"] {{ background: {c['pass_']}22; border-color: {c['pass_']}; }}
 QWidget#row QLabel#tag {{ border-radius: 9px; padding: 2px 0; font-size: 10px; qproperty-alignment: AlignCenter; }}
 QWidget#row[selected="true"] {{ background: {c['soft']}; border-radius: 3px; }}
 QProgressBar {{ background: {c['bar']}; border: none; border-radius: 2px; max-height: 3px; min-height: 3px; }}

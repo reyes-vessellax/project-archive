@@ -912,7 +912,7 @@ class DiscoverPage(QWidget):
         self.spin_bar = SpinBar()
         self.spin_bar.play.connect(lambda c: self._spin_play())
         self.spin_bar.stop.connect(self._spin_play)
-        self._spins: list = []; self._spin_loading = False; self._spin_tried: set = set()
+        self._spins: list = []; self._spin_loading = 0; self._spin_tried: set = set(); self._spin_waiting = False
         from .player import Player
 
         def _player_changed():
@@ -1275,7 +1275,8 @@ class DiscoverPage(QWidget):
             self.stop_preview.emit()
         self.track_card.hide()
 
-    SPINS_READY = 3
+    SPINS_READY = 5                 # five loaded ahead: digging fast never runs dry
+    SPIN_PARALLEL = 2               # two loading at once (a busy source can take ~20 s)
 
     def _dig_again(self):
         self._dig_pressed = True
@@ -1287,6 +1288,7 @@ class DiscoverPage(QWidget):
         if self.spin_bar._previewing:
             Player.get().stop()
         if not self._spins:
+            self._spin_waiting = True                       # the next one to load is shown (and played) right away
             self.spin_bar.title.setText("Finding you a track…"); self.spin_bar.sub.setText("")
             self._prefetch_spins(); return
         f, wav = self._spins.pop(0)
@@ -1346,18 +1348,26 @@ class DiscoverPage(QWidget):
         """Keep SPINS_READY tracks loaded: pick from every row on the page, load its preview in the background,
         and only keep it if the preview actually came through (a busy or broken source never reaches Spin)."""
         import random
-        if self._spin_loading or len(self._spins) >= self.SPINS_READY:
-            if self.spin_bar.found is None and self._spins:
-                self.spin()
+        if (self.spin_bar.found is None or self._spin_waiting) and self._spins:
+            self._spin_waiting = False
+            self.spin()                                     # someone's waiting and one is ready: show it now
+        if self._spin_loading >= self.SPIN_PARALLEL or len(self._spins) + self._spin_loading >= self.SPINS_READY:
             return
+        from PySide6.QtCore import QTimer
         pool = [(name, tl.track) for name, row in self.rows.items() for tl in row.tiles]
-        tried = self._spin_tried
-        pool = [(n, t) for n, t in pool if t.best.key not in tried]
         if not pool:
+            QTimer.singleShot(3000, self._prefetch_spins)  # the rows are still filling: look again shortly
             return
-        name, t = random.choice(pool)
+        tried = self._spin_tried
+        fresh = [(n, t) for n, t in pool if t.best.key not in tried]
+        if not fresh:                                       # tried them all: busy sources get another go
+            tried.clear(); tried.update(f.best.key for f, _ in self._spins)
+            fresh = [(n, t) for n, t in pool if t.best.key not in tried]
+            if not fresh:
+                return
+        name, t = random.choice(fresh)
         tried.add(t.best.key)
-        self._spin_loading = True
+        self._spin_loading += 1
         svc, spin_dir = self.svc, self._spin_dir()
         cands = list(t.alts) or [t.best]
 
@@ -1374,17 +1384,18 @@ class DiscoverPage(QWidget):
             return None
 
         def then(res):
-            self._spin_loading = False
-            if res and not isinstance(res, Exception):
+            self._spin_loading = max(0, self._spin_loading - 1)
+            ok = bool(res) and not isinstance(res, Exception)
+            if ok:
                 c, wav, _start = res
                 t.best = c
                 f = self._found_for(name, t)
                 self._spins.append((f, wav))
                 self._save_spins()
-                if self.spin_bar.found is None:
+                if self.spin_bar.found is None or self._spin_waiting:     # "Finding you a track…": here it is
+                    self._spin_waiting = False
                     self.spin()
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(1500 if res else 4000, self._prefetch_spins)
+            QTimer.singleShot(300 if ok else 1500, self._prefetch_spins)
         self._run_aux(work, then)
 
     def _spin_dir(self) -> Path:

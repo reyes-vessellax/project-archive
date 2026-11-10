@@ -873,7 +873,7 @@ class ReviewPage(QWidget):
         self.rail_w = rw
 
         # detail
-        det = vbox(spacing=10)                          # compact: the whole track fits without scrolling
+        det = vbox(spacing=8)                           # compact: the whole track fits without scrolling
         head = hbox(spacing=18)
         self.cover = QLabel(); self.cover.setFixedSize(84, 84); self.cover.setObjectName("cover")
         self.cover.setAlignment(Qt.AlignCenter); self.cover.setScaledContents(False)
@@ -904,6 +904,7 @@ class ReviewPage(QWidget):
             self.facts[k] = label("")
         det.addLayout(facts)
         self.facts_detail = label("", "muted"); det.addWidget(self.facts_detail)
+        self.facts_detail.hide()             # bitrate, rate and "plays all the way through" are in the checks below
         det.addWidget(rule())
 
         # download progress (only while the track is still coming in)
@@ -920,8 +921,9 @@ class ReviewPage(QWidget):
         self.btn_preview.setVisible(False)                 # downloaded tracks play in full; preview lives in Search
         sh.addStretch(1)
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
-        det.addLayout(sh)
-        self.spectrum = SpectrumView(80); det.addWidget(self.spectrum)
+        self._spec_head = QWidget(); self._spec_head.setLayout(sh); self._spec_head.hide()   # the picture shows the cutoff itself
+        det.addWidget(self._spec_head)
+        self.spectrum = SpectrumView(138); det.addWidget(self.spectrum)      # big: the part you read
         self.level_host = QWidget(); lv = hbox(self.level_host, spacing=12); lv.addWidget(label("LEVEL", "disptag"))
         self.level = LevelStrip(); lv.addWidget(self.level, 1)
         det.addWidget(self.level_host)
