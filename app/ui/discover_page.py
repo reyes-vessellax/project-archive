@@ -1064,7 +1064,7 @@ class DiscoverPage(QWidget):
                  "bpm": f.details.get("bpm", ""), "camelot": f.details.get("camelot", ""),
                  "alts": [asdict(c) for c in f.alts]} for f, w in items]
         try:
-            (self._spin_dir() / "ready3.json").write_text(json.dumps(data), encoding="utf-8")
+            (self._spin_dir() / "ready4.json").write_text(json.dumps(data), encoding="utf-8")
         except OSError:
             pass
 
@@ -1076,7 +1076,7 @@ class DiscoverPage(QWidget):
         d = self._spin_dir()
         keep = set()
         try:
-            data = json.loads((d / "ready3.json").read_text(encoding="utf-8"))
+            data = json.loads((d / "ready4.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = []
         for x in data:
@@ -1584,6 +1584,8 @@ class DiscoverPage(QWidget):
         fl.addWidget(bar)
         self.finder = SearchPage(self.svc)        # its own results, separate from the Search tab
         self.finder.dance_only = True
+        self.finder.filters.club_length = True               # Discover: club length by default (the chip can untick it)
+        self.finder._fbtns["club_length"].setChecked(True)
         fl.addWidget(self.finder, 1)
         self.stack.addWidget(self.find_view)
 

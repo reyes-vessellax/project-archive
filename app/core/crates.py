@@ -41,6 +41,36 @@ NOT_DANCE = re.compile(r"\b(metal|metalcore|deathcore|thrash|grunge|punk rock|po
 # Positive signs of dance music in a path: an artist Deezer doesn't know needs one of these to stay.
 DANCE_CUE = re.compile(r"\b(house|techno|disco|garage|acid|club|dance|electro\w*|edits?|remix\w*|rmx|dub|"
                        r"12[\"']?\s?(inch|in)|12in|maxi|white label|dj|jack\w*|minimal)\b", re.I)
+MIN_SECONDS = 240        # club length: DJs need the intro and outro; radio edits and short versions never make it
+SHORT_VERSION = re.compile(r"\b(radio|short|single|intro|7\"|7 inch|tv)\s*(edit|mix|version|cut)\b|\bradio\b", re.I)
+
+
+def length_s(c: Candidate) -> float | None:
+    """The track length the source reports, or a fair estimate from the file size: WAV/AIFF are 10.1 MB a minute at
+    CD quality, an MP3 is size / bitrate, FLAC roughly 6 MB a minute."""
+    if c.length_s:
+        return float(c.length_s)
+    ext = (c.extension or "").lower()
+    if not c.size:
+        return None
+    if ext in ("wav", "aiff", "aif"):
+        sr, bits = c.sample_rate_hz or 44100, c.bit_depth or 16
+        return c.size / (sr * bits / 8 * 2)
+    if ext == "mp3" and c.bitrate_kbps:
+        return c.size * 8 / (c.bitrate_kbps * 1000)
+    if ext == "flac":
+        return c.size / (6_000_000 / 60)
+    return None
+
+
+def club_length(c: Candidate) -> bool:
+    """4 minutes or longer, and not a radio/short/intro edit by name. Unknown length: kept unless it's named as an edit."""
+    if SHORT_VERSION.search(f"{c.mix} {c.title} {c.display_name}"):
+        return False
+    secs = length_s(c)
+    return secs is None or secs >= MIN_SECONDS
+
+
 _NOISE = {"records", "recordings", "music", "label", "the", "inc", "ltd", "presents"}
 SEARCH_S = 12.0
 MAX_TRACKS = 30
@@ -110,6 +140,8 @@ def build(cands: list[Candidate], owns=lambda a, t: False, min_kbps: int = 320, 
     for c in cands:
         if not (_good(c, min_kbps) and c.free_slot and not (c.queue_length or 0)):
             continue
+        if not club_length(c):
+            continue
         if query and not on_topic(c, query, kind):
             continue
         artist, title, mix = (c.artist, c.title, c.mix) if c.artist else parse_track(c.display_name or "")
@@ -134,7 +166,7 @@ def build(cands: list[Candidate], owns=lambda a, t: False, min_kbps: int = 320, 
 
 
 def _key(query: str) -> str:
-    return "discover:crate3:" + " ".join(words(query))        # crate3: the stricter dance-only filters
+    return "discover:crate4:" + " ".join(words(query))        # crate4: + club length (4 min+, no radio edits)
 
 
 def remembered(db, query: str) -> list[CrateTrack] | None:

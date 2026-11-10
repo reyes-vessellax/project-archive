@@ -66,6 +66,7 @@ class Filters:
     formats: list = field(default_factory=list)   # the file-type drop-down: [] = any, or one of "mp3", "flac", "wav", "aiff", "m4a"
     mp3_320: bool = False         # MP3s must claim 320 (the check confirms it later); other formats unaffected
     ready_now: bool = False       # only sharers with a free slot
+    club_length: bool = False     # 4 minutes or longer, no radio/short edits
     show_private: bool = False
     lossless: bool = False        # FLAC / WAV / AIFF only
     mix: str = ""                 # older sessions only: the mix filter was removed (file names don't say it reliably)
@@ -122,6 +123,10 @@ def passes(c: Candidate, f: Filters) -> bool:
         return False
     if f.ready_now and not c.free_slot:
         return False
+    if f.club_length:
+        from .crates import club_length
+        if not club_length(c):
+            return False
     if c.locked and not f.show_private:
         return False
     return True

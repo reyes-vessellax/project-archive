@@ -4,6 +4,14 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.8 (2026-11-10) — club length only on Discover
+
+- **Discover shows club-length tracks only:** 4 minutes or longer, and no radio / short / intro / 7" edits by name.
+  Extended, Original, Club and Dub mixes all stay (classic originals rarely say "Extended"). When a source doesn't
+  report the length, it's worked out from the file size (WAV/AIFF 10.1 MB a minute, MP3 size ÷ bitrate, FLAC ~6 MB).
+- **Search:** a new "4 min+" filter chip does the same there (on by default in Discover's own search).
+- Rows and ready tracks remembered from before are discarded so nothing short shows.
+
 ## 0.9.7 (2026-11-10) — genre pills; play after switching fixed
 
 - **Genres instead of eras on Discover:** Everything, Deep, Chicago, Detroit, Garage & NY, Soulful, Disco & edits,

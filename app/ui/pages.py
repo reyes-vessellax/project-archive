@@ -313,6 +313,7 @@ class SearchPage(QWidget):
         for key, text, tip in (("lossless", "Lossless", "FLAC, WAV and AIFF only"),
                                ("mp3_320", "320 only", "MP3s must say 320 kbps (the check confirms it after download)"),
                                ("ready_now", "Ready now", "Only sources with a free slot right now"),
+                               ("club_length", "4 min+", "Club length: 4 minutes or longer, no radio or short edits"),
                                ("show_private", "Show private", "Include folders their owner only shares with friends")):
             b = button(text, "chip", lambda _=False, k=key: self._toggle_filter(k)); b.setCheckable(True)
             b.setToolTip(tip)

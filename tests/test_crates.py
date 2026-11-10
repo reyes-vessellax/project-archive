@@ -7,7 +7,7 @@ from app.core import crates as C
 
 def cand(user, name, ext="flac", kbps=None, free=True, q=0, folder="Dance Mania - DM 012", locked=False, note=""):
     a, t = name.split(" - ", 1)
-    return Candidate("soulseek", user, f"@@x\\{folder}\\{name}.{ext}", 20_000_000, display_name=f"{name}.{ext}",
+    return Candidate("soulseek", user, f"@@x\\{folder}\\{name}.{ext}", 60_000_000, display_name=f"{name}.{ext}",
                      folder=folder, artist=a, title=t, extension=ext, bitrate_kbps=kbps, free_slot=free, queue_length=q,
                      locked=locked, note=note)
 
@@ -107,3 +107,17 @@ def test_stricter_dance_rules():
     unknown_dance = C.build([cand("v", "Unknown DJ - Jack Trax", "flac", folder="Chicago House 12in")])
     kept = C.dance_only(MemDB(), unknown_folk + unknown_dance, lookup=lambda a: [])
     assert [t.artist for t in kept] == ["Unknown DJ"]
+
+
+def test_club_length_only():
+    from app.core.crates import club_length, length_s
+    long_mp3 = cand("a", "Marshall Jefferson - Move Your Body", "mp3", 320); long_mp3.length_s = 418
+    short = cand("b", "Marshall Jefferson - Move Your Body", "mp3", 320); short.length_s = 200
+    radio = cand("c", "Marshall Jefferson - Move Your Body (Radio Edit)", "flac"); radio.length_s = 260
+    radio.mix = "Radio Edit"
+    wav_unknown = cand("d", "Phuture - Acid Tracks", "wav"); wav_unknown.size = 75_000_000   # ~7 min at CD quality
+    tiny_wav = cand("e", "Phuture - Acid Tracks", "wav"); tiny_wav.size = 20_000_000          # ~2 min
+    assert club_length(long_mp3) and not club_length(short) and not club_length(radio)
+    assert abs(length_s(wav_unknown) - 425) < 5 and club_length(wav_unknown) and not club_length(tiny_wav)
+    out = C.build([long_mp3, short, radio])
+    assert [t.best.user for t in out] == ["a"]
