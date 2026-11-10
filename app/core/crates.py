@@ -24,6 +24,17 @@ from .fuzzy import words
 from .searching import collect
 
 CRATE_HOURS = 3
+GENRE_DAYS = 90          # an artist's genres are looked up once and remembered this long
+
+# Dance and electronic genres as Deezer names them. An artist with none of these on their top releases is left out.
+DANCE_GENRES = {"Dance", "Electro", "Techno/House", "Disco", "Soul & Funk", "Electronic", "House", "Techno",
+                "Deep House", "Electro Pop/Electro Rock"}
+# Words in a file's path that mean it isn't dance music (searches match words anywhere in the path:
+# "Chicago" + "House" finds a metal band's "Live in Chicago / House of Blues" too).
+NOT_DANCE = re.compile(r"\b(metal|metalcore|deathcore|death metal|black metal|thrash|grunge|punk rock|hard rock|"
+                       r"classic rock|rock and roll|rock n roll|emo|screamo|country|bluegrass|folk|hymns?|"
+                       r"audiobook|podcast|soundtrack|ost|karaoke|nightcore)\b", re.I)
+_NOISE = {"records", "recordings", "music", "label", "the", "inc", "ltd", "presents"}
 SEARCH_S = 12.0
 MAX_TRACKS = 30
 LOSSLESS = {"flac", "wav", "aiff", "aif"}
@@ -62,11 +73,33 @@ def _quality(c: Candidate) -> tuple:
     return (0 if ext in LOSSLESS else 1, -(c.bitrate_kbps or 0), -(c.upload_speed or 0))
 
 
-def build(cands: list[Candidate], owns=lambda a, t: False, min_kbps: int = 320) -> list[CrateTrack]:
-    """Search results -> one entry per track, best copy first, ready-now only."""
+def phrase(query: str) -> list[str]:
+    """The words that must appear TOGETHER in a path: "Trax Records" -> ["trax"], "Chicago house" -> ["chicago", "house"]."""
+    ws = [w for w in words(query) if w not in _NOISE]
+    return ws or words(query)
+
+
+def on_topic(c: Candidate, query: str) -> bool:
+    """The query's words side by side somewhere in the folder/file path, and nothing in it saying "not dance"."""
+    path = c.remote_path or f"{c.folder} {c.display_name}"
+    if NOT_DANCE.search(path):
+        return False
+    stem = lambda ws_: [w[:-1] if len(w) > 3 and w.endswith("s") else w for w in ws_]   # "edits" counts for "edit"
+    ws = stem(phrase(query)); n = len(ws)
+    for seg in re.split(r"[\\/]", path):                  # within ONE folder or file name, not across two
+        p = stem(words(seg))
+        if any(p[i:i + n] == ws for i in range(len(p) - n + 1)):
+            return True
+    return False
+
+
+def build(cands: list[Candidate], owns=lambda a, t: False, min_kbps: int = 320, query: str = "") -> list[CrateTrack]:
+    """Search results -> one entry per track, best copy first, ready-now only, on topic."""
     groups: dict[str, CrateTrack] = {}
     for c in cands:
         if not (_good(c, min_kbps) and c.free_slot and not (c.queue_length or 0)):
+            continue
+        if query and not on_topic(c, query):
             continue
         artist, title, mix = (c.artist, c.title, c.mix) if c.artist else parse_track(c.display_name or "")
         if not artist or not title or owns(artist, title):
@@ -90,7 +123,7 @@ def build(cands: list[Candidate], owns=lambda a, t: False, min_kbps: int = 320) 
 
 
 def _key(query: str) -> str:
-    return "discover:crate:" + " ".join(words(query))
+    return "discover:crate2:" + " ".join(words(query))        # crate2: built with the dance-only filters
 
 
 def remembered(db, query: str) -> list[CrateTrack] | None:
@@ -135,6 +168,41 @@ def crate(svc, query: str, owns=lambda a, t: False, cancelled=lambda: False, log
     except Exception:
         pass
     min_kbps = getattr(getattr(svc, "settings", None), "mp3_min_kbps", 320) or 320
-    tracks = build(res.candidates, owns, min_kbps)
+    tracks = dance_only(svc.db, build(res.candidates, owns, min_kbps, query), cancelled)
     remember(svc.db, query, tracks)
     return tracks
+
+
+def artist_genres(db, artist: str, lookup=None) -> list[str]:
+    """Deezer genres for an artist, remembered for GENRE_DAYS. [] = unknown."""
+    from ..media.metadata import deezer_artist_genres
+    key = "discover:genre:" + " ".join(words(artist))
+    hit = db.cache_get(key)
+    if hit:
+        data, at = hit
+        try:
+            if datetime.fromisoformat(at) > datetime.now(timezone.utc) - timedelta(days=GENRE_DAYS):
+                return data.get("genres") or []
+        except ValueError:
+            pass
+    try:
+        g = (lookup or deezer_artist_genres)(artist)
+    except Exception:
+        return []
+    db.cache_put(key, {"genres": g})
+    return g
+
+
+def dance_only(db, tracks: list[CrateTrack], cancelled=lambda: False, lookup=None) -> list[CrateTrack]:
+    """Drop tracks by artists whose releases are known to be something other than dance/electronic music.
+    Artists Deezer doesn't know stay (they already passed the path checks)."""
+    out = []
+    for t in tracks:
+        if cancelled():
+            break
+        main = re.split(r"\s*(?:,|&| feat\.? | ft\.? | vs\.? | x | and | / )\s*", t.artist, flags=re.I)[0]
+        g = artist_genres(db, main, lookup)
+        if g and not (set(g) & DANCE_GENRES):
+            continue
+        out.append(t)
+    return out

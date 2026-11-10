@@ -449,6 +449,11 @@ class SearchPage(QWidget):
             from dataclasses import replace
             from ..core.availability import apply as apply_filters
             kept, hidden, private = apply_filters(res.candidates, self.filters)
+            if getattr(self, "dance_only", False):           # Discover's search: dance and electronic music only
+                from ..core.crates import NOT_DANCE
+                n0 = len(kept)
+                kept = [c for c in kept if not NOT_DANCE.search(c.remote_path or c.display_name or "")]
+                hidden += n0 - len(kept)
             bits = ([f"{hidden} hidden by filters"] if hidden else []) + ([f"{private} private hidden"] if private else [])
             self.hidden_note.setText(" · ".join(bits))
             res = replace(res, candidates=kept)

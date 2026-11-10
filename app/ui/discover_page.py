@@ -930,7 +930,7 @@ class DiscoverPage(QWidget):
                  "catno": f.release.catno, "thumb": f.release.thumb, "best": asdict(f.best),
                  "alts": [asdict(c) for c in f.alts]} for f, w in items]
         try:
-            (self._spin_dir() / "ready.json").write_text(json.dumps(data), encoding="utf-8")
+            (self._spin_dir() / "ready2.json").write_text(json.dumps(data), encoding="utf-8")
         except OSError:
             pass
 
@@ -942,7 +942,7 @@ class DiscoverPage(QWidget):
         d = self._spin_dir()
         keep = set()
         try:
-            data = json.loads((d / "ready.json").read_text(encoding="utf-8"))
+            data = json.loads((d / "ready2.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = []
         for x in data:
@@ -1435,6 +1435,7 @@ class DiscoverPage(QWidget):
         self.find_note = label("", "faint"); bl.addWidget(self.find_note); bl.addStretch(1)
         fl.addWidget(bar)
         self.finder = SearchPage(self.svc)        # its own results, separate from the Search tab
+        self.finder.dance_only = True
         fl.addWidget(self.finder, 1)
         self.stack.addWidget(self.find_view)
 

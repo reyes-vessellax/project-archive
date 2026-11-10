@@ -155,7 +155,7 @@ LABEL_POOL = [
     "Dirtybird", "Hot Creations", "Toolroom", "Solid Grooves Records", "Crosstown Rebels", "Repopulate Mars",
     "Snatch! Records",
     # Disco roots and edits
-    "West End Records", "Salsoul Records", "Prelude Records", "Z Records", "Razor-N-Tape",
+    "West End Records", "Salsoul Records", "Prelude Records", "Razor-N-Tape",
 ]
 
 STYLES = ["Deep house", "Acid house", "Chicago house", "Garage house", "Disco edit", "Tech house"]

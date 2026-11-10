@@ -56,3 +56,36 @@ def test_one_search_fills_the_crate_and_is_remembered():
 def test_offline_gives_none():
     svc = FakeSvc([]); svc.adapter = None
     assert C.crate(svc, "Trax Records") is None
+
+
+
+def test_phrase_and_not_dance_paths():
+    rock = cand("x", "Lamb Of God - Redneck", "flac", folder="Live in Chicago\\House of Blues 2004")
+    metal = cand("y", "Some Band - Chicago House Party", "flac", folder="Death Metal\\Chicago House Party")
+    good = cand("z", "Marshall Jefferson - Move Your Body", "flac", folder="Chicago House Classics Vol 2")
+    out = C.build([rock, metal, good], query="Chicago house")
+    assert [t.artist for t in out] == ["Marshall Jefferson"]
+    trax = cand("a", "Phuture - Acid Tracks", "flac", folder="Trax Records - TX142")
+    other = cand("b", "Phuture - Acid Tracks", "flac", folder="Some Compilation")
+    assert len(C.build([trax], query="Trax Records")) == 1 and C.build([other], query="Trax Records") == []
+
+
+def test_non_dance_artists_are_dropped_unknown_kept():
+    from tests.test_discover_avail import MemDB
+    tracks = C.build([cand("a", "Lamb Of God - Redneck", "flac"), cand("b", "Phuture - Acid Tracks", "flac"),
+                      cand("c", "Obscure Producer - White Label Jam", "flac")])
+    genres = {"Lamb Of God": ["Rock", "Metal"], "Phuture": ["Electro", "Techno/House"], "Obscure Producer": []}
+    asked = []
+
+    def lookup(a):
+        asked.append(a); return genres[a]
+    db = MemDB()
+    kept = C.dance_only(db, tracks, lookup=lookup)
+    assert [t.artist for t in kept] == ["Phuture", "Obscure Producer"]
+    C.dance_only(db, tracks, lookup=lookup)
+    assert len(asked) == 3                                                  # remembered: each artist asked once
+
+
+def test_plural_folder_names_count():
+    t = cand("a", "Dimitri From Paris - Love Train", "flac", folder="Disco Edits 2019")
+    assert len(C.build([t], query="Disco edit")) == 1

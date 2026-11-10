@@ -4,6 +4,18 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.2 (2026-11-09) — Discover: dance and electronic music only
+
+- Network searches match words anywhere in a path, so "Chicago house" also found e.g. a metal band's
+  "Live in Chicago / House of Blues". Now, for every row:
+  - the label or style must appear as a phrase inside ONE folder or file name ("Disco edits" counts for Disco edit);
+  - paths that say metal, rock, punk, grunge, country, folk, soundtrack… are left out;
+  - each artist's genres are checked on Deezer (their top releases; remembered 90 days): no dance/electronic
+    genre (Dance, Electro, Techno/House, Disco, Soul & Funk) means out. Unknown artists stay if they passed the above.
+- Discover's own search ("See everything") applies the path check too. The Search tab is unchanged.
+- Rows and ready spins cached by 0.9.1 are discarded so nothing from before the fix shows. "Z Records" left the
+  label pool (its name alone matches almost anything).
+
 ## 0.9.1 (2026-11-09) — Discover, tightened
 
 - **Labels and Styles are separate sections,** each with its own heading.

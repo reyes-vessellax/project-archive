@@ -119,6 +119,24 @@ def from_deezer(artist: str, title: str, fetch: Fetch) -> Meta | None:
     return None
 
 
+def deezer_artist_genres(artist: str, fetch: Fetch = None) -> list[str]:
+    """Genres of an artist's top releases on Deezer (most common first); [] when the artist isn't found.
+    Only an exact-name match counts, so a house producer isn't judged by someone else's records."""
+    fetch = fetch or http_get
+    hits = _json(fetch, f"https://api.deezer.com/search/artist?q={urllib.parse.quote(norm(artist))}&limit=5").get("data") or []
+    a = next((h for h in hits if norm(h.get("name", "")) == norm(artist)), None)
+    if not a:
+        return []
+    top = _json(fetch, f"https://api.deezer.com/artist/{int(a['id'])}/top?limit=5").get("data") or []
+    counts: dict[str, int] = {}
+    for alb_id in list(dict.fromkeys((t.get("album") or {}).get("id") for t in top))[:3]:
+        if not alb_id:
+            continue
+        for g in ((_json(fetch, f"https://api.deezer.com/album/{int(alb_id)}").get("genres") or {}).get("data") or []):
+            counts[g.get("name", "")] = counts.get(g.get("name", ""), 0) + 1
+    return [g for g, _ in sorted(counts.items(), key=lambda x: -x[1]) if g]
+
+
 def deezer_cover(artist: str, title: str, fetch: Fetch = None) -> str:
     """Just a cover image URL for a track (one Deezer search, no album call); "" when nothing matches."""
     fetch = fetch or http_get
