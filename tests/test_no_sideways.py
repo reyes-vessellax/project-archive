@@ -26,8 +26,11 @@ def test_scroll_pages_never_go_sideways():
 def test_dig_the_crate_title_wraps(service):
     from app.ui.discover_page import SpinBar
     app = _app()
-    bar = SpinBar(); bar.title.setText("Extremely Long Title " * 12); bar.resize(900, 200); bar.show(); app.processEvents()
-    assert bar.minimumSizeHint().width() < 900
+    bar = SpinBar()
+    for lb in (bar.where, bar.title, bar.sub):
+        lb.setText("Extremely Long Words In Every Line " * 10)
+    bar.resize(900, 200); bar.show(); app.processEvents()
+    assert bar.minimumSizeHint().width() < 800           # ~500 on macOS; Windows fonts run up to ~40% wider
     bar.close(); bar.deleteLater(); app.processEvents()
 
 

@@ -590,13 +590,13 @@ class SpinBar(QFrame):
         outer = vbox(self, (18, 14, 18, 14), 10)
         head = hbox(spacing=12)
         head.addWidget(label("Dig the crate", "rowtitle"))
-        head.addWidget(label("A random track from today's labels and styles, ready to hear. Not your thing? Dig again.",
-                             "faint"), 1, Qt.AlignBottom)
+        head.addWidget(label("A random track from today's rows, ready to hear. Not your thing? Dig again.",
+                             "faint", wrap=True), 1, Qt.AlignBottom)        # wraps: Windows fonts run wider
         outer.addLayout(head)
         lay = hbox(spacing=16)
         self.art = CoverArt(); self.art.setFixedSize(76, 76); lay.addWidget(self.art)
         txt = vbox(spacing=2)
-        self.where = label("", "tilemeta")
+        self.where = label("", "tilemeta", wrap=True)
         self.title = label("Finding you a track…", "spinbartitle", wrap=True)   # long titles wrap, never widen the bar
         self.sub = label("", "muted", wrap=True)
         txt.addWidget(self.where); txt.addWidget(self.title); txt.addWidget(self.sub)
