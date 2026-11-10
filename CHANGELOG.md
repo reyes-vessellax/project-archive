@@ -4,6 +4,18 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.10 (2026-11-10) — Discover fills fast, and actually fills
+
+- **Fix: Discover could sit empty for minutes.** Any blip in the engine connection rebuilt every row and cancelled
+  every search in flight; each cancelled search still used one of the paced search slots, so with blips coming
+  faster than searches finished, nothing ever landed. Now only switching genre cancels anything, a cancelled
+  search gives up before it uses a slot, a row that's loading is never queued twice, and rows that were offline
+  just fill in when the connection returns.
+- **Faster first paint:** each row's first search runs before any row's second, two run at once, and For you
+  and the eras show their first artist's tracks the moment that search lands, growing as the rest arrive.
+- **Your searches come first:** Discover's (and the upgrade finder's) background searches only go while a search
+  slot stays free, so a search you type, and the Wishlist, never wait behind them.
+
 ## 0.9.9 (2026-11-10) — Discover without label rows: For you, Eras, Styles, every artist checked
 
 Label rows searched the network for a label's name and kept whatever was filed under it, so wrong songs got in.

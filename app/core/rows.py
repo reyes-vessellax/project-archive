@@ -223,7 +223,7 @@ def style_row(svc, engine, style: str, owns=lambda a, t: False, cancelled=lambda
     if getattr(svc, "adapter", None) is None:
         return None
     res = collect(svc, style, C.SEARCH_S, budget=getattr(svc, "search_budget", None), cancelled=cancelled, log=log,
-                  check_login=False)
+                  check_login=False, background=True)
     if res is None:
         return None
     _forget(svc, res)
@@ -285,7 +285,7 @@ def artist_crate(svc, artist: str, owns=lambda a, t: False, cancelled=lambda: Fa
     if getattr(svc, "adapter", None) is None:
         return None
     res = collect(svc, artist, C.SEARCH_S, budget=getattr(svc, "search_budget", None), cancelled=cancelled, log=log,
-                  check_login=False)
+                  check_login=False, background=True)
     if res is None:
         return None
     _forget(svc, res)
@@ -334,6 +334,18 @@ def era_row(svc, engine, era: dict, day: int, owns=lambda a, t: False, cancelled
     # ("Can You Feel It" shows 2014, because the 1986 original is credited to Mr. Fingers). The artists are
     # already the era's own.
     prefetch_years(engine, tracks[:VERIFY_MAX], cancelled)
+    def in_era(t):
+        y = _remembered(engine, _year_key(t.artist, t.title), YEAR_DAYS)
+        return 0 if y is not None and lo - 1 <= y <= hi + 1 else 1
+    return sorted(tracks, key=in_era)
+
+
+def order_by_era(engine, era: dict, tracks, cancelled=lambda: False, cached_only: bool = False):
+    """Records first released in the era's years first (looking years up unless cached_only)."""
+    lo, hi = era_span(era.get("years", ""))
+    if not cached_only:
+        prefetch_years(engine, tracks[:VERIFY_MAX], cancelled)
+
     def in_era(t):
         y = _remembered(engine, _year_key(t.artist, t.title), YEAR_DAYS)
         return 0 if y is not None and lo - 1 <= y <= hi + 1 else 1
@@ -404,6 +416,15 @@ def for_you_artists(db, day: int, n: int = 3, fetch=None) -> tuple[list[str], li
             because.append(s)
             pool += [r for r in todays(rel[:12], n, day, s) if r not in pool]
     return pool[:n], because
+
+
+def for_you_start(svc, day: int, owns=lambda a, t: False, cancelled=lambda: False, log=None, fetch=None):
+    """For you, first part: (the first related artist's tracks, the library artists it's because of, the
+    related artists still to search). The row shows as soon as this lands."""
+    artists, because = for_you_artists(svc.db, day, fetch=fetch)
+    if not artists:
+        return [], because, []
+    return artist_crate(svc, artists[0], owns, cancelled, log) or [], because, artists[1:]
 
 
 def for_you_row(svc, day: int, owns=lambda a, t: False, cancelled=lambda: False, log=None, fetch=None):

@@ -682,7 +682,7 @@ class DiscoverPage(QWidget):
         self.engine = engine or Discover(svc.db)
         self.pool = QThreadPool(self); self.pool.setMaxThreadCount(1)     # one polite queue of lookups
         self.thumbs = QThreadPool(self); self.thumbs.setMaxThreadCount(2)
-        self.vpool = QThreadPool(self); self.vpool.setMaxThreadCount(1)     # "who's sharing it" checks, one at a time
+        self.vpool = QThreadPool(self); self.vpool.setMaxThreadCount(2)     # network searches, two at a time (the budget paces them)
         self.auxpool = QThreadPool(self); self.auxpool.setMaxThreadCount(2)  # covers from Deezer, loading spins
         self.bridge = _Bridge(); self.bridge.done.connect(self._done); self.bridge.thumb.connect(self._thumb)
         self._tokens = itertools.count(1)
@@ -849,16 +849,21 @@ class DiscoverPage(QWidget):
         self._loaded_for = None
         self._load_rows()
 
-    def _load_rows(self):
-        """Build the rows for the current era and fill each from memory or ONE search, top to bottom."""
+    def _load_rows(self, force: bool = False):
+        """Build the rows for the current genre and fill them: from memory instantly, else from the network.
+
+        Searching is the slow part, so: each row's FIRST search runs before anyone's second (every row gets
+        something early), multi-artist rows (For you, eras) grow as each artist's search lands, two searches run at
+        once, a row already loading is never queued again, and only switching genre cancels anything."""
         from datetime import date
         for k, b in self.era_btns.items():
             b.setChecked(k == self.era)
         connected = getattr(self.svc, "adapter", None) is not None
-        want = (self.era, connected)
-        if self._loaded_for == want:
+        if self._loaded_for == self.era and not force:
+            if connected and getattr(self, "_offline_rows", None):
+                self._fill_rows(self._offline_rows)            # the connection came back: fill what was offline
             return
-        self._loaded_for = want
+        self._loaded_for = self.era
         self._close_card()
         self.track_card.setParent(self); self.track_card.hide()   # keep it alive: it lived inside a row being removed
         for box in (self.rows_box, self.eras_box, self.styles_box):
@@ -868,10 +873,13 @@ class DiscoverPage(QWidget):
                     w.setParent(None); w.deleteLater()
         self.rows = {}
         self._tiles_by_img = {}
+        self._row_tracks: dict[str, list] = {}
+        self._loading: set = set()
+        self._pending: dict[str, int] = {}                 # searches still to land, per row
         from ..core import rows as R
         from ..core.eras import ERAS, STYLES
         from ..core.eras import genre as find_genre
-        day = date.today().toordinal()
+        self._day = day = date.today().toordinal()
         g = find_genre(self.era) if self.era else None
         eras_by_key = {e["key"]: e for e in ERAS}
         if g:
@@ -883,10 +891,10 @@ class DiscoverPage(QWidget):
         names = ([("For you", "FORYOU")] if not g else []) + [(e["name"], "ERA") for e in eras] + \
                 [(st, "STYLE") for st in styles]
         self._row_kind = {n: tag for n, tag in names}
-        era_of = {e["name"]: e for e in eras}
+        self._era_of = {e["name"]: e for e in eras}
         box_for = {"FORYOU": self.rows_box, "ERA": self.eras_box, "STYLE": self.styles_box}
         for name, kind in names:
-            row = CrateRow(name, era_of[name]["years"] if kind == "ERA" else "")
+            row = CrateRow(name, self._era_of[name]["years"] if kind == "ERA" else "")
             row.tapped.connect(self._tap_tile); row.play_tapped.connect(self._play_tile)
             if kind == "STYLE":
                 row.see_all.connect(self.find.emit)
@@ -896,37 +904,77 @@ class DiscoverPage(QWidget):
                 row.note.setText("Nothing ready from artists like yours right now. Save a few tracks to the library "
                                  "and this fills with artists like them.")
             box_for[kind].addWidget(row); self.rows[name] = row
-            if not connected:
-                row.offline()
         self.eras_head_w.setVisible(bool(eras))
         self.styles_head_w.setVisible(bool(styles))
-        self.spin_bar.title.setText("Finding you a track…" if connected else "Connect to the network to dig the crate.")
-        if not connected:
-            return
-        gen = self._rows_gen = next(self._tokens)
-        lib = self.engine.library()
-        svc, engine = self.svc, self.engine
-        stop = lambda: self._rows_gen != gen
-        for name, kind in names:
-            def work(nm=name, k=kind):
-                if k == "FORYOU":
-                    return R.for_you_row(svc, day, owns=lib.owns, cancelled=stop)
-                if k == "ERA":
-                    return R.era_row(svc, engine, era_of[nm], day, owns=lib.owns, cancelled=stop)
-                return R.style_row(svc, engine, nm, owns=lib.owns, cancelled=stop)
+        self._fill_rows([n for n, _ in names])
 
-            def then(res, nm=name, k=kind):
-                if self._rows_gen != gen or nm not in self.rows:
-                    return
-                if k == "FORYOU" and isinstance(res, tuple):
-                    res, because = res
-                    self.rows[nm].set_tag(("BECAUSE YOU HAVE " + " & ".join(because).upper()) if because else "")
-                if isinstance(res, Exception) or res is None:
-                    self.rows[nm].fill([]); return
-                self.rows[nm].fill(res)
-                self._covers_for(nm, res)
-                self._prefetch_spins()
-            self._run_bg(work, then)
+    def _fill_rows(self, names: list[str]):
+        from ..core import rows as R
+        connected = getattr(self.svc, "adapter", None) is not None
+        self.spin_bar.title.setText("Finding you a track…" if connected else "Connect to the network to dig the crate.")
+        names = [n for n in names if n in self.rows and n not in self._loading]
+        if not connected:
+            for n in names:
+                self.rows[n].offline()
+            self._offline_rows = names
+            return
+        self._offline_rows = []
+        era_key, day, svc, engine = self.era, self._day, self.svc, self.engine
+        lib = self.engine.library()
+        stop = lambda: self.era != era_key                    # only switching genre cancels a search
+        rounds: list[list] = [[], [], []]                     # every row's 1st search, then 2nds, then 3rds
+
+        for nm in names:
+            kind = self._row_kind[nm]
+            self._loading.add(nm)
+            if kind == "STYLE":
+                rounds[0].append((nm, lambda nm=nm: R.style_row(svc, engine, nm, owns=lib.owns, cancelled=stop)))
+                continue
+            if kind == "ERA":
+                era = self._era_of[nm]
+                artists = R.todays(era["artists"], 2, day, era["key"])
+                jobs = [lambda a=a, era=era: R.order_by_era(engine, era, R.artist_crate(svc, a, lib.owns, stop) or [], stop)
+                        for a in artists]
+            else:
+                jobs = [lambda: R.for_you_start(svc, day, owns=lib.owns, cancelled=stop)]   # 1st artist + the plan
+            for i, job in enumerate(jobs):
+                rounds[min(i, 2)].append((nm, job))
+            self._pending[nm] = len(jobs)
+        for r in rounds:
+            for nm, job in r:
+                self._run_bg(job, lambda res, nm=nm, ek=era_key: self._row_part(nm, res, ek))
+
+    def _row_part(self, nm: str, res, era_key):
+        """One search's worth of tracks for a row: merge it in and show the row straight away."""
+        if self.era != era_key or nm not in self.rows:
+            return
+        from ..core import rows as R
+        row = self.rows[nm]
+        kind = self._row_kind.get(nm)
+        more_jobs = []
+        if kind == "FORYOU" and isinstance(res, tuple):
+            res, because, rest = res
+            row.set_tag(("BECAUSE YOU HAVE " + " & ".join(because).upper()) if because else "")
+            svc, lib, ek = self.svc, self.engine.library(), era_key
+            stop = lambda: self.era != ek
+            more_jobs = [lambda a=a: R.artist_crate(svc, a, lib.owns, stop) or [] for a in rest]
+            self._pending[nm] = self._pending.get(nm, 1) + len(more_jobs)
+        self._pending[nm] = self._pending.get(nm, 1) - 1
+        if not isinstance(res, Exception) and res:
+            have = self._row_tracks.setdefault(nm, [])
+            merged = R.interleave([have, list(res)]) if have else list(res)
+            if kind == "ERA":
+                merged = R.order_by_era(self.engine, self._era_of[nm], merged, cached_only=True)
+            self._row_tracks[nm] = merged
+            row.fill(merged)
+            self._covers_for(nm, merged)
+            self._prefetch_spins()
+        elif self._pending[nm] <= 0 and not self._row_tracks.get(nm):
+            row.fill([])                                      # nothing at all from any of its searches
+        if self._pending[nm] <= 0:
+            self._loading.discard(nm)
+        for job in more_jobs:
+            self._run_bg(job, lambda r, nm=nm, ek=era_key: self._row_part(nm, r, ek))
 
     def _covers_for(self, name: str, tracks):
         """Covers from Discogs: match the crate's tracks to the label's records (cached after the first time)."""

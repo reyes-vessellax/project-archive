@@ -76,13 +76,35 @@ class Budget:
             self._tokens = max(0.0, self._tokens - 1)
 
 
+    def take_background(self, cancelled: Callable[[], bool] | None = None, spare: int = 1) -> bool:
+        """For Discover's background searches: go only while `spare` searches stay free, so the user's own
+        searches (and the Wishlist) never queue behind them. False = cancelled while waiting."""
+        while True:
+            with self._lock:
+                self._refill()
+                if self._tokens >= 1 + spare:
+                    self._tokens -= 1
+                    return True
+            if cancelled and cancelled():
+                return False
+            time.sleep(0.5)
+
+
 def collect(svc, query: str, deadline: float, budget: Budget | None = None,
             progress: Callable[[int, int], None] | None = None, cancelled: Callable[[], bool] | None = None,
-            log: Callable[[str], None] | None = None, check_login: bool = True):
+            log: Callable[[str], None] | None = None, check_login: bool = True, background: bool = False):
     """Run ONE network search and return its SearchResult (None if cancelled).
     Watches the engine's live counts and stops the search the moment it is ripe, then reads everything."""
+    if cancelled and cancelled():
+        return None                                     # given up already: don't spend a search on it
     if budget is not None:
-        budget.take(log=log)
+        if background:
+            if not budget.take_background(cancelled):
+                return None
+        else:
+            budget.take(log=log)
+    if cancelled and cancelled():
+        return None
     res = svc.search(query, timeout_s=deadline + 10, check_login=check_login)
     sid = res.search_id
     t0 = time.monotonic()

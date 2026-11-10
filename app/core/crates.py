@@ -205,7 +205,7 @@ def crate(svc, query: str, owns=lambda a, t: False, cancelled=lambda: False, log
     if getattr(svc, "adapter", None) is None:
         return None
     res = collect(svc, query, SEARCH_S, budget=getattr(svc, "search_budget", None), cancelled=cancelled, log=log,
-                  check_login=False)
+                  check_login=False, background=True)
     if res is None:
         return None
     try:

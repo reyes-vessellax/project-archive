@@ -105,3 +105,11 @@ def test_famous_namesake_is_vetoed_by_deezer():
     svc = FakeSvc([cand("a", "Drake - Hotline Bling", folder="Deep House Bootlegs")])
     eng = FakeEngine({"Drake": mb_artist("Drake", "deep house")})               # an obscure house DJ called Drake
     assert R.style_row(svc, eng, "Deep house", deezer=lambda a: ["Rap/Hip Hop"]) == []
+
+
+def test_background_searches_leave_a_slot_for_the_user():
+    from app.core.searching import Budget
+    b = Budget(burst=2, refill_s=1000)
+    assert b.take_background()                       # 2 free: background may take one
+    assert not b.take_background(cancelled=lambda: True)   # 1 left: kept for the user
+    b.take()                                         # the user's search goes straight through

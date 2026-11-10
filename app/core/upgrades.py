@@ -103,7 +103,7 @@ def find(svc, w: Weak, cancelled=lambda: False, log=None) -> Weak:
     if getattr(svc, "adapter", None) is None or not w.artist or not w.title:
         return w
     res = collect(svc, B.Wanted(w.artist, w.title, w.mix).query, 12.0, budget=getattr(svc, "search_budget", None),
-                  cancelled=cancelled, log=log, check_login=False)
+                  cancelled=cancelled, log=log, check_login=False, background=True)
     if res is None:
         return w
     try:
