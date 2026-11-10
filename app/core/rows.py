@@ -37,6 +37,16 @@ DISCO = r"disco|boogie|italo|cosmic|balearic|house|\bdj\b|club|edits?\b"
 WEAK = r"dance|electro|electronic|edm|synth"
 OTHER = re.compile(r"\bpop\b|-pop|pop-|rock|metal|punk|country|hip[ -]?hop|\brap\b|r&b|rnb|singer|songwriter|folk|"
                    r"actor|actress|band\b|indie|k-?pop|reggaeton|trap\b", re.I)
+# What marks an artist as THIS style, not just house in general: they're shown first in that style's row.
+SPECIFIC = {
+    "deep house": r"deep house|deep\b", "chicago house": r"chicago|jack", "jackin house": r"jack|chicago",
+    "acid house": r"acid", "garage house": r"garage|new jersey|nyc|new york", "detroit house": r"detroit",
+    "soulful house": r"soulful|gospel|vocal house|garage", "disco edit": r"disco|edit|boogie",
+    "nu disco": r"nu[- ]disco|disco", "tech house": r"tech house|tech-house|techno", "ghetto house": r"ghetto|juke|footwork",
+    "lo-fi house": r"lo-?fi|outsider", "outsider house": r"outsider|lo-?fi", "french house": r"french|filter",
+    "filter house": r"filter|french", "minimal house": r"minimal|micro", "microhouse": r"micro|minimal",
+    "afro house": r"afro|south africa|amapiano", "italo disco": r"italo", "cosmic disco": r"cosmic|italo|balearic",
+    "balearic": r"balearic|cosmic"}
 FAMILY = {"disco edit": DISCO, "nu disco": DISCO, "italo disco": DISCO, "cosmic disco": DISCO, "balearic": DISCO}
 
 
@@ -96,11 +106,14 @@ def prefetch_profiles(engine, artists, cancelled=lambda: False) -> None:
             continue
         for a in chunk:
             want = _norm(a)
-            texts = [_text(x) for x in found
+            named = [x for x in found
                      if any(_norm(n) == want for n in [x.get("name", ""), x.get("sort-name", ""),
                                                        *[y.get("name", "") for y in x.get("aliases") or []]] if n)]
-            if texts:
-                _remember(engine, "rows:mbartist:" + want, texts)
+            if named:
+                _remember(engine, "rows:mbartist:" + want, [_text(x) for x in named])
+                named.sort(key=lambda x: (not re.search(HOUSE, _text(x), re.I), -int(x.get("score") or 0)))
+                if named[0].get("id") and _remembered(engine, "rows:mbid:" + want, TAG_DAYS) is None:
+                    _remember(engine, "rows:mbid:" + want, named[0]["id"])     # For you's seeds need the id
 
 
 def artist_profiles(engine, artist: str) -> list[str]:
@@ -238,6 +251,8 @@ def check_style(db, engine, tracks, style: str, cancelled=lambda: False, deezer=
     """MusicBrainz yes: in. MusicBrainz doesn't know: Deezer's genres (or a dance word in the path, for artists
     Deezer doesn't know either). MusicBrainz no: in only if Deezer positively files them under dance, because
     MusicBrainz sometimes lists only namesakes (the tech house FISHER isn't in its top ten "Fisher"s)."""
+    from datetime import date
+    tracks = daily_order(tracks, date.today().toordinal(), style)   # a different first screenful every day
     confirmed, unknown, disputed = [], [], []
     prefetch_profiles(engine, [t.artist for t in tracks[:VERIFY_MAX]], cancelled)
     for t in tracks[:VERIFY_MAX]:
@@ -256,6 +271,11 @@ def check_style(db, engine, tracks, style: str, cancelled=lambda: False, deezer=
     confirmed = [t for t in confirmed if not _deezer_says_other(db, t.artist, deezer)]
     unknown += [t for t in disputed                         # disputed, but Deezer says dance: same rules as unknown
                 if set(C.artist_genres(db, main_artist(t.artist), deezer)) & C.DANCE_GENRES]
+    spec = SPECIFIC.get(style.lower())
+    if spec:                                                # artists known for THIS style first
+        def specific(t):
+            return any(x and re.search(spec, x, re.I) for x in artist_profiles(engine, main_artist(t.artist)))
+        confirmed.sort(key=lambda t: not specific(t))
     return confirmed + C.dance_only(db, unknown, cancelled, deezer)
 
 
@@ -352,6 +372,13 @@ def order_by_era(engine, era: dict, tracks, cancelled=lambda: False, cached_only
     return sorted(tracks, key=in_era)
 
 
+def daily_order(tracks, day: int, salt: str):
+    """A different order each day (so the first screenful changes), lossless still ahead of MP3."""
+    tracks = list(tracks)
+    random.Random(f"{day}:{salt}:order").shuffle(tracks)
+    return sorted(tracks, key=lambda t: 0 if (t.best.extension or "").lower() in C.LOSSLESS else 1)
+
+
 def interleave(lists):
     out, seen = [], set()
     for i in range(max((len(x) for x in lists), default=0)):
@@ -402,8 +429,99 @@ def related(db, artist: str, fetch=None) -> list[str]:
     return names
 
 
-def for_you_artists(db, day: int, n: int = 3, fetch=None) -> tuple[list[str], list[str]]:
-    """(today's related artists to dig, the library artists they came from)."""
+LB_SIMILAR = ("https://labs.api.listenbrainz.org/similar-artists/json?algorithm=session_based_days_7500_session_300_"
+              "contribution_5_threshold_10_limit_100_filter_True_skip_30&artist_mbids=")
+SEEDS = 10               # the library artists For you starts from
+
+
+def mb_id(engine, artist: str) -> str | None:
+    """MusicBrainz id for an artist; among namesakes, the one described as house/dance (Chicago's Fast Eddie)."""
+    key = "rows:mbid:" + _norm(artist)
+    hit = _remembered(engine, key, TAG_DAYS)
+    if hit is not None:
+        return hit or None
+    q = urllib.parse.quote(f'artist:"{artist}"')
+    try:
+        found = engine._get("mb", f"{MB}/artist?query={q}&fmt=json&limit=10", days=TAG_DAYS).get("artists") or []
+    except Exception:
+        return None
+    named = [a for a in found if _named(a, artist)]
+    named.sort(key=lambda a: (not re.search(HOUSE, _text(a), re.I), -int(a.get("score") or 0)))
+    mid = named[0]["id"] if named else ""
+    _remember(engine, key, mid)
+    return mid or None
+
+
+def lb_similar(db, mbid: str, fetch=None) -> list[str]:
+    """ListenBrainz's similar artists (from what people actually play one after another), most similar first.
+    Far better for underground house than Deezer's related artists, which drift to the commercial end."""
+    from datetime import datetime, timedelta, timezone
+    import json as _json_mod
+    from ..media.metadata import http_get
+    key = "rows:lbsim:" + mbid
+    hit = db.cache_get(key)
+    if hit:
+        data, at = hit
+        try:
+            if datetime.fromisoformat(at) > datetime.now(timezone.utc) - timedelta(days=30):
+                return data.get("names") or []
+        except ValueError:
+            pass
+    try:
+        raw = _json_mod.loads((fetch or http_get)(LB_SIMILAR + mbid, 8.0).decode("utf-8", "replace"))
+    except Exception:
+        return []
+    rows = raw if isinstance(raw, list) else raw.get("data") or []
+    names = [r.get("name", "") for r in sorted(rows, key=lambda r: -(r.get("score") or 0)) if r.get("name")]
+    db.cache_put(key, {"names": names})
+    return names
+
+
+def for_you_ok(engine, db, artist: str, deezer=None) -> bool:
+    """A For you artist must be known for house/dance music: MusicBrainz says so (and Deezer doesn't file the
+    name under something else), or MusicBrainz doesn't know them and Deezer files them under dance."""
+    fit = artist_fits(engine, artist, "house")
+    g = set(C.artist_genres(db, main_artist(artist), deezer))
+    if fit is True:
+        return not (g and not (g & C.DANCE_GENRES))
+    if fit is None:
+        return bool(g & C.DANCE_GENRES)
+    return False
+
+
+def for_you_artists(db, day: int, n: int = 3, fetch=None, engine=None, deezer=None,
+                    cancelled=lambda: False) -> tuple[list[str], list[str]]:
+    """(today's artists to dig, the library artists they came from).
+
+    With MusicBrainz available (engine): ListenBrainz similar artists for the 10 artists you have most of,
+    scored by how many of yours point at them and how closely, checked as house/dance, and today's 3 drawn from
+    the best dozen (so it changes every day). Without it: Deezer's related artists."""
+    if engine is not None:
+        have = library_artists(db, SEEDS)
+        if not have:
+            return [], []
+        mine = {_norm(a) for a in library_artists(db, 10_000)}
+        score: dict[str, float] = {}
+        why: dict[str, list] = {}
+        prefetch_profiles(engine, have, cancelled)              # ids for all 10 seeds in 2 requests
+        for seed in have:
+            if cancelled():
+                break
+            mid = mb_id(engine, seed)
+            sims = lb_similar(db, mid, fetch) if mid else []
+            for i, name in enumerate(sims[:40]):
+                if _norm(name) in mine or not _norm(name):
+                    continue
+                score[name] = score.get(name, 0.0) + (40 - i) / 40
+                why.setdefault(name, []).append(seed)
+        ranked = sorted(score, key=lambda a: -score[a])[:30]
+        prefetch_profiles(engine, ranked, cancelled)
+        prefetch_genres(db, ranked, deezer)
+        good = [a for a in ranked if for_you_ok(engine, db, a, deezer)]
+        if good:
+            pick = todays(good[:12], n, day, "foryou")
+            because = list(dict.fromkeys(s for a in pick for s in why.get(a, [])))
+            return pick, because[:2]
     have = library_artists(db)
     if not have:
         return [], []
@@ -418,10 +536,11 @@ def for_you_artists(db, day: int, n: int = 3, fetch=None) -> tuple[list[str], li
     return pool[:n], because
 
 
-def for_you_start(svc, day: int, owns=lambda a, t: False, cancelled=lambda: False, log=None, fetch=None):
-    """For you, first part: (the first related artist's tracks, the library artists it's because of, the
-    related artists still to search). The row shows as soon as this lands."""
-    artists, because = for_you_artists(svc.db, day, fetch=fetch)
+def for_you_start(svc, day: int, owns=lambda a, t: False, cancelled=lambda: False, log=None, fetch=None,
+                  engine=None, deezer=None):
+    """For you, first part: (the first artist's tracks, the library artists it's because of, the artists still
+    to search). The row shows as soon as this lands."""
+    artists, because = for_you_artists(svc.db, day, fetch=fetch, engine=engine, deezer=deezer, cancelled=cancelled)
     if not artists:
         return [], because, []
     return artist_crate(svc, artists[0], owns, cancelled, log) or [], because, artists[1:]

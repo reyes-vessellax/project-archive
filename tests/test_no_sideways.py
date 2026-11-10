@@ -1,0 +1,45 @@
+"""Nothing scrolls left and right: long titles, tiles and wide content wrap or squeeze instead."""
+import os
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+def _app():
+    from PySide6.QtWidgets import QApplication
+    return QApplication.instance() or QApplication([])
+
+
+def test_scroll_pages_never_go_sideways():
+    from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
+    from app.ui.widgets import scroll
+    app = _app()
+    inner = QWidget(); lay = QHBoxLayout(inner)
+    for _ in range(6):                                   # a row of tiles wider than the page
+        t = QLabel("4:05 44.1 kHz FLAC"); t.setMinimumWidth(300); lay.addWidget(t)
+    lay.addWidget(QLabel("A Very Long Track Title (Extended Club Mix Featuring Somebody Remastered 2024)" * 2))
+    s = scroll(inner); s.resize(900, 500); s.show(); app.processEvents()
+    assert s.horizontalScrollBar().maximum() == 0
+    assert inner.width() <= s.viewport().width()
+    s.close(); s.deleteLater(); app.processEvents()
+
+
+def test_dig_the_crate_title_wraps(service):
+    from app.ui.discover_page import SpinBar
+    app = _app()
+    bar = SpinBar(); bar.title.setText("Extremely Long Title " * 12); bar.resize(900, 200); bar.show(); app.processEvents()
+    assert bar.minimumSizeHint().width() < 900
+    bar.close(); bar.deleteLater(); app.processEvents()
+
+
+def test_search_table_never_goes_sideways(service):
+    from app.adapters.base import Candidate, SearchResult
+    from app.ui.pages import SearchPage
+    app = _app()
+    page = SearchPage(service); page.resize(1000, 700); page.show(); app.processEvents()
+    long = "Somebody - A Very Long Track Title (Extended Club Mix) [Remastered Anniversary Edition 2024]"
+    cands = [Candidate("soulseek", f"user{i}", f"@@x\\\\Some Very Long Folder Name Deep House Classics 1988-1996\\\\{long}.flac",
+                       60_000_000, display_name=f"{long}.flac", artist="Somebody", title=long, extension="flac",
+                       free_slot=True) for i in range(5)]
+    page.show_results(SearchResult("q", "q", True, cands), searching=False); app.processEvents()
+    assert page.tree.horizontalScrollBar().maximum() == 0
+    page.close(); page.deleteLater(); app.processEvents()

@@ -240,15 +240,26 @@ def keep_scroll(area, rebuild) -> None:
     QTimer.singleShot(0, lambda: bar.setValue(value))          # again after the layout has settled
 
 
+class _UpDownScroll(QScrollArea):
+    """Scrolls up and down only. The page is pinned to the visible width, so a long title or a row of tiles wraps
+    or squeezes instead of making the whole page slide left and right."""
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        w = self.widget()
+        if w is not None:
+            w.setFixedWidth(self.viewport().width())
+
+
 def scroll(inner: QWidget) -> QScrollArea:
     """A scroll area whose vertical bar never comes and goes. With the bar "as needed", wrapped text that just
     fits flips it on, the text re-wraps narrower and taller, the bar is needed, it isn't... and the page
     flickers (the Ready page did this every few seconds). The bar's lane is always there; the handle only
     shows when there is something to scroll."""
-    s = QScrollArea()
+    s = _UpDownScroll()
     s.setWidgetResizable(True)
     s.setFrameShape(QFrame.NoFrame)
     s.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+    s.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)       # never sideways (the user asked)
     bar = s.verticalScrollBar()
 
     def idle(_lo=0, hi=0):

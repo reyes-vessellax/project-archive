@@ -31,7 +31,7 @@ def test_rows_load_once_progressively_and_survive_refreshes(service, monkeypatch
     def artist_crate(svc, a, owns=None, cancelled=None, log=None, use_cache=True):
         note(("artist", a)); time.sleep(0.05); return [_track(a, "t1"), _track(a, "t2")]
 
-    def for_you_start(svc, day, owns=None, cancelled=None):
+    def for_you_start(svc, day, owns=None, cancelled=None, **kw):
         note(("foryou", "")); time.sleep(0.05)
         return [_track("Tyree", "Acid Over")], ["Fast Eddie"], ["Ralphi Rosario", "DSK"]
 

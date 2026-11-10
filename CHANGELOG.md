@@ -4,6 +4,22 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.11 (2026-11-10) — For you that fits, rows that change daily, nothing slides sideways
+
+- **For you rebuilt:** it was using Deezer's "related artists", which drift to commercial vocal house (Freemasons,
+  Didier Sinclair) and, from Soft Cell, to synth-pop. Now: ListenBrainz's similar artists (from what people actually
+  play one after another) for the 10 artists you have most of, ranked by how many of yours point at them, each
+  checked as house/dance on MusicBrainz and Deezer. On your library today: Mr. Fingers, Phuture, Farley Jackmaster
+  Funk, Marshall Jefferson, Tyree, Armando, Steve Poindexter… (Depeche Mode, The Cure, Dean Martin filtered out).
+  Today's three are drawn from the best dozen, so it changes every day. First build ~25 s, then ~1 s.
+- **Rotates every day:** each style row shows a different first screenful each day (lossless still first), and the
+  page reloads its styles, eras and For you artists when the day changes, even if the app stayed open.
+- **Genre accuracy:** in each style row, artists MusicBrainz knows for THAT style come first (Acid house: acid
+  artists ahead of house-in-general), on top of the house/dance check every artist already passes.
+- **No more sideways scrolling:** the Queue's track panel, Discover, Settings and the other pages are pinned to the
+  window's width (wide content wraps or squeezes), the Search table's Title and Folder columns squeeze with "…"
+  instead of widening it, and a long title in Dig the crate wraps.
+
 ## 0.9.10 (2026-11-10) — Discover fills fast, and actually fills
 
 - **Fix: Discover could sit empty for minutes.** Any blip in the engine connection rebuilt every row and cancelled

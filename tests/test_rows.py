@@ -113,3 +113,12 @@ def test_background_searches_leave_a_slot_for_the_user():
     assert b.take_background()                       # 2 free: background may take one
     assert not b.take_background(cancelled=lambda: True)   # 1 left: kept for the user
     b.take()                                         # the user's search goes straight through
+
+
+def test_artists_known_for_the_style_come_first():
+    svc = FakeSvc([cand("a", "Larry Heard - Housey", folder="Acid House Trax"),
+                   cand("b", "Phuture - Acid Tracks", folder="Acid House Trax")])
+    eng = FakeEngine({"Larry": mb_artist("Larry Heard", "house", "deep house"),
+                      "Phuture": mb_artist("Phuture", "acid house", "chicago house")})
+    out = R.style_row(svc, eng, "Acid house", deezer=lambda a: [])
+    assert [t.artist for t in out] == ["Phuture", "Larry Heard"]

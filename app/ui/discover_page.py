@@ -597,8 +597,8 @@ class SpinBar(QFrame):
         self.art = CoverArt(); self.art.setFixedSize(76, 76); lay.addWidget(self.art)
         txt = vbox(spacing=2)
         self.where = label("", "tilemeta")
-        self.title = label("Finding you a track…", "spinbartitle")
-        self.sub = label("", "muted")
+        self.title = label("Finding you a track…", "spinbartitle", wrap=True)   # long titles wrap, never widen the bar
+        self.sub = label("", "muted", wrap=True)
         txt.addWidget(self.where); txt.addWidget(self.title); txt.addWidget(self.sub)
         lay.addLayout(txt, 1)
         self.b_play = button("▶  Play", "ghost", self._play)
@@ -859,11 +859,12 @@ class DiscoverPage(QWidget):
         for k, b in self.era_btns.items():
             b.setChecked(k == self.era)
         connected = getattr(self.svc, "adapter", None) is not None
-        if self._loaded_for == self.era and not force:
+        today = date.today().toordinal()
+        if self._loaded_for == (self.era, today) and not force:
             if connected and getattr(self, "_offline_rows", None):
                 self._fill_rows(self._offline_rows)            # the connection came back: fill what was offline
             return
-        self._loaded_for = self.era
+        self._loaded_for = (self.era, today)                  # a new day: new styles, eras and artists
         self._close_card()
         self.track_card.setParent(self); self.track_card.hide()   # keep it alive: it lived inside a row being removed
         for box in (self.rows_box, self.eras_box, self.styles_box):
@@ -936,7 +937,7 @@ class DiscoverPage(QWidget):
                 jobs = [lambda a=a, era=era: R.order_by_era(engine, era, R.artist_crate(svc, a, lib.owns, stop) or [], stop)
                         for a in artists]
             else:
-                jobs = [lambda: R.for_you_start(svc, day, owns=lib.owns, cancelled=stop)]   # 1st artist + the plan
+                jobs = [lambda: R.for_you_start(svc, day, owns=lib.owns, cancelled=stop, engine=engine)]   # 1st artist + plan
             for i, job in enumerate(jobs):
                 rounds[min(i, 2)].append((nm, job))
             self._pending[nm] = len(jobs)

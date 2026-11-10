@@ -330,6 +330,10 @@ class SearchPage(QWidget):
         for i, w in enumerate(self.WIDTHS):
             self.tree.setColumnWidth(i, w)
         hdr.setSectionResizeMode(self.COLS.index("Availability"), QHeaderView.Stretch)   # Source stays narrow, last
+        for c in ("Title", "Folder"):                     # long names squeeze (with …) instead of widening the table
+            hdr.setSectionResizeMode(self.COLS.index(c), QHeaderView.Stretch)
+        self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)     # never sideways (the user asked)
+        self.tree.setTextElideMode(Qt.ElideRight)
         # click a heading to sort by it (again to flip); # puts the list back to best first
         self._sort: tuple[int, bool] | None = None
         hdr = self.tree.header(); hdr.setSectionsClickable(True); hdr.setSortIndicatorShown(True)
