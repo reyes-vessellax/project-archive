@@ -279,7 +279,7 @@ class ConnectingPage(QWidget):
     and a row of small dots for the steps. Nothing else. It closes itself when everything is ready."""
     done = Signal()
     STEPS = (("engine", "Starting the engine"), ("network", "Signing in to the network"),
-             ("port", "Opening your port"), ("shares", "Sharing your library"))
+             ("port", "Opening your port"), ("shares", "Sharing your library"), ("discover", "Filling Discover"))
 
     def __init__(self, svc: ArchiveService):
         super().__init__()

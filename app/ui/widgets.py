@@ -532,6 +532,7 @@ class QueueRow(QWidget):
         self.artist = label(artist or " ", "muted")
         for lbl in (self.title, self.artist):                # long names clip instead of pushing the row wider than the list
             lbl.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            lbl.setMinimumWidth(90)                          # never squeezed to nothing in a narrow window
         names.addWidget(self.title); names.addWidget(self.artist)
         lay.addLayout(names, 1)
         self.bar = QProgressBar(self); self.bar.setTextVisible(False); self.bar.setFixedWidth(150); self.bar.setRange(0, 100)
@@ -541,6 +542,7 @@ class QueueRow(QWidget):
         self.bar.setVisible(pct is not None and pct < 100)
         self.meta = label(meta, "mono"); self.meta.setFixedWidth(150); self.meta.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lay.addWidget(self.meta)
+        self.meta.setVisible(bool(meta))                     # nothing to say: the title gets the room
         for w in (self.tag, self.title, self.artist, self.meta, self.bar, self.x_space):
             w.setAttribute(Qt.WA_TransparentForMouseEvents)
 
@@ -564,6 +566,8 @@ class QueueRow(QWidget):
         self.bar.setVisible(pct is not None and pct < 100)
         if self.meta.text() != meta:
             self.meta.setText(meta)
+        if self.meta.isVisibleTo(self) != bool(meta):
+            self.meta.setVisible(bool(meta))
         if self.x.isVisible() != removable:
             self.x.setVisible(removable); self.x_space.setVisible(not removable)
 

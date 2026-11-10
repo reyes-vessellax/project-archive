@@ -36,6 +36,8 @@ from ..core import batch_runner as BR
 from ..core import updater as U
 from ..core.session import Session, SessionStore
 
+DISCOVER_WARM_S = 25.0        # how long the start-up screen waits for Discover's rows before opening anyway
+
 def _applog(line: str) -> None:
     try:
         from datetime import datetime
@@ -657,7 +659,16 @@ class MainWindow(QMainWindow):
             failed = self.svc.backend_state == "failed"
             timed_out = time.monotonic() > getattr(self, "_connect_deadline", 0)
             settled = phase == "ready" or phase == ""                 # don't close the screen mid-port-check
-            if (self._connected and settled) or failed or timed_out:
+            warm = True
+            if self._connected and settled and not failed:
+                # Discover fills behind this screen, so it opens already loaded: wait until every row has tracks
+                # (or has finished looking), but never longer than DISCOVER_WARM_S
+                if not getattr(self, "_warm_from", 0):
+                    self._warm_from = time.monotonic()
+                got, total = self.discover.warm()
+                warm = total == 0 or got >= total or time.monotonic() - self._warm_from > DISCOVER_WARM_S
+                c.mark("discover", "done" if warm else "busy", "" if warm else f"{got} of {total} rows ready")
+            if (self._connected and settled and warm) or failed or timed_out:
                 if getattr(self, "_wait_timer", None):
                     self._wait_timer.stop()
                 c.finish()

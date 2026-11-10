@@ -1012,6 +1012,17 @@ class DiscoverPage(QWidget):
         self.styles_head_w.setVisible(bool(styles))
         self._fill_rows([n for n, _ in names])
 
+    def warm(self) -> tuple[int, int]:
+        """(rows that have something to show or have finished looking, rows on the page). The start-up screen
+        stays up until these match (or its patience runs out), so Discover opens already filled."""
+        rows = getattr(self, "rows", {})
+        loading = getattr(self, "_loading", set())
+        tracks = getattr(self, "_row_tracks", {})
+        ready = sum(1 for n in rows if tracks.get(n) or n not in loading)
+        if getattr(self, "_offline_rows", None):              # nothing has even been asked for yet
+            ready = 0
+        return ready, len(rows)
+
     def _online(self) -> bool:
         """Signed in to the network (the window tells us; until it has, only the engine object counts)."""
         return getattr(self.svc, "adapter", None) is not None and getattr(self, "signed_in", True)

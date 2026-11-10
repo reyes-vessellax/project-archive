@@ -49,12 +49,8 @@ def row_data(job: dict, analysis: dict | None, steps: dict[str, str]) -> dict:
         step = steps.get(job["id"])
         return dict(tag="Check" if step else "Wait", title=title, artist=artist, pct=None, meta=(step or "waiting").lower().rstrip("…"), removable=False)
     if st == J.READY and analysis:
-        f = analysis["facts"]
-        kbps = f"{round(f['bitrate_bps'] / 1000)} kbps" if f.get("bitrate_bps") else (f.get("container") or "").upper()
-        club = analysis.get("club") or {}
-        if club and not club.get("error"):
-            kbps = ("CLUB ✓  " if club.get("ready") else "CLUB ✗  ") + kbps
-        return dict(tag=T.GRADE_WORD[analysis["overall_status"]], title=title, artist=artist, pct=100, meta=kbps, removable=True)
+        # no "CLUB ✓ 1411 kbps" here: it squeezed the title out in a narrow window, and it's all in the details
+        return dict(tag=T.GRADE_WORD[analysis["overall_status"]], title=title, artist=artist, pct=100, meta="", removable=True)
     if st == J.PROMOTED:
         return dict(tag="Done", title=title, artist=artist, pct=None, meta="in library", removable=True)
     if st == J.ERROR:
