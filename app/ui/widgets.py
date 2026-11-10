@@ -602,34 +602,104 @@ class StopButton(QPushButton):
         p.end()
 
 
+def level_envelope(path: str, ffmpeg_override: str = "", hop_s: float = 0.02):
+    """Left/right loudness of a track every hop_s seconds, 0..1 (-48 dBFS .. 0 dBFS): a blend of peak and RMS,
+    which reads like a hardware meter. Decoded at a low rate, so a 6-minute track takes about a second."""
+    import numpy as np
+    from ..media.tools import find_tool, run
+    sr = 8000
+    r = run([find_tool("ffmpeg", ffmpeg_override), "-nostdin", "-v", "error", "-i", str(path), "-map", "0:a:0",
+             "-ac", "2", "-ar", str(sr), "-f", "f32le", "-acodec", "pcm_f32le", "-"], 120)
+    x = np.frombuffer(r.stdout, dtype="<f4")
+    hop = int(sr * hop_s)
+    n = (len(x) // 2) // hop
+    if n == 0:
+        return None
+    x = x[: n * hop * 2].reshape(n, hop, 2).astype(np.float32)
+    rms = np.sqrt((x ** 2).mean(axis=1)) + 1e-9
+    peak = np.abs(x).max(axis=1) + 1e-9
+    to01 = lambda v: np.clip((20 * np.log10(v) + 48) / 48, 0, 1)
+    env = 0.55 * to01(peak) + 0.45 * to01(rms * 1.414)          # (n, 2)
+    return env[:, 0].copy(), env[:, 1].copy(), hop_s
+
+
 class LevelStrip(QWidget):
-    """A row of LED segments (green -> amber -> red) showing the level while a track plays."""
-    SEGMENTS = 40
+    """Left/right LED meter (green -> amber -> red) while a track plays. Fed 60 times a second from the track's own
+    loudness: rises instantly, falls smoothly, a peak marker hangs then floats down, and the top segment lights
+    partially, so it glides instead of stepping."""
+    SEGMENTS = 48
+    ATTACK_S, RELEASE_S = 0.010, 0.30
+    HOLD_S, PEAK_FALL = 0.8, 0.6              # peak marker: hang, then fall (fraction of the scale per second)
 
     def __init__(self):
         super().__init__()
-        self.setFixedHeight(12)
-        self._level, self._shown = 0.0, 0.0
+        self.setFixedHeight(16)
+        import time as _t
+        self._clock = _t.monotonic
+        self._env = None                       # (left, right, hop_s)
+        self._shown = [0.0, 0.0]
+        self._peak = [0.0, 0.0]; self._peak_t = [0.0, 0.0]
+        self._last = self._clock()
 
-    def set_level(self, v: float):
-        self._level = max(0.0, min(1.0, v))
-        # fast attack, slower release, like a real meter
-        self._shown = self._level if self._level > self._shown else self._shown * 0.86 + self._level * 0.14
+    def set_envelope(self, env) -> None:
+        self._env = env
+
+    def feed(self, pos_s: float | None, fallback: float = 0.0) -> None:
+        """pos_s: playhead in seconds (None = stopped). Without an envelope yet, `fallback` (0..1) is used."""
+        now = self._clock(); dt = max(0.0, min(0.1, now - self._last)); self._last = now
+        if pos_s is None:
+            targets = [0.0, 0.0]
+        elif self._env is not None:
+            left, right, hop = self._env
+            f = pos_s / hop
+            i = int(f)
+            if i >= len(left) - 1:
+                targets = [float(left[-1]), float(right[-1])]
+            else:
+                w = f - i                                       # between two readings: interpolate
+                targets = [float(left[i] * (1 - w) + left[i + 1] * w), float(right[i] * (1 - w) + right[i + 1] * w)]
+        else:
+            targets = [fallback, fallback]
+        for ch in (0, 1):
+            cur, tgt = self._shown[ch], targets[ch]
+            tau = self.ATTACK_S if tgt > cur else self.RELEASE_S
+            cur += (tgt - cur) * (1 - pow(2.718281828, -dt / tau))
+            self._shown[ch] = cur
+            if cur >= self._peak[ch]:
+                self._peak[ch], self._peak_t[ch] = cur, now
+            elif now - self._peak_t[ch] > self.HOLD_S:
+                self._peak[ch] = max(cur, self._peak[ch] - self.PEAK_FALL * dt)
         self.update()
+
+    def set_level(self, v: float):                 # older callers: one value for both channels
+        self.feed(0.0 if v <= 0 else 1.0, fallback=max(0.0, min(1.0, v))) if self._env is None else None
+
+    def level(self) -> float:
+        return max(self._shown)
+
+    @staticmethod
+    def _colour(i: int, n: int) -> QColor:
+        return QColor("#2fb562") if i < n * 0.6 else QColor("#ffb000") if i < n * 0.82 else QColor("#dc143c")
 
     def paintEvent(self, _):
         p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
-        n, gap = self.SEGMENTS, 3
+        n, gap = self.SEGMENTS, 2
         w = (self.width() - gap * (n - 1)) / n
-        lit = int(round(self._shown * n))
         off = QColor(T.colours(getattr(self, "_theme", "light"))["bar"])
-        for i in range(n):
-            if i < lit:
-                c = QColor("#2fb562") if i < n * 0.55 else QColor("#ffb000") if i < n * 0.75 else QColor("#dc143c")
-            else:
-                c = off
-            p.setPen(Qt.NoPen); p.setBrush(c)
-            p.drawRect(QRectF(i * (w + gap), 2, w, 8))
+        p.setPen(Qt.NoPen)
+        for ch, y in ((0, 1), (1, 9)):
+            lit = self._shown[ch] * n
+            pk = min(n - 1, int(self._peak[ch] * n))
+            for i in range(n):
+                x = i * (w + gap)
+                p.setBrush(off); p.drawRoundedRect(QRectF(x, y, w, 6), 1, 1)
+                part = max(0.0, min(1.0, lit - i))             # the top segment lights partly
+                if part > 0:
+                    c = self._colour(i, n); c.setAlphaF(0.35 + 0.65 * part)
+                    p.setBrush(c); p.drawRoundedRect(QRectF(x, y, w, 6), 1, 1)
+            if self._peak[ch] > 0.02:
+                c = self._colour(pk, n); p.setBrush(c)
+                p.drawRoundedRect(QRectF(pk * (w + gap), y, w, 6), 1, 1)
         p.end()
 
 

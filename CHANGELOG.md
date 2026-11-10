@@ -4,6 +4,19 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.3 (2026-11-10) — smooth meter, Dig the crate, dance only (stricter)
+
+- **Level meter rebuilt:** reads the track's real loudness (left and right, every 20 ms) instead of the spectrogram
+  picture, glides between the player's position reports, redraws at 60 fps, rises instantly, falls smoothly, with a
+  peak marker that hangs then floats down and partly-lit top segments.
+- **Dig the crate** (was Spin the crate): says what it is ("a random track from today's labels and styles, ready to
+  hear"), and **Dig again** shows the next track and plays it straight away.
+- **Dance and electronic only, stricter:** an artist Deezer doesn't know now needs a dance word in the path (house,
+  techno, disco, garage, acid, club, edit, remix, dub, 12"…); label rows need the label's name with "Records"/
+  "Recordings" or a catalogue number (so "Prelude" isn't Bach); more non-dance words blocked (classical, orchestra,
+  acoustic, blues, singer-songwriter, Christmas, hip hop…). Rows and ready tracks from before are discarded.
+- Release page: the Windows installer (Setup.exe) is attached next to the macOS .dmg.
+
 ## 0.9.2 (2026-11-09) — Discover: dance and electronic music only
 
 - Network searches match words anywhere in a path, so "Chicago house" also found e.g. a metal band's

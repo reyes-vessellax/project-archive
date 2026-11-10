@@ -481,7 +481,8 @@ class CrateRow(QWidget):
 
 
 class SpinBar(QFrame):
-    """Spin the crate, slim: one random track from the crates below, ready to play. ↻ is instant."""
+    """Dig the crate: one random track from today's rows, its preview already loaded. Dig again shows the next and
+    plays it straight away, like flicking through a crate."""
     play = Signal(object)
     stop = Signal()
     check = Signal(object)
@@ -493,22 +494,28 @@ class SpinBar(QFrame):
         self.found = None
         self._previewing = False
         self._img_token = None
-        lay = hbox(self, (14, 12, 16, 12), 16)
+        outer = vbox(self, (18, 14, 18, 14), 10)
+        head = hbox(spacing=12)
+        head.addWidget(label("Dig the crate", "rowtitle"))
+        head.addWidget(label("A random track from today's labels and styles, ready to hear. Not your thing? Dig again.",
+                             "faint"), 1, Qt.AlignBottom)
+        outer.addLayout(head)
+        lay = hbox(spacing=16)
         self.art = CoverArt(); self.art.setFixedSize(76, 76); lay.addWidget(self.art)
         txt = vbox(spacing=2)
-        top = hbox(spacing=10)
-        top.addWidget(label("SPIN THE CRATE", "tilemeta"))
-        self.where = label("", "tilemeta"); top.addWidget(self.where); top.addStretch(1)
-        txt.addLayout(top)
-        self.title = label("Loading the crates…", "spinbartitle")
+        self.where = label("", "tilemeta")
+        self.title = label("Finding you a track…", "spinbartitle")
         self.sub = label("", "muted")
-        txt.addWidget(self.title); txt.addWidget(self.sub)
+        txt.addWidget(self.where); txt.addWidget(self.title); txt.addWidget(self.sub)
         lay.addLayout(txt, 1)
-        self.b_play = button("▶  Play the drop", "accent", self._play)
+        self.b_play = button("▶  Play", "ghost", self._play)
+        self.b_spin = button("Dig again", "accent", self.spin.emit)
+        self.b_spin.setToolTip("The next random track: it starts playing straight away")
         self.b_check = button("Check this file", "primary", lambda: self.found and self.check.emit(self.found.best))
-        self.b_spin = button("↻", "ghost", self.spin.emit); self.b_spin.setToolTip("Another one"); self.b_spin.setFixedWidth(52)
-        for b in (self.b_play, self.b_check, self.b_spin):
+        self.b_check.setToolTip("Download this copy, check its quality and club-readiness, and put it in your Queue")
+        for b in (self.b_play, self.b_spin, self.b_check):
             lay.addWidget(b)
+        outer.addLayout(lay)
         self.b_play.setEnabled(False); self.b_check.setEnabled(False)
         self.status = None
 
@@ -531,7 +538,7 @@ class SpinBar(QFrame):
 
     def set_preview_state(self, state: str, msg: str = ""):
         self._previewing = state in ("loading", "playing")
-        self.b_play.setText("■  Stop" if self._previewing else "▶  Play the drop")
+        self.b_play.setText("■  Stop" if self._previewing else "▶  Play")
         if msg:
             self.sub.setText(msg)
         elif self.found:
@@ -674,7 +681,7 @@ class DiscoverPage(QWidget):
         except Exception:
             pass
         self.spin_bar.check.connect(lambda c: self._card_check(self.spin_bar, c))
-        self.spin_bar.spin.connect(self.spin)
+        self.spin_bar.spin.connect(self._dig_again)
         lay.addWidget(self.spin_bar)
 
         self.labels_head = self._section("Labels", "")
@@ -782,7 +789,7 @@ class DiscoverPage(QWidget):
             if not connected:
                 row.offline()
         self.styles_head_w.setVisible(any(tag == "STYLE" for _, tag in names))
-        self.spin_bar.title.setText("Loading a spin…" if connected else "Connect to the network to spin the crate.")
+        self.spin_bar.title.setText("Finding you a track…" if connected else "Connect to the network to dig the crate.")
         if not connected:
             return
         names = names_only
@@ -792,7 +799,8 @@ class DiscoverPage(QWidget):
         from ..core.crates import crate
         for name in names:
             def work(nm=name):
-                return crate(svc, nm, owns=lib.owns, cancelled=lambda: self._rows_gen != gen)
+                return crate(svc, nm, owns=lib.owns, cancelled=lambda: self._rows_gen != gen,
+                             kind="style" if self._row_kind.get(nm) == "STYLE" else "label")
 
             def then(res, nm=name):
                 if self._rows_gen != gen or nm not in self.rows:
@@ -902,13 +910,17 @@ class DiscoverPage(QWidget):
 
     SPINS_READY = 3
 
+    def _dig_again(self):
+        self._dig_pressed = True
+        self.spin()
+
     def spin(self):
         """Show the next spin: one whose preview is already loaded, so it plays the moment you press ▶."""
         from .player import Player
         if self.spin_bar._previewing:
             Player.get().stop()
         if not self._spins:
-            self.spin_bar.title.setText("Loading a spin…"); self.spin_bar.sub.setText("")
+            self.spin_bar.title.setText("Finding you a track…"); self.spin_bar.sub.setText("")
             self._prefetch_spins(); return
         f, wav = self._spins.pop(0)
         old = getattr(self, "_spin_wav", None)
@@ -917,6 +929,9 @@ class DiscoverPage(QWidget):
         self._spin_wav = wav
         self._save_spins()
         self._show_found(self.spin_bar, f)
+        if getattr(self, "_dig_pressed", False):                  # "Dig again": it plays straight away
+            self._dig_pressed = False
+            self._spin_play()
         self._prefetch_spins()
 
     SPIN_KEEP_HOURS = 3
@@ -930,7 +945,7 @@ class DiscoverPage(QWidget):
                  "catno": f.release.catno, "thumb": f.release.thumb, "best": asdict(f.best),
                  "alts": [asdict(c) for c in f.alts]} for f, w in items]
         try:
-            (self._spin_dir() / "ready2.json").write_text(json.dumps(data), encoding="utf-8")
+            (self._spin_dir() / "ready3.json").write_text(json.dumps(data), encoding="utf-8")
         except OSError:
             pass
 
@@ -942,7 +957,7 @@ class DiscoverPage(QWidget):
         d = self._spin_dir()
         keep = set()
         try:
-            data = json.loads((d / "ready2.json").read_text(encoding="utf-8"))
+            data = json.loads((d / "ready3.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = []
         for x in data:

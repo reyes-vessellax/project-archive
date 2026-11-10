@@ -89,3 +89,21 @@ def test_non_dance_artists_are_dropped_unknown_kept():
 def test_plural_folder_names_count():
     t = cand("a", "Dimitri From Paris - Love Train", "flac", folder="Disco Edits 2019")
     assert len(C.build([t], query="Disco edit")) == 1
+
+
+def test_stricter_dance_rules():
+    from app.core.crates import DANCE_CUE, NOT_DANCE
+    for ok in ("Tino - Rock Ya Body", "Daft Punk - Da Funk", "Rock The House (Club Mix)", "Garage House Classics"):
+        assert not NOT_DANCE.search(ok), ok
+    for bad in ("Fleet Foxes - Folk Sessions", "Bach - Prelude in C", "Indie Rock Hits 2009", "Lamb of God - Hard Rock",
+                "Chicago Blues Masters"):
+        assert NOT_DANCE.search(bad), bad
+    prelude_classical = cand("p", "Some Pianist - Prelude No 1", "flac", folder="Prelude")
+    prelude_label = cand("q", "Sharon Redd - Beat The Street", "flac", folder="Prelude Records - PRL D 621")
+    assert C.build([prelude_classical], query="Prelude Records", kind="label") == []
+    assert len(C.build([prelude_label], query="Prelude Records", kind="label")) == 1
+    from tests.test_discover_avail import MemDB
+    unknown_folk = C.build([cand("u", "Unknown Singer - Lonesome Road", "flac", folder="Field Recordings")])
+    unknown_dance = C.build([cand("v", "Unknown DJ - Jack Trax", "flac", folder="Chicago House 12in")])
+    kept = C.dance_only(MemDB(), unknown_folk + unknown_dance, lookup=lambda a: [])
+    assert [t.artist for t in kept] == ["Unknown DJ"]

@@ -31,9 +31,16 @@ DANCE_GENRES = {"Dance", "Electro", "Techno/House", "Disco", "Soul & Funk", "Ele
                 "Deep House", "Electro Pop/Electro Rock"}
 # Words in a file's path that mean it isn't dance music (searches match words anywhere in the path:
 # "Chicago" + "House" finds a metal band's "Live in Chicago / House of Blues" too).
-NOT_DANCE = re.compile(r"\b(metal|metalcore|deathcore|death metal|black metal|thrash|grunge|punk rock|hard rock|"
-                       r"classic rock|rock and roll|rock n roll|emo|screamo|country|bluegrass|folk|hymns?|"
-                       r"audiobook|podcast|soundtrack|ost|karaoke|nightcore)\b", re.I)
+NOT_DANCE = re.compile(r"\b(metal|metalcore|deathcore|thrash|grunge|punk rock|post[- ]punk|pop[- ]punk|"
+                       r"(hard|classic|indie|alt|alternative|prog|progressive|soft|folk|southern|garage|glam|stoner|"
+                       r"psychedelic|blues) rock|rock (and|n|&) roll|rockabilly|emo|screamo|country|bluegrass|americana|"
+                       r"folk|singer[- ]songwriter|acoustic|unplugged|blues|hymns?|worship|classical|orchestra|orchestral|"
+                       r"symphon\w*|sonatas?|concertos?|opera|choir|piano solo|baroque|bach|mozart|beethoven|chopin|"
+                       r"audiobook|podcast|soundtrack|karaoke|nightcore|christmas|xmas|lullab\w*|meditation|"
+                       r"relaxation|hip[- ]?hop|reggaeton|k-?pop|j-?pop|anime|bollywood|polka|mariachi|schlager)\b", re.I)
+# Positive signs of dance music in a path: an artist Deezer doesn't know needs one of these to stay.
+DANCE_CUE = re.compile(r"\b(house|techno|disco|garage|acid|club|dance|electro\w*|edits?|remix\w*|rmx|dub|"
+                       r"12[\"']?\s?(inch|in)|12in|maxi|white label|dj|jack\w*|minimal)\b", re.I)
 _NOISE = {"records", "recordings", "music", "label", "the", "inc", "ltd", "presents"}
 SEARCH_S = 12.0
 MAX_TRACKS = 30
@@ -79,10 +86,13 @@ def phrase(query: str) -> list[str]:
     return ws or words(query)
 
 
-def on_topic(c: Candidate, query: str) -> bool:
-    """The query's words side by side somewhere in the folder/file path, and nothing in it saying "not dance"."""
+def on_topic(c: Candidate, query: str, kind: str = "") -> bool:
+    """The query's words side by side within one folder or file name, nothing in the path saying "not dance", and
+    for a label: its name next to "Records"/"Recordings" or a catalogue number (so "Prelude" isn't Bach)."""
     path = c.remote_path or f"{c.folder} {c.display_name}"
     if NOT_DANCE.search(path):
+        return False
+    if kind == "label" and not (re.search(r"\b(records|recordings|rec)\b", path, re.I) or _CATNO.search(path)):
         return False
     stem = lambda ws_: [w[:-1] if len(w) > 3 and w.endswith("s") else w for w in ws_]   # "edits" counts for "edit"
     ws = stem(phrase(query)); n = len(ws)
@@ -93,13 +103,14 @@ def on_topic(c: Candidate, query: str) -> bool:
     return False
 
 
-def build(cands: list[Candidate], owns=lambda a, t: False, min_kbps: int = 320, query: str = "") -> list[CrateTrack]:
+def build(cands: list[Candidate], owns=lambda a, t: False, min_kbps: int = 320, query: str = "",
+          kind: str = "") -> list[CrateTrack]:
     """Search results -> one entry per track, best copy first, ready-now only, on topic."""
     groups: dict[str, CrateTrack] = {}
     for c in cands:
         if not (_good(c, min_kbps) and c.free_slot and not (c.queue_length or 0)):
             continue
-        if query and not on_topic(c, query):
+        if query and not on_topic(c, query, kind):
             continue
         artist, title, mix = (c.artist, c.title, c.mix) if c.artist else parse_track(c.display_name or "")
         if not artist or not title or owns(artist, title):
@@ -123,7 +134,7 @@ def build(cands: list[Candidate], owns=lambda a, t: False, min_kbps: int = 320, 
 
 
 def _key(query: str) -> str:
-    return "discover:crate2:" + " ".join(words(query))        # crate2: built with the dance-only filters
+    return "discover:crate3:" + " ".join(words(query))        # crate3: the stricter dance-only filters
 
 
 def remembered(db, query: str) -> list[CrateTrack] | None:
@@ -151,7 +162,8 @@ def remember(db, query: str, tracks: list[CrateTrack]) -> None:
                                            "thumb": t.thumb} for t in tracks]})
 
 
-def crate(svc, query: str, owns=lambda a, t: False, cancelled=lambda: False, log=None, use_cache: bool = True):
+def crate(svc, query: str, owns=lambda a, t: False, cancelled=lambda: False, log=None, use_cache: bool = True,
+          kind: str = ""):
     """The crate for a label or artist name: from memory when fresh, else one network search."""
     if use_cache:
         hit = remembered(svc.db, query)
@@ -168,7 +180,7 @@ def crate(svc, query: str, owns=lambda a, t: False, cancelled=lambda: False, log
     except Exception:
         pass
     min_kbps = getattr(getattr(svc, "settings", None), "mp3_min_kbps", 320) or 320
-    tracks = dance_only(svc.db, build(res.candidates, owns, min_kbps, query), cancelled)
+    tracks = dance_only(svc.db, build(res.candidates, owns, min_kbps, query, kind), cancelled)
     remember(svc.db, query, tracks)
     return tracks
 
@@ -203,6 +215,8 @@ def dance_only(db, tracks: list[CrateTrack], cancelled=lambda: False, lookup=Non
         main = re.split(r"\s*(?:,|&| feat\.? | ft\.? | vs\.? | x | and | / )\s*", t.artist, flags=re.I)[0]
         g = artist_genres(db, main, lookup)
         if g and not (set(g) & DANCE_GENRES):
-            continue
+            continue                                       # known, and not dance/electronic
+        if not g and not DANCE_CUE.search(f"{t.best.remote_path} {t.folder} {t.title} {t.mix}"):
+            continue                                       # unknown artist and nothing in the path says dance
         out.append(t)
     return out

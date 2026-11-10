@@ -866,7 +866,8 @@ class ReviewPage(QWidget):
         det.addWidget(self.level_host)
         self.level_host.setVisible(False)                  # an empty meter is noise: it shows while a track plays
         # the meter only ticks while something plays (an always-on timer steals time from animations)
-        self._level_timer = QTimer(self, interval=50, timeout=self._tick_level)
+        self._level_timer = QTimer(self, interval=16, timeout=self._tick_level)     # ~60 fps
+        self._lv_pos, self._lv_t, self._lv_audio = -1, 0.0, None
         self.spectrum.on_playing = self._on_playing
 
         self.checks_host = QWidget(); self.checks_host.setObjectName("page")
@@ -911,6 +912,33 @@ class ReviewPage(QWidget):
     def _on_playing(self, on: bool):
         if on:
             self.level_host.setVisible(True); self._level_timer.start()
+            self._load_envelope()
+
+    def _load_envelope(self):
+        """The meter reads the track's real loudness (every 20 ms, both channels), worked out in the background
+        the first time it plays. Until then it falls back to the spectrogram."""
+        audio = getattr(self.spectrum, "_audio", None)
+        if not audio or audio == self._lv_audio:
+            return
+        self._lv_audio = audio
+        self.level.set_envelope(None)
+        from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal as _Sig
+        from .widgets import level_envelope
+
+        class _B(QObject):
+            ready = _Sig(str, object)
+        if not hasattr(self, "_env_bridge"):
+            self._env_bridge = _B()
+            self._env_bridge.ready.connect(lambda a, env: self.level.set_envelope(env) if a == self._lv_audio else None)
+        bridge, ff = self._env_bridge, getattr(self.svc.settings, "ffmpeg_path", "")
+
+        class _Job(QRunnable):
+            def run(self_inner):
+                try:
+                    bridge.ready.emit(audio, level_envelope(audio, ff))
+                except Exception:
+                    pass
+        QThreadPool.globalInstance().start(_Job())
 
     def _tick_dots(self):
         self._dot_n = (self._dot_n + 1) % 4
@@ -924,8 +952,15 @@ class ReviewPage(QWidget):
         self.btn_delete.setEnabled(not on and self.btn_delete.property("can") is True)
 
     def _tick_level(self):
-        self.level.set_level(self.spectrum.current_level())
-        if not self.spectrum.is_playing() and self.level._shown < 0.01:
+        import time as _t
+        playing = self.spectrum.is_playing()
+        pos = self.spectrum.position_ms()
+        now = _t.monotonic()
+        if pos != self._lv_pos:                              # the player reports ~10x a second: glide in between
+            self._lv_pos, self._lv_t = pos, now
+        est_s = (pos + (now - self._lv_t) * 1000) / 1000 if playing else None
+        self.level.feed(est_s, fallback=self.spectrum.current_level())
+        if not playing and self.level.level() < 0.01:
             self._level_timer.stop()                       # fell back to zero after playback stopped
             self.level_host.setVisible(False)
 
