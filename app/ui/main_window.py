@@ -36,6 +36,8 @@ from ..core import batch_runner as BR
 from ..core import updater as U
 from ..core.session import Session, SessionStore
 
+DISCOVER_WARM_S = 25.0        # how long the start-up screen waits for Discover's rows before opening anyway
+
 def _applog(line: str) -> None:
     try:
         from datetime import datetime
@@ -564,8 +566,11 @@ class MainWindow(QMainWindow):
         def work():
             self.svc.start_backend()
             self.signals.status.emit(self.svc.connector_status())
-            if self.svc.port_note:
-                self.signals.notice.emit(self.svc.port_note)
+            s = self.svc.settings
+            if self.svc.port_note and not self.svc.port_open and s.upnp and not s.port_help_shown:
+                s.port_help_shown = True; self.svc.save_settings(s)      # say it once, not on every launch
+                self.signals.notice.emit("Your router didn't open the download port, so the slower route is used. "
+                                         "Settings \u2192 Advanced \u2192 Connection shows how to fix it.")
         self.io.start(Task(work, self.signals))
 
     def _ensure_firewall(self):
@@ -614,6 +619,8 @@ class MainWindow(QMainWindow):
         def work():
             if self.svc.watchdog():                          # the engine died: start it again, no app restart
                 self.signals.notice.emit("The engine stopped; starting it again.")
+            if self.svc.port_renew_due():                    # a NAT-PMP opening runs out unless asked for again
+                self.svc.open_port()
             self.signals.status.emit(self.svc.connector_status())
         self.io.start(Task(work, self.signals))
 
@@ -657,7 +664,16 @@ class MainWindow(QMainWindow):
             failed = self.svc.backend_state == "failed"
             timed_out = time.monotonic() > getattr(self, "_connect_deadline", 0)
             settled = phase == "ready" or phase == ""                 # don't close the screen mid-port-check
-            if (self._connected and settled) or failed or timed_out:
+            warm = True
+            if self._connected and settled and not failed:
+                # Discover fills behind this screen, so it opens already loaded: wait until every row has tracks
+                # (or has finished looking), but never longer than DISCOVER_WARM_S
+                if not getattr(self, "_warm_from", 0):
+                    self._warm_from = time.monotonic()
+                got, total = self.discover.warm()
+                warm = total == 0 or got >= total or time.monotonic() - self._warm_from > DISCOVER_WARM_S
+                c.mark("discover", "done" if warm else "busy", "" if warm else f"{got} of {total} rows ready")
+            if (self._connected and settled and warm) or failed or timed_out:
                 if getattr(self, "_wait_timer", None):
                     self._wait_timer.stop()
                 c.finish()
@@ -1219,16 +1235,6 @@ class MainWindow(QMainWindow):
                 self.signals.notice.emit("PREVIEW_FAILED " + str(e))
         self.io.start(Task(work, self.signals))
 
-    def _preview_music(self, wav: str):
-        """BPM and key from the ~20 s preview clip, before anything is downloaded (an estimate; the full check
-        measures the whole track)."""
-        def work():
-            from ..media.musical import analyze_music
-            m = analyze_music(Path(wav), self.svc.settings.ffmpeg_path)
-            bpm = f"{m.bpm:.0f}" if m.bpm else ""
-            self.signals.notice.emit(f"PREVIEW_MUSIC {bpm}\t{m.camelot or ''}\t{m.key or ''}")
-        self.io.start(Task(work, self.signals))
-
     def _preview_busy(self, message: str):
         """The copy queued us: show it as busy and try another ready copy of the same track."""
         failed = getattr(self, "_pv_cand", None)
@@ -1388,14 +1394,6 @@ class MainWindow(QMainWindow):
             Player.get().play(wav, name, f"{artist + ' · ' if artist else ''}preview from {pos // 60}:{pos % 60:02d} · not downloaded",
                               stop_after_s=21)
             self._pv_page.set_preview_state("playing", "Playing a preview from the middle. Nothing was kept; press Check this file to download it.")
-            self._preview_music(wav)
-            return
-        if message.startswith("PREVIEW_MUSIC "):
-            bpm, cam, key = (message.split(" ", 1)[1].split("\t") + ["", "", ""])[:3]
-            if self._pv_page._previewing:
-                bits = [f"≈ {bpm} BPM" if bpm else "", f"{cam} ({key})" if cam else ""]
-                self._pv_page.set_preview_state("playing", "  ·  ".join(b for b in bits if b) +
-                                                "  ·  from the preview. Check this file to download it.")
             return
         if message.startswith("UPDATE_READY "):
             self.topbar.set_update(f"Update to {message.split()[1]} · restart")
@@ -1421,7 +1419,7 @@ class MainWindow(QMainWindow):
         s = self.svc.settings
         self.pool.setMaxThreadCount(self.svc.analysis_slots)
         self.apply_theme()
-        now = (s.share_folder, s.soulseek_own_username, s.use_own_slskd)
+        now = (s.share_folder, s.soulseek_own_username, s.use_own_slskd, s.listen_port)
         if getattr(self, "_engine_cfg", now) != now:
             self.svc.stop_backend(); self._start_backend()
         else:
@@ -1432,7 +1430,7 @@ class MainWindow(QMainWindow):
 
     def _check_ffmpeg(self):
         s = self.svc.settings
-        self._engine_cfg = (s.share_folder, s.soulseek_own_username, s.use_own_slskd)
+        self._engine_cfg = (s.share_folder, s.soulseek_own_username, s.use_own_slskd, s.listen_port)
         try:
             find_tool("ffmpeg", s.ffmpeg_path); find_tool("ffprobe", s.ffmpeg_path)
         except ToolMissing as e:

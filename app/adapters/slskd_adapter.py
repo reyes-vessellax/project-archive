@@ -163,8 +163,8 @@ class SlskdAdapter(SourceAdapter):
         error = ""
         if "Errored" in state:
             error = "The search couldn't run. You may have lost the connection; it reconnects on its own."
-        elif "Cancelled" in state:
-            error = "The search was cancelled."
+        elif "Cancelled" in state and search_id not in getattr(self, "_stopped", set()):
+            error = "The search was cancelled."         # not when WE ended it (deadline or results dried up)
         return "Completed" in state, _int(meta.get("responseCount")) or 0, _int(meta.get("fileCount")) or 0, error
 
     def forget_search(self, search_id: str) -> None:

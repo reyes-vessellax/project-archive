@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QEvent, QSize, QPropertyAnimation, QRectF, QTimer, QUrl, QObject, QPoint, QRunnable, Qt, Signal
 from PySide6.QtGui import QPainterPath, QPen, QColor, QFont, QPainter, QPixmap
-from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QLayout, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QVBoxLayout, QWidget)
 
 from ..adapters.base import ConnectorError
@@ -208,27 +208,33 @@ class SmoothWheel(QObject):
         if ev.type() == QEvent.Wheel and ev.angleDelta().y() != 0 and not ev.pixelDelta().y():
             if ev.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier):
                 return False
-            notches = ev.angleDelta().y() / 120.0
-            running = self.anim.state() == QPropertyAnimation.Running and self.target is not None
-            base = self.target if running else self.bar.value()
-            self.target = int(max(self.bar.minimum(), min(self.bar.maximum(), base - notches * self.PX_PER_NOTCH)))
-            distance = abs(self.target - self.bar.value())
-            if distance == 0:
-                ev.accept(); return True
-            ms = int(max(self.MIN_MS, min(self.MAX_MS, self.MIN_MS + distance * 0.9)))
-            self.anim.stop()
-            self.anim.setDuration(ms)
-            self.anim.setStartValue(self.bar.value()); self.anim.setEndValue(self.target); self.anim.start()
+            self.nudge(ev.angleDelta().y())
             ev.accept()
             return True
         return False
+
+    def nudge(self, angle_dy: float) -> None:
+        """Scroll by a wheel movement (120 = one notch), gliding. Anything that forwards a wheel to this area
+        (a row inside the page, say) must come through here: moving the bar directly while a glide is running
+        makes the page jump there and back."""
+        notches = angle_dy / 120.0
+        running = self.anim.state() == QPropertyAnimation.Running and self.target is not None
+        base = self.target if running else self.bar.value()
+        self.target = int(max(self.bar.minimum(), min(self.bar.maximum(), base - notches * self.PX_PER_NOTCH)))
+        distance = abs(self.target - self.bar.value())
+        if distance == 0:
+            return
+        ms = int(max(self.MIN_MS, min(self.MAX_MS, self.MIN_MS + distance * 0.9)))
+        self.anim.stop()
+        self.anim.setDuration(ms)
+        self.anim.setStartValue(self.bar.value()); self.anim.setEndValue(self.target); self.anim.start()
 
 
 def smooth(area) -> None:
     """Attach SmoothWheel to a scroll area / item view (idempotent)."""
     if not area.property("smoothwheel"):
         area.setProperty("smoothwheel", True)
-        SmoothWheel(area)
+        area._smoothwheel = SmoothWheel(area)
 
 
 def keep_scroll(area, rebuild) -> None:
@@ -515,6 +521,7 @@ class QueueRow(QWidget):
         self.setCursor(Qt.PointingHandCursor)
         self.setMinimumHeight(48)
         lay = hbox(self, (4, 6, 12, 6), 12)
+        lay.setSizeConstraint(QLayout.SetNoConstraint)       # see minimumSizeHint
         # × first, on the left, where the hand already is; a blank spacer keeps rows aligned when it's hidden
         # NOTE: every child is added to the layout BEFORE any setVisible(): a parentless widget that is shown
         # becomes its own top-level window for a frame — the "flashing dialog boxes" of 0.3/0.4.
@@ -532,6 +539,7 @@ class QueueRow(QWidget):
         self.artist = label(artist or " ", "muted")
         for lbl in (self.title, self.artist):                # long names clip instead of pushing the row wider than the list
             lbl.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            lbl.setMinimumWidth(90)                          # never squeezed to nothing in a narrow window
         names.addWidget(self.title); names.addWidget(self.artist)
         lay.addLayout(names, 1)
         self.bar = QProgressBar(self); self.bar.setTextVisible(False); self.bar.setFixedWidth(150); self.bar.setRange(0, 100)
@@ -541,8 +549,35 @@ class QueueRow(QWidget):
         self.bar.setVisible(pct is not None and pct < 100)
         self.meta = label(meta, "mono"); self.meta.setFixedWidth(150); self.meta.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lay.addWidget(self.meta)
+        self.meta.setVisible(bool(meta)); self.meta.setToolTip(meta)   # nothing to say: the title gets the room
         for w in (self.tag, self.title, self.artist, self.meta, self.bar, self.x_space):
             w.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+    FULL = 150                                               # the bar's and the note's width when there is room
+
+    def _fit(self) -> None:
+        """Share a narrow row: the title keeps its room, the bar shrinks, and the note goes before anything overlaps."""
+        room = self.width() - 250                            # what's left after ×, the tag and a readable title
+        note = bool(self.meta.text())
+        if note and room >= 2 * self.FULL:
+            bar_w, meta_w = self.FULL, self.FULL
+        elif note and room >= 170:
+            bar_w = 70; meta_w = min(self.FULL, room - bar_w - 12)
+        else:
+            bar_w, meta_w = max(40, min(self.FULL, room)), 0
+        if self.bar.width() != bar_w:
+            self.bar.setFixedWidth(bar_w)
+        if meta_w and self.meta.width() != meta_w:
+            self.meta.setFixedWidth(meta_w)
+        if self.meta.isVisibleTo(self) != bool(meta_w):
+            self.meta.setVisible(bool(meta_w))
+
+    def minimumSizeHint(self):                               # the row may get narrow: _fit shares what there is
+        return QSize(240, 48)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._fit()
 
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton and not self.x.geometry().contains(e.pos()):
@@ -563,7 +598,8 @@ class QueueRow(QWidget):
         self.bar.setValue(int(pct) if pct is not None else 0)
         self.bar.setVisible(pct is not None and pct < 100)
         if self.meta.text() != meta:
-            self.meta.setText(meta)
+            self.meta.setText(meta); self.meta.setToolTip(meta)
+        self._fit()
         if self.x.isVisible() != removable:
             self.x.setVisible(removable); self.x_space.setVisible(not removable)
 

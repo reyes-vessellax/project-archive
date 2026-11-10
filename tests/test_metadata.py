@@ -167,3 +167,21 @@ def test_download_sites_are_not_labels():
     for real in ("Trax Records", "Dance Mania", "KMS", "Strictly Rhythm", "Downtown 161", "Relief Records"):
         assert clean_label(real) == real
     assert is_site_name("DJDownloadMe.com") and not is_site_name("Fast Eddie")
+
+
+@needs_ffmpeg
+def test_cover_is_left_out_of_saved_files_when_the_setting_is_off(service, fixtures, tmp_path):
+    """Settings → Library: 'Add cover art to the files I save'. Off = same tags, no artwork baked in."""
+    cover = tmp_path / "cover.jpg"; cover.write_bytes(JPEG)
+    analysis = {"meta": {"title": "Night Bus", "artist": "Kessler Avenue", "label": "Lowtide Records",
+                         "cover_path": str(cover)}, "music": MUSIC}
+    on = tmp_path / "on.mp3"; off = tmp_path / "off.mp3"
+    shutil.copy(fixtures["mp3_320"], on); shutil.copy(fixtures["mp3_320"], off)
+    assert service.settings.embed_cover                                  # on by default
+    service._tag_for_library(on, dict(analysis), ".mp3")
+    service.settings.embed_cover = False
+    a = dict(analysis); service._tag_for_library(off, a, ".mp3")
+    assert md.read_tags(on)["has_cover"] and not md.read_tags(off)["has_cover"]
+    t = md.read_tags(off)
+    assert (t["artist"], t["label"], t["bpm"]) == ("Kessler Avenue", "Lowtide Records", "124")   # everything else still written
+    assert "cover" not in a["tags_written"] and a["meta"]["cover_path"] == str(cover)            # the app still has the cover

@@ -62,7 +62,7 @@ def test_rows_load_once_progressively_and_survive_refreshes(service, monkeypatch
     styles = [c for c in calls if c[0] == "style"]
     assert len(styles) == len(set(styles)) == 5, calls    # each style searched exactly once
     fy = d.rows["For you"]
-    assert len(fy.tiles) == 5 and "FAST EDDIE" in fy.tag.text()       # 1 + 2 + 2 tracks, merged
+    assert len(fy.tiles) == 5 and "Because you play Fast Eddie" in fy.intro.text()       # 1 + 2 + 2 tracks, merged
     for name, kind in d._row_kind.items():
         assert d.rows[name].tiles, name                   # every row filled
     assert not d._loading

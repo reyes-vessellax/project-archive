@@ -134,28 +134,57 @@ class ArchiveService:
             self.adapter = None
             return
         self.phase = "port"
-        self.open_port()
+        self.check_port()
         self.phase = "ready"
 
     port_open: bool = False
     port_note: str = ""
+    port_why: str = ""               # open | off | no_router | refused | error — what the Connection panel explains
+    port_method: str = ""            # "UPnP" or "NAT-PMP" when open
+    port_renew_at: float = 0.0       # NAT-PMP mappings run out; ask again after this (time.monotonic)
+    _mapped_port: int = 0
     phase: str = ""                  # engine | signin | port | ready — what the start-up screen lights up
 
     def open_port(self) -> None:
-        """Ask the router to forward the engine's port (UPnP). Best effort; a few seconds; call off the UI thread."""
-        from . import upnp
+        """Ask the router to forward the engine's port: UPnP first, then NAT-PMP for routers that don't answer it.
+        Best effort; a few seconds; call off the UI thread."""
+        import time as _time
+        from . import netinfo, upnp
         port = int(self.settings.listen_port or 0)
+        self.port_method, self.port_renew_at = "", 0.0
         if not port or not self.settings.upnp:
-            self.port_open, self.port_note = False, "Port forwarding is off (Settings → Advanced)." if port else ""
+            self.port_open, self.port_note = False, "Port forwarding is off (Settings \u2192 Advanced)." if port else ""
+            self.port_why = "off"
             return
         try:
-            self.port_open, self.port_note = upnp.open_port(port, f"{APP_NAME} downloads")
+            if self._mapped_port and self._mapped_port != port:    # the user changed the port: drop the old opening
+                upnp.close_port(self._mapped_port)
+            self.port_open, self.port_note, self.port_why = upnp.open_port_why(port, f"{APP_NAME} downloads")
+            if self.port_open:
+                self.port_method = "UPnP"
+            else:
+                granted = netinfo.natpmp_map(netinfo.router_ip(), port)
+                if granted:
+                    self.port_open, self.port_why, self.port_method = True, "open", "NAT-PMP"
+                    self.port_note = f"Port {port} is open on your router."
+                    self.port_renew_at = _time.monotonic() + max(60.0, granted / 2)
+            if self.port_open:
+                self._mapped_port = port
         except Exception as e:                                  # noqa: BLE001
-            self.port_open, self.port_note = False, f"Couldn't talk to the router: {e}"
+            self.port_open, self.port_note, self.port_why = False, f"Couldn't talk to the router: {e}", "error"
+
+    def port_renew_due(self) -> bool:
+        import time as _time
+        return bool(self.port_renew_at) and _time.monotonic() >= self.port_renew_at
+
+    def check_port(self) -> None:
+        """open_port plus the log line; what start-up and the Connection panel's Test again both run."""
+        self.open_port()
         try:
             from datetime import datetime as _dt
             with open(self.db.path.parent / "app.log", "a", encoding="utf-8") as f:
-                f.write(f"{_dt.now().isoformat(timespec='seconds')} port: {self.port_note}\n")
+                f.write(f"{_dt.now().isoformat(timespec='seconds')} port: {self.port_note}"
+                        f"{' (' + self.port_method + ')' if self.port_method else ''}\n")
         except OSError:
             pass
 
@@ -815,6 +844,8 @@ class ArchiveService:
             m = md.Meta(**{k: meta.get(k, "") or "" for k in ("title", "mix", "artist", "album", "label", "catalog",
                                                               "year", "genre")})
             cover = Path(meta["cover_path"]) if meta.get("cover_path") else None
+            if not getattr(self.settings, "embed_cover", True):
+                cover = None                            # the user's choice: covers stay in the app, not in the file
             analysis["tags_written"] = md.write_tags(path, m, analysis.get("music"), cover, ext)
         except Exception as e:                          # noqa: BLE001
             analysis["tags_written"] = []

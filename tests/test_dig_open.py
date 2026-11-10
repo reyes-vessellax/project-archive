@@ -90,6 +90,10 @@ def test_ready_spins_survive_a_restart_and_wheel_scrolls_the_page(service, tmp_p
     ev = QWheelEvent(QPointF(10, 10), QPointF(vp.mapToGlobal(QPoint(10, 10))), QPoint(0, 0), QPoint(0, -240),
                      Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
     QApplication.sendEvent(vp, ev)
+    import time as _t
+    end = _t.monotonic() + 0.6                                            # the page glides to its new place
+    while _t.monotonic() < end:
+        app.processEvents(); _t.sleep(0.01)
     assert page_bar.value() > before_p and row_bar.value() == before_r
     for w in (d, d2):
         w.deleteLater()

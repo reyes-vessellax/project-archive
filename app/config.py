@@ -10,12 +10,18 @@ from pathlib import Path
 # existing installs migrate; every visible use of the name reads this constant (window title, dialogs, engine, data folder).
 APP_NAME = "DigMart"
 APP_SLUG = "DigMart"                      # for file and artifact names that shouldn't carry a space
-APP_VERSION = "0.9.19"                     # keep in step with pyproject.toml; the build names the artifact with it
+APP_VERSION = "0.9.20"                     # keep in step with pyproject.toml; the build names the artifact with it
 try:                                      # CI writes app/_build.py with the run number: every push is a new version
     from ._build import BUILD as APP_BUILD  # type: ignore
 except ImportError:
     APP_BUILD = 0
 FULL_VERSION = f"{APP_VERSION}.{APP_BUILD}" if APP_BUILD else APP_VERSION   # what the updater compares
+# The bundled download engine is slskd (https://github.com/slskd/slskd, AGPL-3.0), shipped unmodified and renamed
+# "<APP_NAME> Engine". Its version, in ONE place: the builds (CI and local) and the shipped licence notes read this.
+# To move to a new engine release, see docs/ENGINE_UPDATES.md.
+ENGINE_NAME = "slskd"
+ENGINE_VERSION = "0.26.2"
+ENGINE_SOURCE_URL = f"https://github.com/slskd/slskd/tree/{ENGINE_VERSION}"
 PREVIOUS_NAMES = ("Pied Piper", "DEADWAX", "Project Archive")   # earlier placeholders; existing installs are migrated from them
 
 
@@ -66,6 +72,7 @@ class Settings:
     max_concurrent_analyses: int = 5
     playlist_folders: bool = True             # batch downloads go to <library>/<app>/<playlist name>/
     online_lookup: bool = True                # look up cover art / label / genre by artist + title
+    embed_cover: bool = True                  # write the cover into the file saved to the library (off: quicker CDJ loading)
     keep_spectrograms: int = 100              # library spectrograms kept on disk (~0.8 MB each); older ones are redrawn on demand          # analysis slots; further tracks wait in the queue
     setup_done: bool = False                  # first-run setup (library folder + sharing) completed
     theme: str = "light"                      # light | dark
@@ -76,6 +83,7 @@ class Settings:
     share_folder: str = ""                    # opt-in: a folder to share back on Soulseek (empty = off)
     listen_port: int = 0                      # the engine's Soulseek port; picked once (49152-65535) and kept
     upnp: bool = True                         # ask the router to open that port (UPnP) so results reach us directly
+    port_help_shown: bool = False             # the one-time "your router didn't open the port" notice was shown
     # Advanced only. By default the app runs its own bundled copy of slskd (the Soulseek engine) with a
     # generated API key and a generated Soulseek login; the user never sees any of it.
     use_own_slskd: bool = False               # point the app at an slskd the user already runs instead

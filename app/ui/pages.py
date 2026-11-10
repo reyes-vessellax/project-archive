@@ -49,12 +49,8 @@ def row_data(job: dict, analysis: dict | None, steps: dict[str, str]) -> dict:
         step = steps.get(job["id"])
         return dict(tag="Check" if step else "Wait", title=title, artist=artist, pct=None, meta="", removable=False)
     if st == J.READY and analysis:
-        f = analysis["facts"]
-        kbps = f"{round(f['bitrate_bps'] / 1000)} kbps" if f.get("bitrate_bps") else (f.get("container") or "").upper()
-        club = analysis.get("club") or {}
-        if club and not club.get("error"):
-            kbps = ("CLUB ✓  " if club.get("ready") else "CLUB ✗  ") + kbps
-        return dict(tag=T.GRADE_WORD[analysis["overall_status"]], title=title, artist=artist, pct=100, meta=kbps, removable=True)
+        # no "CLUB ✓ 1411 kbps" here: it squeezed the title out in a narrow window, and it's all in the details
+        return dict(tag=T.GRADE_WORD[analysis["overall_status"]], title=title, artist=artist, pct=100, meta="", removable=True)
     if st == J.PROMOTED:
         return dict(tag="Done", title=title, artist=artist, pct=None, meta="in library", removable=True)
     if st == J.ERROR:
@@ -101,6 +97,8 @@ class HomePage(QWidget):
         qcol = vbox(spacing=6)
         head = hbox(spacing=12); head.addWidget(label("Tracks", "h2")); head.addStretch(1)
         self.qnote = label("newest first", "faint"); head.addWidget(self.qnote)
+        self.qnote.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # clips in a narrow list, never lands on its neighbours
+        self.qnote.setAlignment(Qt.AlignRight | Qt.AlignVCenter); head.setStretch(1, 0); head.setStretch(2, 1)
         self.clear_btn = button("Clear finished", "link", self.clear_finished.emit); head.addWidget(self.clear_btn)
         qcol.addLayout(head)
         self.list_host = QWidget(); self.list_host.setObjectName("page")
@@ -296,7 +294,6 @@ class SearchPage(QWidget):
         head = hbox(spacing=12)
         self.title = label("Search", "h2"); head.addWidget(self.title)
         self.state = label("", "faint"); head.addWidget(self.state); head.addStretch(1)
-        head.addWidget(label("What you see is what each source reports. Every file is checked before it can reach your library.", "faint"))
         lay.addLayout(head)
         # filters: a file-type drop-down, Lossless, 320 only (MP3s), ready now, private
         from PySide6.QtWidgets import QComboBox
@@ -330,9 +327,11 @@ class SearchPage(QWidget):
         hdr = self.tree.header(); hdr.setSectionResizeMode(QHeaderView.Interactive); hdr.setStretchLastSection(False)
         for i, w in enumerate(self.WIDTHS):
             self.tree.setColumnWidth(i, w)
-        hdr.setSectionResizeMode(self.COLS.index("Availability"), QHeaderView.Stretch)   # Source stays narrow, last
-        for c in ("Title", "Folder"):                     # long names squeeze (with …) instead of widening the table
-            hdr.setSectionResizeMode(self.COLS.index(c), QHeaderView.Stretch)
+        # every column can be dragged; Title, Folder and Availability take up (or give back) the slack, so the
+        # table always fills its width and never scrolls sideways. (Stretch columns can't be dragged in Qt.)
+        hdr.setMinimumSectionSize(self.MIN_COL); hdr.setSectionsMovable(False)
+        self._fitting = False
+        hdr.sectionResized.connect(self._col_resized)
         self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)     # never sideways (the user asked)
         self.tree.setTextElideMode(Qt.ElideRight)
         # click a heading to sort by it (again to flip); # puts the list back to best first
@@ -380,7 +379,49 @@ class SearchPage(QWidget):
     def eventFilter(self, obj, ev):
         if obj is self.tree.viewport() and ev.type() == QEvent.Resize:
             self.empty.setGeometry(self.tree.viewport().rect().adjusted(40, 0, -40, 0))
+            self._fit_columns()
         return False
+
+    # ------------------------------------------------------------ column widths
+    FLEX = ("Title", "Folder", "Availability")       # these absorb what the others don't use
+    MIN_COL = 34
+
+    def _col_resized(self, col: int, _old: int, _new: int):
+        if not self._fitting:
+            self._fit_columns(dragged=col)
+
+    def _fit_columns(self, dragged: int | None = None):
+        """Make the columns add up to the table's width. The slack goes to the flexible columns (right of the
+        dragged one first), then to any other column to its right; if nothing can give, the drag stops there."""
+        hdr = self.tree.header()
+        width = self.tree.viewport().width()
+        if width <= 0 or self._fitting:
+            return
+        self._fitting = True
+        try:
+            n = len(self.COLS)
+            w = [hdr.sectionSize(i) for i in range(n)]
+            flex = [self.COLS.index(c) for c in self.FLEX]
+            start = (dragged + 1) if dragged is not None else 0
+            order = ([i for i in flex if i >= start and i != dragged] + [i for i in range(start, n) if i not in flex and i != dragged]
+                     + [i for i in flex if i < start and i != dragged])
+            delta = width - sum(w)
+            if delta > 0:                                             # room to spare: share it between the flexible ones
+                takers = [i for i in order if i in flex] or order
+                for k, i in enumerate(takers):
+                    add = delta // (len(takers) - k); w[i] += add; delta -= add
+            else:
+                for i in order:                                       # too wide: take it back, never below the minimum
+                    if delta >= 0:
+                        break
+                    give = min(-delta, max(0, w[i] - self.MIN_COL)); w[i] -= give; delta += give
+                if delta < 0 and dragged is not None:                 # nothing left to give: the dragged column stops
+                    w[dragged] = max(self.MIN_COL, w[dragged] + delta)
+            for i in range(n):
+                if hdr.sectionSize(i) != w[i]:
+                    hdr.resizeSection(i, w[i])
+        finally:
+            self._fitting = False
 
     def _show_empty(self, text: str):
         self.empty.setText(text)

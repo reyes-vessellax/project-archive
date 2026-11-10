@@ -123,6 +123,23 @@ if Path("vendor/ffmpeg").is_dir():
     args += ["--add-data", f"{os.path.join('vendor', 'ffmpeg')}{os.pathsep}{os.path.join('vendor', 'ffmpeg')}"]
 else:
     print("NOTE: vendor/ffmpeg not found; the app will look for FFmpeg on the system.", file=sys.stderr)
+from app.config import ENGINE_NAME, ENGINE_SOURCE_URL, ENGINE_VERSION   # noqa: E402
+
+# Shipped with every copy (README.txt): thanks, licences and where the source is. Keep in step with README.md.
+OPEN_SOURCE_NOTES = (
+    "Open-source software in this app\n"
+    "--------------------------------\n"
+    f"Special thanks to the {ENGINE_NAME} team. The download engine ({APP_NAME} Engine) is {ENGINE_NAME} {ENGINE_VERSION},\n"
+    "used unmodified and renamed, under the GNU Affero General Public License v3.0.\n"
+    "  Licence:  _internal/vendor/engine/LICENSE\n"
+    f"  Source:   {ENGINE_SOURCE_URL}\n"
+    f"You may copy, study, change and share {ENGINE_NAME} under that licence; nothing in {APP_NAME}'s own terms limits that.\n\n"
+    "FFmpeg (decodes audio for the checks), under the GNU General Public License v3.\n"
+    "  Licence:  _internal/vendor/ffmpeg/FFMPEG-LICENSE.txt\n"
+    "  Source:   https://github.com/FFmpeg/FFmpeg  (builds: https://github.com/BtbN/FFmpeg-Builds)\n\n"
+    "Also inside: Python, Qt for Python (PySide6, LGPL), NumPy, Mutagen and yt-dlp, each under its own licence.\n"
+)
+
 if Path("vendor/slskd").is_dir():
     args += ["--add-data", f"{os.path.join('vendor', 'slskd')}{os.pathsep}{os.path.join('vendor', 'engine')}"]
 else:
@@ -207,4 +224,5 @@ if internal is not None:
         "  PySide6/, numpy/  user-interface and maths libraries\n"
         "  *.dll, *.pyd      the Python runtime\n\n"
         "Your settings, account and history are kept in your user profile, not in this folder,\n"
-        "so you can replace this folder with a newer version at any time.\n", encoding="utf-8")
+        "so you can replace this folder with a newer version at any time.\n\n"
+        + OPEN_SOURCE_NOTES, encoding="utf-8")

@@ -1,3 +1,6 @@
+# Special thanks to the slskd team (https://github.com/slskd/slskd). The download engine this app ships and runs is
+# their work: slskd, version 0.26.2 (app.config.ENGINE_VERSION), licensed AGPL-3.0, bundled unmodified and renamed
+# "<app name> Engine". Its licence travels with it (vendor/engine/LICENSE) and its source is linked in the README.
 """Runs the bundled slskd client as a hidden background process, so the user never sees or configures it.
 
 First launch:  generate an API key and a Soulseek login (kept in the credential store), pick a free
