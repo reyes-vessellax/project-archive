@@ -288,6 +288,13 @@ class Database:
             for k, v in d.items():
                 self._con.execute("INSERT OR REPLACE INTO settings VALUES (?, ?, ?)", (k, json.dumps(v), now()))
 
+    def event_message(self, job_id: str, event_type: str) -> str | None:
+        """The message of the latest event of this type for a job (None if it never happened)."""
+        with self._lock:
+            row = self._con.execute("SELECT message FROM events WHERE job_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                                    (job_id, event_type)).fetchone()
+        return row[0] if row else None
+
     def event(self, job_id: str | None, event_type: str, message: str = "") -> None:
         with self._lock, self._con:
             self._con.execute("INSERT INTO events (job_id, timestamp, event_type, message) VALUES (?,?,?,?)",

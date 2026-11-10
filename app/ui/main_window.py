@@ -80,6 +80,13 @@ def open_store_search(query: str) -> None:
 MIN_W, MIN_H = 1280, 700
 
 
+def _trash(p) -> bool:
+    """Move a file to the Trash / Recycle Bin (recoverable)."""
+    from PySide6.QtCore import QFile
+    r = QFile.moveToTrash(str(p))                           # PySide returns bool or (bool, path)
+    return bool(r[0] if isinstance(r, tuple) else r)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, svc: ArchiveService):
         super().__init__()
@@ -225,6 +232,7 @@ class MainWindow(QMainWindow):
         self.review.cancel.connect(self._cancel); self.review.rerun.connect(self._recheck)
         self.review.retry.connect(self._retry_download)
         self.review.club_copy.connect(self._club_copy); self.library.club_copy.connect(self._club_copy)
+        self.library.get_upgrade.connect(self._get_upgrade)
         self.review.open_folder.connect(self._open_folder)
         self.settings.saved.connect(self._settings_saved); self.settings.sign_out.connect(self._sign_out)
         self.settings.account_changed.connect(self._refresh_account)
@@ -1145,6 +1153,14 @@ class MainWindow(QMainWindow):
                 self.signals.notice.emit(f"Club-ready check added to {n} library track{'s' if n != 1 else ''}.")
         self.io.start(Task(work, self.signals))
 
+    def _get_upgrade(self, old_id: str, cand):
+        def work():
+            self.svc.get_upgrade(old_id, cand)
+            self.signals.notice.emit("Downloading the better copy. It's checked, then waits in your Queue; when you "
+                                     "save it, it replaces the old one.")
+            self.signals.done.emit("")
+        self.io.start(Task(work, self.signals))
+
     def _club_copy(self, job_id: str):
         self.statusBar().showMessage("Making a club-ready copy and checking it against the original…", 10000)
 
@@ -1323,6 +1339,10 @@ class MainWindow(QMainWindow):
             try:
                 target = self.svc.promote(job_id, override_warning=override)
                 self.signals.notice.emit(f"Downloaded to {target}")
+                replaced = self.svc.finish_upgrade(job_id, _trash)          # an upgrade takes the old copy's place
+                if replaced:
+                    self.signals.notice.emit(f"Upgraded: the new copy replaced {replaced} (the old file is in the "
+                                             f"{'Recycle Bin' if sys.platform == 'win32' else 'Trash'}).")
             except ActionBlocked as e:
                 self.signals.notice.emit(str(e))
             finally:

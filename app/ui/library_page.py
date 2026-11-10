@@ -65,6 +65,7 @@ class LibraryPage(QWidget):
     open_job = Signal(str)
     delete_job = Signal(str)          # move the file to the Trash and take it out of the library
     club_copy = Signal(str)           # make a verified club-ready copy
+    get_upgrade = Signal(str, object) # old job id, better Candidate
     crates_changed = Signal()
     COLS = ["Title", "Artist", "Mix", "BPM", "Key", "Format", "Bitrate", "Length", "Checked", "Added", "File"]
     WIDTHS = [200, 150, 80, 64, 50, 64, 96, 56, 128, 92, 160]
@@ -83,6 +84,10 @@ class LibraryPage(QWidget):
         self.q = QLineEdit(); self.q.setObjectName("filter"); self.q.setPlaceholderText("Filter by title, artist, label…")
         self.q.setFixedWidth(300); self.q.textChanged.connect(self._filter)
         head.addWidget(self.q)
+        self.up_btn = button("Find upgrades", "ghost", self._find_upgrades)
+        self.up_btn.setToolTip("Weak copies in your library (under 320, not Good, not club-ready), and a better copy "
+                               "someone is sharing right now")
+        head.addWidget(self.up_btn)
         self.export_btn = button("Export to Rekordbox", "ghost", self._export_rekordbox)
         self.export_btn.setToolTip("The tracks shown here as a Rekordbox playlist: BPM, key and a hot cue at the drop. "
                                    "Optionally copies the files to a USB stick.")
@@ -124,6 +129,16 @@ class LibraryPage(QWidget):
         smooth(self.tree)
         self.tree.itemClicked.connect(self._clicked)
         self.tree.itemDoubleClicked.connect(lambda *_: self._reveal())
+        # upgrades: shown when Find upgrades is pressed, fills in as the searches come back
+        self.up_panel = QFrame(); self.up_panel.setObjectName("spin"); self.up_panel.hide()
+        up = vbox(self.up_panel, (16, 12, 16, 12), 6)
+        uh = hbox(spacing=10)
+        uh.addWidget(label("Upgrades", "rowtitle"))
+        self.up_status = label("", "faint"); uh.addWidget(self.up_status, 1)
+        uh.addWidget(button("Close", "link", self._close_upgrades))
+        up.addLayout(uh)
+        self.up_rows = vbox(spacing=4); up.addLayout(self.up_rows)
+        lay.addWidget(self.up_panel)
         lay.addWidget(self.tree, 1)
 
         # the drop-down: built fresh each time it opens, as a full-width row under the clicked track
@@ -601,6 +616,80 @@ class LibraryPage(QWidget):
         it = self._selected()
         if it:
             self.open_job.emit(it.data(0, Qt.UserRole))
+
+    def _find_upgrades(self):
+        from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal as _Sig
+        from ..core import upgrades as U
+        weak = U.weak_tracks(self.svc)
+        while self.up_rows.count():
+            w = self.up_rows.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+        self.up_panel.show()
+        if not weak:
+            self.up_status.setText("Every track in your library is already 320 or lossless, Good and club-ready."); return
+        if getattr(self.svc, "adapter", None) is None:
+            self.up_status.setText(f"{len(weak)} could be better. Connect to the network to look for better copies."); return
+        self._up_gen = gen = getattr(self, "_up_gen", 0) + 1
+        self._up_found = 0
+        self.up_status.setText(f"Looking for better copies of {len(weak)} tracks (a few a minute, so the network stays "
+                               "happy). They show up here as they're found.")
+
+        class _B(QObject):
+            one = _Sig(int, object)
+            done = _Sig(int, int)
+        if not hasattr(self, "_up_bridge"):
+            self._up_bridge = _B(); self._up_bridge.one.connect(self._upgrade_found); self._up_bridge.done.connect(self._upgrades_done)
+        bridge, svc, me = self._up_bridge, self.svc, self
+
+        class _Job(QRunnable):
+            def run(self_inner):
+                for w in weak:
+                    if me._up_gen != gen:
+                        return
+                    try:
+                        U.find(svc, w, cancelled=lambda: me._up_gen != gen)
+                    except Exception:
+                        continue
+                    if w.best is not None:
+                        bridge.one.emit(gen, w)
+                bridge.done.emit(gen, len(weak))
+        QThreadPool.globalInstance().start(_Job())
+
+    def _upgrade_found(self, gen: int, w):
+        if gen != getattr(self, "_up_gen", 0):
+            return
+        self._up_found += 1
+        c = w.best
+        fmt = (c.extension or "").upper() + (f" {c.bitrate_kbps}" if (c.extension or "").lower() == "mp3" and c.bitrate_kbps else "")
+        row = QWidget(); rl = hbox(row, (0, 2, 0, 2), 12)
+        rl.addWidget(label(f"<b>{w.title}</b> — {w.artist}"), 1)
+        rl.addWidget(label(f"you have {w.have} · {w.why}", "faint"))
+        badge = label(f"{fmt} READY", "copyline"); rl.addWidget(badge)
+        b = button("Get it", "primary", lambda _=False, ww=w, bb=None: self._get_upgrade(ww))
+        b.setToolTip(f"Shared by {c.user}. Downloads into quarantine, gets checked, and once you save it it replaces "
+                     "your copy (same crates; the old file goes to the Trash).")
+        rl.addWidget(b)
+        w._button = b
+        self.up_rows.addWidget(row)
+
+    def _upgrades_done(self, gen: int, n: int):
+        if gen != getattr(self, "_up_gen", 0):
+            return
+        self.up_status.setText(f"Checked {n} tracks: {self._up_found} better cop{'y' if self._up_found == 1 else 'ies'} "
+                               "ready right now." if self._up_found else
+                               f"Checked {n} tracks: nobody's sharing a better copy right now. Try again another day.")
+
+    def _get_upgrade(self, w):
+        self.get_upgrade.emit(w.job_id, w.best)
+        try:
+            w._button.setEnabled(False); w._button.setText("Requested ✓")
+        except (AttributeError, RuntimeError):
+            pass
+
+    def _close_upgrades(self):
+        self._up_gen = getattr(self, "_up_gen", 0) + 1          # stops the background search
+        self.up_panel.hide()
 
     def _export_rekordbox(self):
         from PySide6.QtWidgets import QFileDialog, QMessageBox

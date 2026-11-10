@@ -1033,6 +1033,30 @@ class ArchiveService:
             on_each(job["id"])
         return done
 
+    def get_upgrade(self, old_job_id: str, cand: Candidate) -> dict:
+        """Download a better copy of a library track; it's checked like anything else and, once saved to the
+        library, replaces the old one (see finish_upgrade)."""
+        old = self._require(old_job_id)
+        new = self.request_download(cand, playlist=old.get("playlist") or "")
+        self.db.event(new["id"], "upgrade_of", old_job_id)
+        return new
+
+    def upgrade_of(self, job_id: str) -> str | None:
+        return self.db.event_message(job_id, "upgrade_of")
+
+    def finish_upgrade(self, new_job_id: str, trash) -> str | None:
+        """A saved upgrade takes the old track's place: same crates, the old file to the Trash. Returns the old
+        track's name, or None when this wasn't an upgrade (or the old one is already gone)."""
+        old_id = self.upgrade_of(new_job_id)
+        old = self.db.job(old_id) if old_id else None
+        if not old or old["state"] != J.PROMOTED:
+            return None
+        for crate_id in self.db.crates_of(old_id):
+            self.db.add_to_crate(crate_id, new_job_id)
+        self.remove_from_library(old_id, trash=trash)
+        self.db.event(new_job_id, "upgraded", old_id)
+        return old["original_name"]
+
     def make_club_copy(self, job_id: str) -> dict:
         """A verified club-ready AIFF of a checked track, staged as a NEW job (it then gets the normal check).
         The original file and its job are never touched. Raises ActionBlocked with the reason if it can't."""

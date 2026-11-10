@@ -14,6 +14,9 @@ one line changes and this file gets a note.
   Dig the crate shows them for every ready track.
 - **Export to Rekordbox** (Library, or a crate): rekordbox.xml with BPM, key, label, year, bitrate, hot cue A at the
   start and B (plus a memory cue) at the drop; optionally copies the files to a USB stick and points at the copies.
+- **Find upgrades** (Library): finds weak copies (MP3 under 320, not Good, not club-ready) and a better copy someone is
+  sharing right now (lossless or a real 320, ready to send). "Get it" downloads it through the normal checks; when you
+  save it, it replaces the old track: same crates, the old file to the Trash.
 
 ## 0.9.5 (2026-11-10) — Queue: details in place
 
