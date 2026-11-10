@@ -147,6 +147,10 @@ class SettingsPage(QWidget):
         box2 = vbox(spacing=6); t2 = label("Watched folder"); t2.setStyleSheet("font-weight: 700;")
         box2.addWidget(t2); box2.addLayout(row2); box2.addWidget(label("Anything that lands in this folder is checked automatically.", "faint"))
         lay.addLayout(box2)
+        self.embed_cover = QCheckBox("Add cover art to the files I save")
+        lay.addWidget(self.embed_cover)
+        lay.addWidget(label("Off: saved files carry no added artwork, which some DJs prefer for quicker loading on CDJs. "
+                            f"Covers still show everywhere in {APP_NAME}.", "faint", wrap=True))
         lay.addWidget(button("Save changes", "primary", self._save_settings), alignment=Qt.AlignLeft)
         return w
 
@@ -379,6 +383,7 @@ class SettingsPage(QWidget):
             self.avatar.setText(a.initials); self.name.setText(a.name); self.dj.setText(a.dj_name)
             self.bio.setPlainText(a.bio); self.email.setText(a.email)
         self.library.setText(s.library_dir); self.share.setChecked(bool(s.share_folder)); self.incoming.setText(s.incoming_dir)
+        self.embed_cover.setChecked(bool(getattr(s, "embed_cover", True)))
         self.mp3.setValue(s.mp3_min_kbps); self.vbr.setValue(s.vbr_min_avg_kbps); self.slots.setValue(s.max_concurrent_analyses)
         self.hours.setValue(s.retention_hours); self.maxmb.setValue(s.max_file_mb); self.exts.setText(", ".join(s.extensions))
         self.theme.setCurrentIndex(1 if s.theme == "dark" else 0)
@@ -402,6 +407,7 @@ class SettingsPage(QWidget):
         s.library_dir = self.library.text().strip() or s.library_dir
         s.share_folder = s.library_dir if self.share.isChecked() else ""
         s.incoming_dir = self.incoming.text().strip()
+        s.embed_cover = self.embed_cover.isChecked()
         s.mp3_min_kbps, s.vbr_min_avg_kbps = self.mp3.value(), self.vbr.value()
         s.max_concurrent_analyses = self.slots.value()
         s.retention_hours, s.max_file_mb = self.hours.value(), self.maxmb.value()

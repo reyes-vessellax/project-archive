@@ -844,6 +844,8 @@ class ArchiveService:
             m = md.Meta(**{k: meta.get(k, "") or "" for k in ("title", "mix", "artist", "album", "label", "catalog",
                                                               "year", "genre")})
             cover = Path(meta["cover_path"]) if meta.get("cover_path") else None
+            if not getattr(self.settings, "embed_cover", True):
+                cover = None                            # the user's choice: covers stay in the app, not in the file
             analysis["tags_written"] = md.write_tags(path, m, analysis.get("music"), cover, ext)
         except Exception as e:                          # noqa: BLE001
             analysis["tags_written"] = []
