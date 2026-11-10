@@ -30,7 +30,9 @@ def test_debounced_but_always_the_latest(tmp_path):
     for t in ("b", "c", "d"):
         st.save(Session(search_text=t))                    # within the interval: not written yet
     assert st.load().search_text == "a"
-    time.sleep(0.6)
+    end = time.monotonic() + 3.0                           # slow CI runners: give the delayed write time to land
+    while st.load().search_text != "d" and time.monotonic() < end:
+        time.sleep(0.05)
     assert st.load().search_text == "d"
 
 

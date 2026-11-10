@@ -238,9 +238,10 @@ class SettingsPage(QWidget):
         self.router_btn = button("Open my router's page", "ghost", self._open_router)
         self.fw_btn = button("Allow through Windows Firewall", "ghost", self._allow_firewall)
         from ..core import firewall
-        self.fw_btn.setVisible(firewall.is_windows())
         for b in (self.test_btn, self.router_btn, self.fw_btn):
             acts.addWidget(b)
+        if not firewall.is_windows():
+            self.fw_btn.hide()          # never setVisible(True) here: a parentless button shown becomes its own window
         acts.addStretch(1)
         lay.addLayout(acts)
 
