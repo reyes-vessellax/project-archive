@@ -1093,11 +1093,12 @@ class ReviewPage(QWidget):
             self.spectrum.clear_view(""); self.spec_note.setText("")
             return
         d = row_data(job, a, steps or {})
-        src = "from a soulseek user" if job.get("remote_user") else {"manual": "added by you", "watched": "from your incoming folder"}.get(
-            job.get("source_kind", ""), job.get("source_kind", ""))
+        # downloads don't say where they came from (no network names in the app); files you brought in still do
+        src = "" if job.get("remote_user") else {"manual": "added by you", "watched": "from your incoming folder"}.get(
+            job.get("source_kind", ""), "")
         when = (job.get("updated_at") or "")[11:16]
         where = {"PROMOTED": "in your library"}.get(job["state"], "in quarantine")
-        self.source.setText(f"{where}  ·  {'checked ' + when if when and a else 'checking'}  ·  {src}".upper())
+        self.source.setText("  ·  ".join(x for x in (where, 'checked ' + when if when and a else 'checking', src) if x).upper())
         self.h1.setText(d["title"]); self.artist.setText(d["artist"])
         busy = job["state"] in (J.STAGING, J.ANALYZING, J.QUEUED)
         if job["state"] == J.QUEUED:
