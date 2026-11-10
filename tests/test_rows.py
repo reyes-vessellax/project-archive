@@ -122,3 +122,26 @@ def test_artists_known_for_the_style_come_first():
                       "Phuture": mb_artist("Phuture", "acid house", "chicago house")})
     out = R.style_row(svc, eng, "Acid house", deezer=lambda a: [])
     assert [t.artist for t in out] == ["Phuture", "Larry Heard"]
+
+
+def test_each_song_once_and_no_artist_takes_over():
+    from app.core.crates import CrateTrack
+    from app.adapters.base import Candidate
+    def t(a, title, mix=""):
+        c = Candidate("soulseek", "u", f"p/{a}/{title}{mix}", 1, extension="flac", free_slot=True)
+        return CrateTrack(a, title, mix, c, [c])
+    rows = [t("Ron Trent", "Altered States"), t("Ron Trent", "Altered States", "Dub"), t("Ron Trent", "Morning Factory"),
+            t("Ron Trent", "Foundation"), t("Ron Trent", "Space Ritual"), t("Larry Heard", "Mystery Of Love")]
+    out = R.tidy(rows, per_artist=3)
+    assert [x.title for x in out] == ["Altered States", "Morning Factory", "Foundation", "Mystery Of Love"]
+
+
+def test_a_search_we_stopped_early_is_still_remembered():
+    svc = FakeSvc([cand("a", "Blaze - Lovelee Dae", folder="Blaze")])
+    orig = svc.search_results
+    def stopped(sid):
+        r = orig(sid); r.error = "The search was cancelled."; return r
+    svc.search_results = stopped
+    assert R.artist_crate(svc, "Blaze")
+    from app.core import crates as C
+    assert C.remembered(svc.db, "by Blaze")

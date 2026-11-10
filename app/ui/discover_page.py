@@ -1046,7 +1046,7 @@ class DiscoverPage(QWidget):
                 continue
             if kind == "ERA":
                 era = self._era_of[nm]
-                artists = R.todays(era["artists"], 2, day, era["key"])
+                artists = R.todays(era["artists"], 4, day, era["key"])        # 4 a day: no two-artist rows
                 jobs = [lambda a=a, era=era: R.order_by_era(engine, era, R.artist_crate(svc, a, lib.owns, stop) or [], stop)
                         for a in artists]
             else:
@@ -1088,7 +1088,10 @@ class DiscoverPage(QWidget):
         self._pending[nm] = self._pending.get(nm, 1) - 1
         if not isinstance(res, Exception) and res:
             have = self._row_tracks.setdefault(nm, [])
+            elsewhere = {R.same_song(t) for other, ts in self._row_tracks.items() if other != nm for t in ts}
+            res = [t for t in res if R.same_song(t) not in elsewhere]   # each song once on the whole page
             merged = R.interleave([have, list(res)]) if have else list(res)
+            merged = R.tidy(merged, per_artist=4 if kind != "STYLE" else 3)
             if kind == "ERA":
                 merged = R.order_by_era(self.engine, self._era_of[nm], merged, cached_only=True)
             self._row_tracks[nm] = merged

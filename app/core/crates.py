@@ -214,7 +214,7 @@ def crate(svc, query: str, owns=lambda a, t: False, cancelled=lambda: False, log
         pass
     min_kbps = getattr(getattr(svc, "settings", None), "mp3_min_kbps", 320) or 320
     tracks = dance_only(svc.db, build(res.candidates, owns, min_kbps, query, kind), cancelled)
-    if tracks and not getattr(res, "error", None):   # never remember an empty or failed search
+    if tracks:                  # tracks found = a real answer (the engine calls our own early stop "cancelled")
         remember(svc.db, query, tracks)
     return tracks
 

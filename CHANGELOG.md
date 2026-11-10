@@ -4,6 +4,16 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.18 (2026-11-10) — no repeats, more artists, rows remembered again
+
+- **Each song once:** a track shows in one row only (For you, an era or a style), and a row never shows the same song
+  twice (another mix or copy of it).
+- **No single artist takes over a row:** each era now digs 4 of its artists a day (not 2), with at most 4 tracks
+  each; a style row shows at most 3 tracks by one artist.
+- **Fix: rows were searched again on every start.** DigMart stops a search itself once it's full, and the network
+  calls that "cancelled", which 0.9.12 mistook for a failure, so nothing was remembered. Rows are remembered for
+  3 hours again, so reopening Discover is instant.
+
 ## 0.9.17 (2026-11-10) — no number badges
 
 - For you's tracks no longer carry 01, 02, 03… badges (on a track without cover art they sat on the artist's name).

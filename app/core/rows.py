@@ -276,8 +276,8 @@ def style_row(svc, engine, style: str, owns=lambda a, t: False, cancelled=lambda
     _forget(svc, res)
     min_kbps = getattr(getattr(svc, "settings", None), "mp3_min_kbps", 320) or 320
     tracks = C.build(res.candidates, owns, min_kbps, style, "style")
-    out = check_style(svc.db, engine, tracks, style, cancelled, deezer)
-    if out and not getattr(res, "error", None):   # never remember an empty or failed search
+    out = tidy(check_style(svc.db, engine, tracks, style, cancelled, deezer), per_artist=3)
+    if out:                     # tracks found = a real answer (the engine calls our own early stop "cancelled")
         C.remember(svc.db, key, out)
     return out
 
@@ -346,7 +346,7 @@ def artist_crate(svc, artist: str, owns=lambda a, t: False, cancelled=lambda: Fa
     _forget(svc, res)
     min_kbps = getattr(getattr(svc, "settings", None), "mp3_min_kbps", 320) or 320
     out = by_artist(C.build(res.candidates, owns, min_kbps), artist)
-    if out and not getattr(res, "error", None):   # never remember an empty or failed search
+    if out:                     # tracks found = a real answer (the engine calls our own early stop "cancelled")
         C.remember(svc.db, key, out)
     return out
 
@@ -413,6 +413,24 @@ def daily_order(tracks, day: int, salt: str):
     tracks = list(tracks)
     random.Random(f"{day}:{salt}:order").shuffle(tracks)
     return sorted(tracks, key=lambda t: 0 if (t.best.extension or "").lower() in C.LOSSLESS else 1)
+
+
+def same_song(t) -> str:
+    """One entry per song: the artist and title, whatever the mix or copy."""
+    return f"{_norm(main_artist(t.artist))}|{_norm(t.title)}"
+
+
+def tidy(tracks, per_artist: int = 0):
+    """Each song once (the first, best copy kept) and, if per_artist, at most that many by one artist."""
+    out, seen, count = [], set(), {}
+    for t in tracks:
+        k = same_song(t)
+        a = _norm(main_artist(t.artist))
+        if k in seen or (per_artist and count.get(a, 0) >= per_artist):
+            continue
+        seen.add(k); count[a] = count.get(a, 0) + 1
+        out.append(t)
+    return out
 
 
 def interleave(lists):
