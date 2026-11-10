@@ -1072,7 +1072,7 @@ class ReviewPage(QWidget):
                                   "Initializing": "Starting up the transfer…"}.get(msg, msg))
         if job["state"] in (J.STAGING, J.ANALYZING):
             self._dots.start()                                 # the verdict sub-line keeps moving while we check
-        status = a["overall_status"] if a and not busy else None
+        status = a.get("overall_status") if a and not busy else None
         if status:
             set_tag(self.verdict, T.GRADE_WORD[status]); self.verdict.setText(T.GRADE_LONG[status])
             issues = sum(1 for c in a["checks"] if c["status"] != "PASS")

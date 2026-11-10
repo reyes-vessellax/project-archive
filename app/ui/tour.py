@@ -28,11 +28,18 @@ class Step:
 def default_steps() -> list[Step]:
     return [
         Step("", f"Welcome to {APP_NAME}",
-             "A quick tour of the five things you'll use. It takes about a minute, and you can skip it any time."),
-        Step("discover.q", "Discover",
-             "Your home page. Search from here (results come from other users' libraries, fastest first), or dig: "
-             "era crates, every record on the labels you own, artists' whole catalogues, and what mixes with your "
-             "newest tracks.", page="discover"),
+             "A quick tour of how it works. It takes about a minute, and you can skip it any time."),
+        Step("discover.spin_bar", "Dig the crate",
+             "Discover is a new issue every morning. This is the lead track: Play the drop plays 20 seconds from the "
+             "drop without downloading anything. Like it? Check this file. Not your thing? Dig again for the next one.",
+             page="discover"),
+        Step("discover.rows.For you", "For you, eras and styles",
+             "Below it: For you (artists people play alongside the ones in your library), three eras, and five styles. "
+             "Every track is being shared right now, 4 minutes or longer, lossless first. Click a cover to hear its "
+             "drop; click the title to open it.", page="discover"),
+        Step("topbar.tabs.search", "Search",
+             "Know what you want? Search finds it across everyone's libraries, fastest and best quality first. If "
+             "nobody has it, Watch this search and DigMart keeps looking for you."),
         Step("home.list_host", "Queue",
              "Everything you've asked for, newest first. The word on the left says where it is: DOWN (downloading), "
              "CHECK (being checked), WAIT (its turn is next), then GOOD, LOOK or BROKEN once it's been checked. "
@@ -56,8 +63,8 @@ def default_steps() -> list[Step]:
              "Settings, appearance (light or dark), help and sign-out live here. Your library folder and what you "
              "share are under Settings → Library & sharing."),
         Step("", "That's it",
-             "Search for something you've been hunting for. If a result turns out broken, you'll know before it ever "
-             "touches your library."),
+             "The whole loop: hear the drop, Check this file, then Download to Library from the Queue. Every file is "
+             "checked first (fake 320s, broken files, club-ready), so nothing bad ever touches your library."),
     ]
 
 

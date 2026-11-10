@@ -4,6 +4,13 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.15 (2026-11-10) — the first-run tour, up to date
+
+- The tour a new user gets after signing up now matches the app: Dig the crate (Play the drop, Check this file,
+  Dig again), For you / eras / styles, and Search (Watch this search when nobody has it), ending with the whole
+  loop: hear the drop, check the file, Download to Library from the Queue. (It still described label rows.)
+- The track details panel no longer stops on a track with an incomplete check result.
+
 ## 0.9.14 (2026-11-10) — Discover goes editorial: The Dig.
 
 - **Discover is now "The Dig."**, a daily issue: a masthead with today's date and the search box, and a strap
