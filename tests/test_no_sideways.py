@@ -62,3 +62,18 @@ def test_account_menu_stays_on_screen_from_the_bottom_left():
     assert area.left() <= p.x() and p.x() + menu.width() <= area.right() + 1
     assert area.top() <= p.y() and p.y() + menu.height() <= area.bottom() + 1
     menu.close(); menu.deleteLater(); win.close(); win.deleteLater(); app.processEvents()
+
+
+def test_watch_only_when_nothing_is_there(service):
+    """Watch is for things nobody is sharing: hidden when a search finds a file you can get."""
+    from app.adapters.base import Candidate, SearchResult
+    from app.ui.pages import SearchPage
+    app = _app()
+    page = SearchPage(service); page.resize(1000, 700); page.show(); page.q.setText("Artist - Track")
+    page.show_results(SearchResult("q", "q", True, [Candidate("soulseek", "u", "p/a.flac", 1, extension="flac",
+                                                             display_name="Artist - Track.flac", free_slot=True)]), searching=False)
+    app.processEvents()
+    assert not page.watch_btn.isVisible()
+    page.show_results(SearchResult("q", "q", True, []), searching=False); app.processEvents()
+    assert page.watch_btn.isVisible()
+    page.close(); page.deleteLater(); app.processEvents()

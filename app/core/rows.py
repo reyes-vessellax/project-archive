@@ -216,6 +216,40 @@ def first_year(engine, artist: str, title: str) -> int | None:
     return min(years) if years else None
 
 
+def discogs_year(engine, artist: str, title: str, pages: int = 2) -> int | None:
+    """The earliest year Discogs lists a release of this title under this artist (its releases come oldest first)."""
+    key = "rows:dgyear:" + _norm(main_artist(artist)) + "|" + _norm(title)
+    hit = _remembered(engine, key, YEAR_DAYS)
+    if hit is not None:
+        return hit or None
+    try:
+        ent = engine.artist(main_artist(artist))
+    except Exception:
+        return None
+    years = []
+    if ent.discogs_id:
+        want = _norm(title)
+        for pg in range(1, pages + 1):
+            try:
+                page = engine.artist_releases(ent.discogs_id, pg)
+            except Exception:
+                break
+            years += [r.year for r in page.releases if r.year and want and want in _norm(r.title)]
+            if years or pg >= page.pages:
+                break
+    y = min(years) if years else 0
+    _remember(engine, key, y)
+    return y or None
+
+
+def release_year(engine, artist: str, title: str) -> int | None:
+    """When a track first came out: the EARLIEST of MusicBrainz and Discogs. Each misses originals now and then
+    (MusicBrainz has "Can You Feel It" only from its 1997 reissue; Discogs files "Move Your Body" under its 1986
+    title), but a reissue only ever makes a year later, so the earliest of the two is the safe answer."""
+    ys = [y for y in (first_year(engine, artist, title), discogs_year(engine, artist, title)) if y]
+    return min(ys) if ys else None
+
+
 def era_span(years: str) -> tuple[int, int]:
     """"1984–1990" -> (1984, 1990); "2010–now" -> (2010, 9999)."""
     nums = [int(x) for x in re.findall(r"\d{4}", years or "")]

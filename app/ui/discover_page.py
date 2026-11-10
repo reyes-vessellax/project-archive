@@ -349,6 +349,7 @@ class RecordCard(QFrame):
         self.b_label = button("Open the label", "ghost", lambda: self.found and self.open_label.emit(self.found.label))
         for b in (self.b_play, self.b_check, self.b_watch, self.b_label):
             acts.addWidget(b); b.setEnabled(False)
+        self.b_watch.hide()          # it's being shared right now: Watch is for things nobody has (Search offers it)
         acts.addStretch(1)
         if extra is not None:
             acts.addWidget(extra)
@@ -637,10 +638,10 @@ class SpinBar(QFrame):
         self.era_years: dict[str, str] = {}    # era row name -> "1984–1990"
         self._previewing = False
         self._img_token = None
-        outer = hbox(self, (26, 26, 26, 22), 30)
-        self.art = CoverArt(); self.art.setFixedSize(300, 300)
+        outer = hbox(self, (20, 18, 20, 18), 22)
+        self.art = CoverArt(); self.art.setFixedSize(176, 176)
         outer.addWidget(self.art, 0, Qt.AlignTop)
-        col = vbox(spacing=8)
+        col = vbox(spacing=5)
         kick = hbox(spacing=12)
         live = label("DIG THE CRATE", "heroLive"); kick.addWidget(live)
         self.where = label("", "heroKicker", wrap=True); kick.addWidget(self.where, 1)
@@ -659,21 +660,15 @@ class SpinBar(QFrame):
         self.b_spin.setToolTip("The next random track: it starts playing straight away")
         self.b_check = button("Check this file", "heroGhost", lambda: self.found and self.check.emit(self.found.best))
         self.b_check.setToolTip("Download this copy, check its quality and club-readiness, and put it in your Queue")
-        self.b_watch = button("Watch it", "heroGhost",
-                              lambda: self.found and self.watch.emit(self.found.release.artist, self.found.track))
-        self.b_watch.setToolTip("Add it to your Wishlist: DigMart keeps looking for the best copy")
-        for b in (self.b_play, self.b_spin, self.b_check, self.b_watch):
+        for b in (self.b_play, self.b_spin, self.b_check):
             btns.addWidget(b)
         btns.addStretch(1)
         col.addLayout(btns)
         self.sub = label("", "heroMono", wrap=True); col.addWidget(self.sub)
-        self.next_host = QWidget(); self.next_row = hbox(self.next_host, (0, 10, 0, 0), 18)
-        self.next_row.addWidget(label("UP NEXT IN THE CRATE", "heroMono"))
-        self.next_row.addStretch(1)
-        col.addWidget(self.next_host); self.next_host.hide()
         col.addStretch(1)
         outer.addLayout(col, 1)
-        self.b_play.setEnabled(False); self.b_check.setEnabled(False); self.b_watch.setEnabled(False)
+        self.b_play.setEnabled(False); self.b_check.setEnabled(False)
+        self.year = ""
         self.status = None
 
     def _chip(self, text: str, ok: bool = False):
@@ -716,37 +711,20 @@ class SpinBar(QFrame):
             if text:
                 self._chip(text)
         self._chip("READY NOW", ok=True)
-        for b in (self.b_play, self.b_check, self.b_watch):
+        for b in (self.b_play, self.b_check):
             b.setEnabled(True)
+        self.year = ""
         self.b_check.setText("Check this file")
         self.set_preview_state("")
         self.art.set_pixmap(None)
         self.art.set_sleeve(f.release.artist[:30], f.track, f.release.catno)
 
-    def set_up_next(self, founds: list, thumb_dir=None):
-        """The next three tracks already loaded: Dig again is instant."""
-        while self.next_row.count() > 2:
-            w = self.next_row.takeAt(1).widget()
-            if w:
-                w.setParent(None); w.deleteLater()
-        import zlib
-        for f in founds[:3]:
-            box = QWidget(); bl = hbox(box, (0, 0, 0, 0), 8)
-            art = CoverArt(); art.setFixedSize(42, 42); art.set_sleeve(f.release.artist[:20], f.track, "")
-            url = f.details.get("cover") or f.release.thumb
-            if url and thumb_dir is not None:
-                p = Path(thumb_dir) / f"{zlib.crc32(url.encode()) & 0x7FFFFFFF}.jpg"
-                if p.exists():
-                    pm = QPixmap()
-                    if pm.load(str(p)):
-                        art.set_pixmap(pm)
-            bl.addWidget(art)
-            tv = vbox(spacing=0)
-            tv.addWidget(ElideLabel(f.track, "miniTitle")); tv.addWidget(ElideLabel(f.release.artist, "miniArtist"))
-            bl.addLayout(tv)
-            box.setMaximumWidth(220)
-            self.next_row.insertWidget(self.next_row.count() - 1, box)
-        self.next_host.setVisible(bool(founds))
+    def set_year(self, found, year) -> None:
+        """The first release year, once looked up (MusicBrainz, remembered): 'Mr. Fingers  ·  1986'."""
+        if found is not self.found or not year:
+            return
+        self.year = str(year)
+        self.by.setText(f"{found.release.artist}  ·  {year}")
 
     def _play(self):
         if self._previewing:
@@ -922,8 +900,9 @@ class DiscoverPage(QWidget):
         self.track_card.stop.connect(self.stop_preview.emit)
         self.track_card.check.connect(lambda c: self._card_check(self.track_card, c))
         self.track_card.watch.connect(lambda a, t: self.watch.emit(a, t, ""))
-        self.track_card.open_label.connect(lambda nm: self.find.emit(nm))
-        self.track_card.b_label.setText("More from this label")
+        self.track_card.open_label.connect(          # rows aren't labels any more: more by the same artist
+            lambda _nm: self.track_card.found and self.find.emit(self.track_card.found.release.artist))
+        self.track_card.b_label.setText("More by this artist")
         self._open_tile = None
         self._active_card = self.spin_bar
         self._tiles_token = next(self._tokens)
@@ -988,8 +967,11 @@ class DiscoverPage(QWidget):
         self.rows = {}
         self._tiles_by_img = {}
         self._row_tracks: dict[str, list] = {}
-        self._loading: set = set()
-        self._pending: dict[str, int] = {}                 # searches still to land, per row
+        if not hasattr(self, "_loading"):
+            # rows still searching survive a reload: their results land in the new row of the same name, and they're
+            # never queued twice (a reload mid-search used to start the same searches again)
+            self._loading: set = set()
+            self._pending: dict[str, int] = {}             # searches still to land, per row
         from ..core import rows as R
         from ..core.eras import ERAS, STYLES
         from ..core.eras import genre as find_genre
@@ -1263,10 +1245,6 @@ class DiscoverPage(QWidget):
     SPIN_KEEP_HOURS = 3
 
     def _save_spins(self):
-        try:
-            self.spin_bar.set_up_next([f for f, _ in self._spins], self._thumb_dir())   # "Up next in the crate"
-        except Exception:
-            pass
         """Ready spins survive a restart (the clip is already here), so the first spin after opening is instant."""
         import json
         from dataclasses import asdict
@@ -1377,6 +1355,22 @@ class DiscoverPage(QWidget):
         if card._previewing:
             self.stop_preview.emit()
         card.show_found(f)
+        if not f.release.year and f.release.artist and f.release.title:   # the year: MusicBrainz, remembered for a year
+            from ..core import rows as R
+            eng = self.engine
+
+            def work(a=f.release.artist, t=f.release.title):
+                return R.release_year(eng, a, t)
+
+            def then(y, card=card, f=f):
+                if isinstance(y, Exception) or not y or card.found is not f:
+                    return
+                f.release.year = y
+                if card is self.spin_bar:
+                    card.set_year(f, y)
+                else:
+                    card.update_meta(f)
+            self._run_aux(work, then)
         tok = next(self._tokens)
         card._img_token = tok
         url = f.details.get("cover") or f.release.thumb

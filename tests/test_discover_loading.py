@@ -26,10 +26,14 @@ def test_rows_load_once_progressively_and_survive_refreshes(service, monkeypatch
             calls.append(x)
 
     def style_row(svc, engine, nm, owns=None, cancelled=None):
-        note(("style", nm)); time.sleep(0.05); return [_track("S " + nm, "t")]
+        if svc is service:                       # a page left over from another test may still be searching
+            note(("style", nm))
+        time.sleep(0.05); return [_track("S " + nm, "t")]
 
     def artist_crate(svc, a, owns=None, cancelled=None, log=None, use_cache=True):
-        note(("artist", a)); time.sleep(0.05); return [_track(a, "t1"), _track(a, "t2")]
+        if svc is service:
+            note(("artist", a))
+        time.sleep(0.05); return [_track(a, "t1"), _track(a, "t2")]
 
     def for_you_start(svc, day, owns=None, cancelled=None, **kw):
         note(("foryou", "")); time.sleep(0.05)
@@ -73,7 +77,8 @@ def test_rows_fill_once_signed_in_without_any_other_event(service, monkeypatch):
     from app.ui.discover_page import DiscoverPage
     app = QApplication.instance() or QApplication([])
     asked = []
-    monkeypatch.setattr(R, "style_row", lambda svc, engine, nm, owns=None, cancelled=None: asked.append(nm) or [_track("A " + nm, "t")])
+    monkeypatch.setattr(R, "style_row", lambda svc, engine, nm, owns=None, cancelled=None:
+                        (asked.append(nm) if svc is service else None) or [_track("A " + nm, "t")])
     monkeypatch.setattr(R, "artist_crate", lambda svc, a, owns=None, cancelled=None, log=None, use_cache=True: [_track(a, "t")])
     monkeypatch.setattr(R, "for_you_start", lambda *a, **k: ([], [], []))
     monkeypatch.setattr(R, "order_by_era", lambda engine, era, tracks, cancelled=None, cached_only=False: tracks)

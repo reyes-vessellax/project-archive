@@ -8,10 +8,16 @@ one line changes and this file gets a note.
 
 - **Discover is now "The Dig."**, a daily issue: a masthead with today's date and the search box, and a strap
   with how many tracks are ready to hear.
-- **Dig the crate leads the page:** a big dark panel with the cover, where the track came from (For you, an era, a
-  style), why it's here ("Here because you play Fast Eddie and Adonis. 3 people are sharing it right now, 2 in
-  lossless."), BPM / key / format / length chips, and Play the drop, Dig again, Check this file and Watch it.
-  "Up next in the crate" shows the three tracks already loaded.
+- **Dig the crate leads the page:** a dark panel (a little bigger than the rows) with the cover, where the track came
+  from (For you, an era, a style), the artist and the year it first came out, why it's here ("Here because you play
+  Fast Eddie and Adonis. 3 people are sharing it right now, 2 in lossless."), BPM / key / format / length chips, and
+  Play the drop, Dig again and Check this file.
+- **The year** a track first came out: the earliest of MusicBrainz and Discogs (a reissue only ever makes it later).
+  Right for most records; now and then a classic shows a year or two late when neither lists its original pressing
+  under that title.
+- **Watch only when nothing's there:** Watch is for tracks nobody is sharing, so it's gone from Dig the crate and the
+  track cards (the file is right there), and Search offers "Watch this search" only after a search finds nothing
+  you can download. The track card's "More from this label" is now "More by this artist".
 - **For you** gets a big section head and numbered tracks (01, 02…). **The eras** are black panels with the years in
   big yellow type, the era's story, and its row of tracks. **Styles of the day** each get a one-line description
   of the sound.

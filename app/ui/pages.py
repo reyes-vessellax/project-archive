@@ -286,6 +286,7 @@ class SearchPage(QWidget):
         self.watch_btn.setToolTip("Nobody has it? Keep asking every half hour for 30 days and tell me when it shows up.")
         self.watch_btn.setEnabled(False); self.q.textChanged.connect(lambda t: self.watch_btn.setEnabled(bool(t.strip())))
         srow.addWidget(self.watch_btn)
+        self.watch_btn.hide()        # only after a search that found nothing downloadable: if it's there, just get it
         lay.addLayout(srow)
         from .wishlist_page import WishForm
         self.wish_form = WishForm("Watch for this track. Fill in what you know, as much or as little as you like.")
@@ -474,7 +475,10 @@ class SearchPage(QWidget):
             res = replace(res, candidates=kept)
         n = len(res.candidates)
         if idle:
+            self.watch_btn.hide()
             self.title.setText("Search"); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
+        gettable = any(not c.locked and not c.note for c in res.candidates)
+        self.watch_btn.setVisible(not searching and not gettable and bool(self.q.text().strip()))
         self.title.setText(f"{n} result{'s' if n != 1 else ''}")
         skipped = sum(1 for c in res.candidates if c.note == "Extension mismatch")
         bots = sum(1 for c in res.candidates if c.note == "Ad bot")

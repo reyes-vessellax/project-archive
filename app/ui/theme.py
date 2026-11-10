@@ -261,19 +261,19 @@ QFrame#hero QLabel {{ background: transparent; color: #f5f3ee; }}
 QLabel#heroLive {{ font-family: {mono}; font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #ffffff; background: #dc143c; padding: 4px 8px; }}
 QFrame#hero QLabel#heroLive {{ background: #dc143c; color: #ffffff; }}
 QFrame#hero QLabel#heroKicker {{ font-family: {mono}; font-size: 12px; letter-spacing: 1.5px; color: #ffd700; }}
-QFrame#hero QLabel#heroTitle {{ font-family: {display}; font-size: 44px; font-weight: 800; letter-spacing: -1px; color: #f5f3ee; }}
-QFrame#hero QLabel#heroBy {{ font-family: {display}; font-size: 19px; font-weight: 600; color: #f5f3ee; }}
-QFrame#hero QLabel#heroDek {{ font-size: 15px; color: #d8d2c5; }}
-QFrame#hero QLabel#heroChip {{ font-family: {mono}; font-size: 12px; letter-spacing: 1px; border: 1px solid #3a3733; padding: 5px 10px; color: #f5f3ee; }}
+QFrame#hero QLabel#heroTitle {{ font-family: {display}; font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #f5f3ee; }}
+QFrame#hero QLabel#heroBy {{ font-family: {display}; font-size: 16px; font-weight: 600; color: #f5f3ee; }}
+QFrame#hero QLabel#heroDek {{ font-size: 14px; color: #d8d2c5; }}
+QFrame#hero QLabel#heroChip {{ font-family: {mono}; font-size: 11px; letter-spacing: 1px; border: 1px solid #3a3733; padding: 3px 8px; color: #f5f3ee; }}
 QFrame#hero QLabel#heroChip[ok="true"] {{ border-color: #2fbf6a; color: #2fbf6a; }}
 QFrame#hero QLabel#heroMono {{ font-family: {mono}; font-size: 11px; letter-spacing: 1.5px; color: #8f897d; }}
 QFrame#hero QLabel#miniTitle {{ font-family: {display}; font-size: 13px; font-weight: 600; color: #f5f3ee; }}
 QFrame#hero QLabel#miniArtist {{ font-size: 12px; color: #a7a093; }}
-QPushButton#heroPlay {{ background: #ffd700; color: #111111; border: none; border-radius: 2px; padding: 0 22px; min-height: 46px; max-height: 46px; font-family: {display}; font-size: 15px; font-weight: 700; }}
+QPushButton#heroPlay {{ background: #ffd700; color: #111111; border: none; border-radius: 2px; padding: 0 22px; min-height: 38px; max-height: 38px; font-family: {display}; font-size: 14px; font-weight: 700; }}
 QPushButton#heroPlay:hover {{ background: #ffe34d; }}
-QPushButton#heroDig {{ background: #dc143c; color: #ffffff; border: none; border-radius: 2px; padding: 0 22px; min-height: 46px; max-height: 46px; font-family: {display}; font-size: 15px; font-weight: 700; }}
+QPushButton#heroDig {{ background: #dc143c; color: #ffffff; border: none; border-radius: 2px; padding: 0 22px; min-height: 38px; max-height: 38px; font-family: {display}; font-size: 14px; font-weight: 700; }}
 QPushButton#heroDig:hover {{ background: #f0244c; }}
-QPushButton#heroGhost {{ background: transparent; color: #f5f3ee; border: 1px solid #3a3733; border-radius: 2px; padding: 0 20px; min-height: 46px; max-height: 46px; font-family: {display}; font-size: 15px; font-weight: 600; }}
+QPushButton#heroGhost {{ background: transparent; color: #f5f3ee; border: 1px solid #3a3733; border-radius: 2px; padding: 0 20px; min-height: 38px; max-height: 38px; font-family: {display}; font-size: 14px; font-weight: 600; }}
 QPushButton#heroGhost:hover {{ border-color: #ffd700; color: #ffd700; }}
 QPushButton#heroPlay:disabled, QPushButton#heroDig:disabled, QPushButton#heroGhost:disabled {{ background: #26241f; color: #6b665d; border-color: #26241f; }}
 QFrame#eraPanel {{ background: {c['disp_bg']}; border: 1px solid {c['disp_line']}; border-radius: 3px; }}

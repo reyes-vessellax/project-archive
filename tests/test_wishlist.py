@@ -148,7 +148,11 @@ def test_window_watch_button_bell_and_page(connected, slskd):
     connected.accounts.sign_up("T", "t@example.com", "correct-horse-battery")
     w = MainWindow(connected); w.resize(1200, 800); w.show(); spin(app, 0.5)
     w._tab("search"); spin(app, 0.5)
-    w.searchp.q.setText("Artist - Real Track"); w.searchp.watch_btn.click(); spin(app, 0.1)
+    w.searchp.q.setText("Artist - Real Track")
+    from app.adapters.base import SearchResult
+    w.searchp.show_results(SearchResult("q", "q", True, []), searching=False); spin(app, 0.1)
+    assert w.searchp.watch_btn.isVisible()                 # nothing found: Watch is offered
+    w.searchp.watch_btn.click(); spin(app, 0.1)
     assert w.searchp.wish_form.isVisible() and w.searchp.wish_form.artist.text() == "Artist"
     assert w.searchp.wish_form.title.text() == "Real Track"
     w.searchp.wish_form.btn.click(); spin(app, 0.1)
