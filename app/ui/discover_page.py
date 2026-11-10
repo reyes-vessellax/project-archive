@@ -992,7 +992,7 @@ class DiscoverPage(QWidget):
         self.spin_bar.era_years = {n: e.get("years", "") for n, e in self._era_of.items()}
         for name, kind in names:
             if kind == "FORYOU":
-                row = CrateRow(name, "", look="big", numbered=True,
+                row = CrateRow(name, "", look="big",
                                note="People who play your records play these next. Today's picks; tomorrow, a different set.")
             elif kind == "ERA":
                 row = CrateRow(name, "", look="panel")

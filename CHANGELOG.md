@@ -4,6 +4,10 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.17 (2026-11-10) — no number badges
+
+- For you's tracks no longer carry 01, 02, 03… badges (on a track without cover art they sat on the artist's name).
+
 ## 0.9.16 (2026-11-10) — "Preview", not "the drop"
 
 - "Play the drop" is now **Preview** everywhere (Dig the crate, track cards, the Queue, the Library, the tour):
