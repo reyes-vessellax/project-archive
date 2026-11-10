@@ -57,3 +57,40 @@ def test_track_opens_in_place_closes_switches_and_spin_is_instant(service, tmp_p
     shown = [f.best.user for f, _ in d._spins] + ([d.spin_bar.found.best.user] if d.spin_bar.found else [])
     assert shown and "u02" not in shown                                                   # a source that failed never shows
     d.deleteLater(); app.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
+def test_ready_spins_survive_a_restart_and_wheel_scrolls_the_page(service, tmp_path):
+    from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QApplication
+    from app.adapters.base import Candidate
+    from app.core.crates import CrateTrack
+    from app.core.discover import Release
+    from app.core.discover_avail import Found
+    from app.ui.discover_page import CrateRow, DiscoverPage
+    app = QApplication.instance() or QApplication([])
+    d = DiscoverPage(service); d.resize(1200, 700); d.show(); app.processEvents()
+    wav = d._spin_dir() / "abc.wav"; wav.write_bytes(b"RIFF")
+    c = Candidate("soulseek", "u", "p", 1, extension="flac", free_slot=True)
+    d._spins.append((Found(Release(0, "Rain", "Kerri Chandler", None), {}, "Shelter", "Rain", c, [c]), str(wav)))
+    d._save_spins()
+    d2 = DiscoverPage(service)                                        # next start-up
+    assert [f.track for f, _ in d2._spins] == ["Rain"]
+    # a vertical wheel over a row moves the page, not the row
+    rows = []
+    for r in range(4):
+        row = CrateRow(f"L{r}"); d.rows_box.addWidget(row); rows.append(row)
+        ts = [CrateTrack(f"A{i}", f"T{i}", "", Candidate("soulseek", f"u{r}{i}", f"p{r}{i}", 1, extension="flac", free_slot=True)) for i in range(20)]
+        row.fill(ts)
+    app.processEvents()
+    page_bar = d.home_view.verticalScrollBar(); row_bar = rows[0].area.horizontalScrollBar()
+    page_bar.setRange(0, 5000); row_bar.setRange(0, 3000)            # (offscreen layout doesn't size these by itself)
+    before_p, before_r = page_bar.value(), row_bar.value()
+    vp = rows[0].area.viewport()
+    ev = QWheelEvent(QPointF(10, 10), QPointF(vp.mapToGlobal(QPoint(10, 10))), QPoint(0, 0), QPoint(0, -240),
+                     Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+    QApplication.sendEvent(vp, ev)
+    assert page_bar.value() > before_p and row_bar.value() == before_r
+    for w in (d, d2):
+        w.deleteLater()
+    app.sendPostedEvents(None, QEvent.DeferredDelete)

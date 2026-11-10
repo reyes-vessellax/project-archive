@@ -231,6 +231,11 @@ QLabel#copyline {{ font-family: {mono}; font-size: 12px; font-weight: 700; color
 QFrame#spinbar {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['accent']}; border-radius: 3px; }}
 QLabel#spinbartitle {{ font-family: {display}; font-size: 18px; font-weight: 700; }}
 QLabel#rowtitle {{ font-family: {display}; font-size: 20px; font-weight: 700; }}
+QFrame#ghost {{ background: {c['bar']}; border-radius: 3px; }}
+QLabel#fmtbadge {{ font-family: {mono}; font-size: 10px; font-weight: 700; letter-spacing: 1px; color: {c['pass_']}; }}
+QPushButton#arrow {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 15px; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px; font-size: 18px; font-weight: 700; color: {c['text']}; padding: 0 0 2px 0; }}
+QPushButton#arrow:hover {{ border-color: {c['accent']}; color: {c['accent']}; }}
+QPushButton#arrow:disabled {{ color: {c['line']}; border-color: {c['line']}; }}
 QLabel#clubhead {{ font-family: {mono}; font-size: 12px; font-weight: 700; letter-spacing: 1px; }}
 QFrame#cover {{ background: transparent; border: none; border-bottom: 3px solid transparent; }}
 QFrame#cover[open="true"] {{ border-bottom: 3px solid {c['accent']}; }}

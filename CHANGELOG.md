@@ -4,6 +4,15 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.1 (2026-11-09) — Discover, tightened
+
+- **Labels and Styles are separate sections,** each with its own heading.
+- **Rows:** ‹ › buttons (smooth) instead of a scrollbar; trackpad swipes still work; grey placeholder tiles while a
+  row loads; long titles end in "…" instead of being cut off; tighter tiles.
+- **Bug fix:** the mouse wheel over a row scrolled the row sideways instead of the page.
+- **Spin is quicker:** 3 kept ready, a slow source is skipped after 20 s instead of a minute, and ready spins are
+  kept between sessions, so the first spin after opening DigMart is instant.
+
 ## 0.9.0 (2026-11-09) — Discover: daily labels, styles, a Spin that always plays
 
 - **8 label rows a day,** rotating through 68 labels across every era (Chicago, NY/NJ, Detroit, UK/Europe, France,

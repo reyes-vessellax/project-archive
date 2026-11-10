@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QPoint, QRect, QRunnable, QSize, Qt, QThreadPool, Signal
 from PySide6.QtGui import QColor, QIcon, QPixmap
-from PySide6.QtWidgets import (QFrame, QHeaderView, QLayout, QLineEdit, QSizePolicy, QStackedWidget, QTreeWidget,
+from PySide6.QtWidgets import (QFrame, QLabel, QHeaderView, QLayout, QLineEdit, QSizePolicy, QStackedWidget, QTreeWidget,
                                QTreeWidgetItem, QWidget)
 
 from ..core.discover import Discover, Entity, Page, Release
@@ -324,6 +324,29 @@ class RecordCard(QFrame):
         self.status.setText(msg)
 
 
+class ElideLabel(QLabel):
+    """One line that ends in "…" when it doesn't fit, measured with the font it's actually drawn in."""
+
+    def __init__(self, text: str, role: str = ""):
+        super().__init__()
+        self._full = text
+        if role:
+            self.setObjectName(role)
+        self.setMinimumWidth(10)
+
+    def paintEvent(self, e):
+        from PySide6.QtGui import QPainter
+        p = QPainter(self)
+        p.setFont(self.font()); p.setPen(self.palette().color(self.foregroundRole()))
+        r = self.contentsRect()
+        p.drawText(r, int(self.alignment() | Qt.AlignVCenter), self.fontMetrics().elidedText(self._full, Qt.ElideRight, r.width()))
+        p.end()
+
+    def sizeHint(self):
+        fm = self.fontMetrics()
+        return QSize(min(fm.horizontalAdvance(self._full), 2000), fm.height() + 2)
+
+
 class TrackTile(QFrame):
     """One track in a crate row: cover, title, artist, format. Tap: its card opens under the row."""
     clicked = Signal(object)
@@ -332,13 +355,15 @@ class TrackTile(QFrame):
         super().__init__()
         self.track = t
         self.setObjectName("cover"); self.setCursor(Qt.PointingHandCursor); self.setFixedWidth(158)
-        lay = vbox(self, (0, 0, 0, 6), 3)
+        lay = vbox(self, (0, 0, 0, 6), 2)
         self.art = CoverArt(); self.art.setFixedSize(158, 158); lay.addWidget(self.art)
-        ti = label(t.title, "covertitle"); ti.setToolTip(f"{t.artist} – {t.title}" + (f" ({t.mix})" if t.mix else ""))
-        lay.addWidget(ti)
-        lay.addWidget(label(t.artist, "muted"))
+        lay.addSpacing(6)
+        tip = f"{t.artist} – {t.title}" + (f" ({t.mix})" if t.mix else "")
+        for text, role in ((t.title, "covertitle"), (t.artist, "muted")):
+            lb = ElideLabel(text, role); lb.setToolTip(tip)                       # "…" instead of a cut-off word
+            lay.addWidget(lb)
         ext = (t.best.extension or "").upper()
-        lay.addWidget(label(ext + (f" {t.best.bitrate_kbps}" if ext == "MP3" and t.best.bitrate_kbps else ""), "copyline"))
+        lay.addWidget(label(ext + (f" {t.best.bitrate_kbps}" if ext == "MP3" and t.best.bitrate_kbps else ""), "fmtbadge"))
 
     def set_image(self, data: bytes):
         pm = QPixmap()
@@ -371,19 +396,68 @@ class CrateRow(QWidget):
         head.addStretch(1)
         self.more = button("See everything  →", "link", lambda: self.see_all.emit(self.name))
         head.addWidget(self.more, 0, Qt.AlignBottom)
+        self.b_left = button("‹", "arrow", lambda: self._page(-1)); self.b_right = button("›", "arrow", lambda: self._page(1))
+        head.addWidget(self.b_left, 0, Qt.AlignBottom); head.addWidget(self.b_right, 0, Qt.AlignBottom)
         lay.addLayout(head)
         from PySide6.QtWidgets import QScrollArea
         self.strip_host = QWidget(); self.strip_host.setObjectName("page")
         self.strip = hbox(self.strip_host, (0, 0, 0, 0), 14); self.strip.addStretch(1)
         self.area = QScrollArea(); self.area.setWidget(self.strip_host); self.area.setWidgetResizable(True)
-        self.area.setFrameShape(QFrame.NoFrame); self.area.setFixedHeight(262)
+        self.area.setFrameShape(QFrame.NoFrame); self.area.setFixedHeight(236)
         self.area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)     # the ‹ › buttons and trackpad swipes move it
+        self.area.viewport().installEventFilter(self)
+        self.area.horizontalScrollBar().valueChanged.connect(lambda _v: self._arrows())
+        self.area.horizontalScrollBar().rangeChanged.connect(lambda *_: self._arrows())
         lay.addWidget(self.area)
-        self.note = label("Looking for what people are sharing right now…", "faint"); lay.addWidget(self.note)
+        self.note = label("", "faint"); lay.addWidget(self.note); self.note.hide()
+        self._skeleton()
         self.drawer_slot = vbox(spacing=0); lay.addLayout(self.drawer_slot)
         self.tiles: list[TrackTile] = []
 
+    def _skeleton(self):
+        """Grey placeholder tiles while the row loads (the row looks like itself straight away)."""
+        self._ghosts = []
+        for _ in range(8):
+            g = QFrame(); g.setObjectName("ghost"); g.setFixedSize(158, 222)
+            self.strip.insertWidget(self.strip.count() - 1, g); self._ghosts.append(g)
+        self._arrows()
+
+    def _page(self, direction: int):
+        bar = self.area.horizontalScrollBar()
+        from PySide6.QtCore import QPropertyAnimation, QEasingCurve
+        anim = QPropertyAnimation(bar, b"value", self)
+        anim.setDuration(260); anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.setStartValue(bar.value())
+        anim.setEndValue(max(0, min(bar.maximum(), bar.value() + direction * max(172, self.area.viewport().width() - 172))))
+        anim.start(); self._anim = anim
+
+    def _arrows(self):
+        bar = self.area.horizontalScrollBar()
+        self.b_left.setEnabled(bar.value() > 0); self.b_right.setEnabled(bar.value() < bar.maximum())
+        self.b_left.setVisible(bar.maximum() > 0); self.b_right.setVisible(bar.maximum() > 0)
+
+    def eventFilter(self, obj, ev):
+        """An up/down wheel over a row scrolls the PAGE (it used to scroll the row sideways). Sideways swipes
+        still move the row."""
+        from PySide6.QtCore import QEvent
+        if ev.type() == QEvent.Wheel:
+            d = ev.angleDelta()
+            if abs(d.x()) > abs(d.y()):
+                bar = self.area.horizontalScrollBar(); bar.setValue(bar.value() - d.x())
+                return True
+            page = self.parent()
+            while page is not None and not hasattr(page, "verticalScrollBar"):
+                page = page.parent()
+            if page is not None:
+                vb = page.verticalScrollBar(); vb.setValue(vb.value() - d.y())
+            return True
+        return False
+
     def fill(self, tracks):
+        for g in getattr(self, "_ghosts", []):
+            g.setParent(None); g.deleteLater()
+        self._ghosts = []
         for t in self.tiles:
             t.setParent(None); t.deleteLater()
         self.tiles = []
@@ -394,10 +468,16 @@ class CrateRow(QWidget):
         self.note.setVisible(not tracks)
         self.area.setVisible(bool(tracks))
         if not tracks:
-            self.note.setText("Nobody's sharing this label in good quality right now. It's tried again later.")
+            self.note.setText("Nobody's sharing this in good quality right now. Tomorrow brings different labels.")
+        self.area.horizontalScrollBar().setValue(0)
+        self._arrows()
 
     def offline(self):
+        for g in getattr(self, "_ghosts", []):
+            g.setParent(None); g.deleteLater()
+        self._ghosts = []
         self.note.setText("Connect to the network to see what people are sharing."); self.note.show(); self.area.hide()
+        self._arrows()
 
 
 class SpinBar(QFrame):
@@ -590,15 +670,22 @@ class DiscoverPage(QWidget):
                 self.spin_bar.set_preview_state("")
         Player.get().changed.connect(_player_changed)
         try:
-            for f in self._spin_dir().glob("*.wav"):        # last session's loaded spins
-                f.unlink(missing_ok=True)
+            self._load_spins()                                # last session's ready spins: instant first spin
         except Exception:
             pass
         self.spin_bar.check.connect(lambda c: self._card_check(self.spin_bar, c))
         self.spin_bar.spin.connect(self.spin)
         lay.addWidget(self.spin_bar)
 
-        self.rows_box = vbox(spacing=30); lay.addLayout(self.rows_box)
+        self.labels_head = self._section("Labels", "")
+        self.labels_note = self.labels_head.itemAt(self.labels_head.count() - 1).widget() if self.labels_head.count() > 1 else None
+        lay.addLayout(self.labels_head)
+        self.rows_box = vbox(spacing=34); lay.addLayout(self.rows_box)
+        self.styles_head_w = QWidget(); sh = vbox(self.styles_head_w, (0, 18, 0, 0), 4)
+        sh.addWidget(label("Styles", "section"))
+        sh.addWidget(label("Across every label: what people are sharing right now, by sound.", "faint", wrap=True))
+        lay.addWidget(self.styles_head_w)
+        self.styles_box = vbox(spacing=34); lay.addLayout(self.styles_box)
         self.rows: dict[str, CrateRow] = {}
 
         # the card a tapped track opens (one at a time, moved to the row it belongs to)
@@ -667,10 +754,11 @@ class DiscoverPage(QWidget):
             return
         self._loaded_for = want
         self._close_card()
-        while self.rows_box.count():
-            w = self.rows_box.takeAt(0).widget()
-            if w:
-                w.setParent(None); w.deleteLater()
+        for box in (self.rows_box, self.styles_box):
+            while box.count():
+                w = box.takeAt(0).widget()
+                if w:
+                    w.setParent(None); w.deleteLater()
         self.rows = {}
         self._tiles_by_img = {}
         from ..core.eras import STYLES, todays_labels
@@ -688,11 +776,12 @@ class DiscoverPage(QWidget):
         self._row_kind = {n: tag for n, tag in names}
         names_only = [n for n, _ in names]
         for name, tag in names:
-            row = CrateRow(name, tag)
+            row = CrateRow(name, "LABEL OF THE DAY" if tag == "LABEL OF THE DAY" else "")
             row.tapped.connect(self._tap_tile); row.see_all.connect(self.find.emit)
-            self.rows_box.addWidget(row); self.rows[name] = row
+            (self.styles_box if tag == "STYLE" else self.rows_box).addWidget(row); self.rows[name] = row
             if not connected:
                 row.offline()
+        self.styles_head_w.setVisible(any(tag == "STYLE" for _, tag in names))
         self.spin_bar.title.setText("Loading a spin…" if connected else "Connect to the network to spin the crate.")
         if not connected:
             return
@@ -811,7 +900,7 @@ class DiscoverPage(QWidget):
             self.stop_preview.emit()
         self.track_card.hide()
 
-    SPINS_READY = 2
+    SPINS_READY = 3
 
     def spin(self):
         """Show the next spin: one whose preview is already loaded, so it plays the moment you press ▶."""
@@ -826,8 +915,48 @@ class DiscoverPage(QWidget):
         if old:
             Path(old).unlink(missing_ok=True)
         self._spin_wav = wav
+        self._save_spins()
         self._show_found(self.spin_bar, f)
         self._prefetch_spins()
+
+    SPIN_KEEP_HOURS = 3
+
+    def _save_spins(self):
+        """Ready spins survive a restart (the clip is already here), so the first spin after opening is instant."""
+        import json
+        from dataclasses import asdict
+        items = [(f, w) for f, w in self._spins if Path(w).exists()]
+        data = [{"wav": w, "label": f.label, "track": f.track, "artist": f.release.artist, "title": f.release.title,
+                 "catno": f.release.catno, "thumb": f.release.thumb, "best": asdict(f.best),
+                 "alts": [asdict(c) for c in f.alts]} for f, w in items]
+        try:
+            (self._spin_dir() / "ready.json").write_text(json.dumps(data), encoding="utf-8")
+        except OSError:
+            pass
+
+    def _load_spins(self):
+        import json, time as _t
+        from ..adapters.base import Candidate
+        from ..core.discover import Release
+        from ..core.discover_avail import Found
+        d = self._spin_dir()
+        keep = set()
+        try:
+            data = json.loads((d / "ready.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = []
+        for x in data:
+            w = Path(x.get("wav", ""))
+            if not w.exists() or _t.time() - w.stat().st_mtime > self.SPIN_KEEP_HOURS * 3600:
+                continue
+            best = Candidate(**x["best"])
+            rel = Release(0, x.get("title", ""), x.get("artist", ""), None, x.get("catno", ""), "", x.get("label", ""), x.get("thumb", ""))
+            self._spins.append((Found(rel, {"cover": x.get("thumb", "")}, x.get("label", ""), x.get("track", ""), best,
+                                      [Candidate(**c) for c in x.get("alts") or []] or [best]), str(w)))
+            keep.add(w.name)
+        for f in d.glob("*.wav"):                                  # anything else is left over: tidy
+            if f.name not in keep:
+                f.unlink(missing_ok=True)
 
     def _prefetch_spins(self):
         """Keep SPINS_READY tracks loaded: pick from every row on the page, load its preview in the background,
@@ -852,7 +981,7 @@ class DiscoverPage(QWidget):
             import shutil as _sh
             for c in cands[:2]:
                 try:
-                    wav, start = svc.snippet_preview(c, background=True)
+                    wav, start = svc.snippet_preview(c, background=True, timeout_s=20)   # a slow source is skipped
                 except Exception:
                     continue
                 dest = spin_dir / Path(wav).name
@@ -866,6 +995,7 @@ class DiscoverPage(QWidget):
                 c, wav, _start = res
                 t.best = c
                 self._spins.append((self._found_for(name, t), wav))
+                self._save_spins()
                 if self.spin_bar.found is None:
                     self.spin()
             from PySide6.QtCore import QTimer
