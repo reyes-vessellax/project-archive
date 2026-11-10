@@ -29,6 +29,8 @@ def test_dig_the_crate_title_wraps(service):
     bar = SpinBar()
     for lb in (bar.where, bar.title, bar.sub):
         lb.setText("Extremely Long Words In Every Line " * 10)
+    for t in ("FLAC", "122 BPM", "8A", "10:00", "READY NOW"):
+        bar._chip(t)                                     # a full row of chips: they wrap too
     bar.resize(900, 200); bar.show(); app.processEvents()
     assert bar.minimumSizeHint().width() < 800           # ~500 on macOS; Windows fonts run up to ~40% wider
     bar.close(); bar.deleteLater(); app.processEvents()

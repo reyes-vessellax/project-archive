@@ -651,10 +651,10 @@ class SpinBar(QFrame):
         self.by = label("", "heroBy", wrap=True); col.addWidget(self.by)
         self.dek = label("A random track from today's rows, ready to hear. Not your thing? Dig again.", "heroDek", wrap=True)
         col.addWidget(self.dek)
-        self.chips = hbox(spacing=8); self.chips.addStretch(1)
-        col.addLayout(self.chips)
+        chips_w = QWidget(); self.chips = FlowLayout(chips_w, spacing=8)     # wraps on a narrow window
+        col.addWidget(chips_w)
         col.addSpacing(4)
-        btns = hbox(spacing=10)
+        btns_w = QWidget(); btns = FlowLayout(btns_w, spacing=10)          # wraps too: never wider than the page
         self.b_play = button("▶  Play the drop", "heroPlay", self._play)
         self.b_spin = button("Dig again  ↻", "heroDig", self.spin.emit)
         self.b_spin.setToolTip("The next random track: it starts playing straight away")
@@ -662,8 +662,7 @@ class SpinBar(QFrame):
         self.b_check.setToolTip("Download this copy, check its quality and club-readiness, and put it in your Queue")
         for b in (self.b_play, self.b_spin, self.b_check):
             btns.addWidget(b)
-        btns.addStretch(1)
-        col.addLayout(btns)
+        col.addWidget(btns_w)
         self.sub = label("", "heroMono", wrap=True); col.addWidget(self.sub)
         col.addStretch(1)
         outer.addLayout(col, 1)
@@ -675,7 +674,7 @@ class SpinBar(QFrame):
         c = label(text, "heroChip")
         if ok:
             c.setProperty("ok", True)
-        self.chips.insertWidget(self.chips.count() - 1, c)
+        self.chips.addWidget(c)
 
     def show_found(self, f):
         from ..core.crates import LOSSLESS, length_s
@@ -701,7 +700,7 @@ class SpinBar(QFrame):
         who = (f"{len(copies)} {'person is' if len(copies) == 1 else 'people are'} sharing it right now"
                + (f", {lossless} in lossless." if lossless else "."))
         self.dek.setText(f"{why} {who}".strip())
-        while self.chips.count() > 1:
+        while self.chips.count() > 0:
             w = self.chips.takeAt(0).widget()
             if w:
                 w.setParent(None); w.deleteLater()
