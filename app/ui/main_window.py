@@ -559,8 +559,11 @@ class MainWindow(QMainWindow):
         def work():
             self.svc.start_backend()
             self.signals.status.emit(self.svc.connector_status())
-            if self.svc.port_note:
-                self.signals.notice.emit(self.svc.port_note)
+            s = self.svc.settings
+            if self.svc.port_note and not self.svc.port_open and s.upnp and not s.port_help_shown:
+                s.port_help_shown = True; self.svc.save_settings(s)      # say it once, not on every launch
+                self.signals.notice.emit("Your router didn't open the download port, so the slower route is used. "
+                                         "Settings \u2192 Advanced \u2192 Connection shows how to fix it.")
         self.io.start(Task(work, self.signals))
 
     def _ensure_firewall(self):
@@ -609,6 +612,8 @@ class MainWindow(QMainWindow):
         def work():
             if self.svc.watchdog():                          # the engine died: start it again, no app restart
                 self.signals.notice.emit("The engine stopped; starting it again.")
+            if self.svc.port_renew_due():                    # a NAT-PMP opening runs out unless asked for again
+                self.svc.open_port()
             self.signals.status.emit(self.svc.connector_status())
         self.io.start(Task(work, self.signals))
 
@@ -1416,7 +1421,7 @@ class MainWindow(QMainWindow):
         s = self.svc.settings
         self.pool.setMaxThreadCount(self.svc.analysis_slots)
         self.apply_theme()
-        now = (s.share_folder, s.soulseek_own_username, s.use_own_slskd)
+        now = (s.share_folder, s.soulseek_own_username, s.use_own_slskd, s.listen_port)
         if getattr(self, "_engine_cfg", now) != now:
             self.svc.stop_backend(); self._start_backend()
         else:
@@ -1427,7 +1432,7 @@ class MainWindow(QMainWindow):
 
     def _check_ffmpeg(self):
         s = self.svc.settings
-        self._engine_cfg = (s.share_folder, s.soulseek_own_username, s.use_own_slskd)
+        self._engine_cfg = (s.share_folder, s.soulseek_own_username, s.use_own_slskd, s.listen_port)
         try:
             find_tool("ffmpeg", s.ffmpeg_path); find_tool("ffprobe", s.ffmpeg_path)
         except ToolMissing as e:

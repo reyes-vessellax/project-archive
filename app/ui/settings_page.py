@@ -18,6 +18,7 @@ class SettingsPage(QWidget):
     saved = Signal()                  # settings changed (may need engine restart / restyle)
     sign_out = Signal()
     account_changed = Signal()
+    port_checked = Signal()           # the Connection panel's test finished (emitted from a worker thread)
 
     def __init__(self, svc: ArchiveService):
         super().__init__()
@@ -179,11 +180,7 @@ class SettingsPage(QWidget):
         self.own_pass = QLineEdit(); self.own_pass.setEchoMode(QLineEdit.Password)
         self._field(lay, "Use my own Soulseek username", self.own_user)
         self._field(lay, "Soulseek password", self.own_pass)
-        self.upnp = QCheckBox("Ask the router to open the download port automatically (UPnP)")
-        self.upnp.setToolTip("Other users deliver search results and files straight to you when this port is reachable. "
-                             "Off, or with a router that refuses, everything still works through the slower indirect route.")
-        lay.addWidget(self.upnp)
-        self.port_note = label("", "faint"); lay.addWidget(self.port_note)
+        lay.addWidget(self._connection())
         self.use_own = QCheckBox("Use an slskd I already run instead of the built-in engine")
         lay.addWidget(self.use_own)
         self.slskd_url = QLineEdit(); self.slskd_url.setObjectName("monoinput")
@@ -204,6 +201,144 @@ class SettingsPage(QWidget):
                             "(no passwords or keys go in it). Start fresh wipes this "
                             "computer's account, queue, history and quarantine (your music is not touched) and closes the app.", "faint", wrap=True))
         return w
+
+    # ---------------------------------------------------------------- connection
+    def _connection(self) -> QWidget:
+        """Direct connection: is the download port reachable, and what to do when the router won't open it."""
+        box = QFrame(); box.setObjectName("conncard")
+        lay = vbox(box, margins=(18, 16, 18, 16), spacing=12)
+        head = hbox(spacing=10)
+        t = label("Connection"); t.setStyleSheet("font-weight: 700;")
+        self.conn_pill = label("", "pill")
+        head.addWidget(t); head.addWidget(self.conn_pill); head.addStretch(1)
+        lay.addLayout(head)
+        self.conn_text = label("", "muted", wrap=True); lay.addWidget(self.conn_text)
+
+        row = hbox(spacing=8)
+        row.addWidget(label("Download port"))
+        self.port = QSpinBox(); self.port.setRange(1024, 65535); self.port.setFixedWidth(96)
+        self.port.setToolTip("The port other users connect to. Changing it restarts the connection when you save.")
+        row.addWidget(self.port)
+        row.addWidget(button("Copy", "ghost", lambda: self._copy(str(self.port.value()))))
+        row.addStretch(1)
+        lay.addLayout(row)
+
+        self.upnp = QCheckBox("Ask the router to open this port automatically")
+        self.upnp.setToolTip("Uses UPnP, then NAT-PMP. Other users deliver search results and files straight to you when "
+                             "the port is reachable. Off, or with a router that refuses, everything still works through "
+                             "the slower indirect route.")
+        lay.addWidget(self.upnp)
+
+        acts = hbox(spacing=8)
+        self.test_btn = button("Test again", "primary", self._test_port)
+        self.router_btn = button("Open my router's page", "ghost", self._open_router)
+        self.fw_btn = button("Allow through Windows Firewall", "ghost", self._allow_firewall)
+        from ..core import firewall
+        self.fw_btn.setVisible(firewall.is_windows())
+        for b in (self.test_btn, self.router_btn, self.fw_btn):
+            acts.addWidget(b)
+        acts.addStretch(1)
+        lay.addLayout(acts)
+
+        self.conn_steps = label("", "muted", wrap=True)
+        self.conn_steps.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        lay.addWidget(self.conn_steps)
+        self.port_checked.connect(self._port_checked)
+        return box
+
+    def _copy(self, text: str):
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(text)
+
+    def _net(self) -> tuple[str, str]:
+        """(this computer's address, the router's address), looked up once per visit."""
+        if not getattr(self, "_net_cache", None):
+            from ..core import netinfo
+            self._net_cache = (netinfo.local_ip(), netinfo.router_ip())
+        return self._net_cache
+
+    def _show_connection(self):
+        svc, s = self.svc, self.svc.settings
+        port = int(s.listen_port or 0)
+        pc, router = self._net()
+        why = svc.port_why or ("off" if not s.upnp else "")
+        tone, pill, text = "", "Not checked yet", "The connection is checked when the app signs in."
+        if svc.port_open:
+            tone, pill = "pass_", "Direct connection"
+            text = (f"Port {port} is open on your router ({svc.port_method or 'UPnP'}). Search results and files come "
+                    "straight to you. Nothing to do.")
+        elif why == "off":
+            tone, pill = "", "Slow route"
+            text = ("Automatic port opening is switched off. Everything still works, through the slower indirect route. "
+                    "Tick the box below and press Test again, or forward the port yourself with the steps below.")
+        elif why in ("no_router", "refused", "error"):
+            tone, pill = "accent", "Slow route"
+            said = {"no_router": "Your router didn't answer", "refused": "Your router said no",
+                    "error": "The router couldn't be reached"}[why]
+            text = (f"{said} when {APP_NAME} asked it to open port {port}. Everything still works, through the slower "
+                    "indirect route: searches find a little less and downloads take longer to start.")
+        self.conn_pill.setText(pill); self.conn_pill.setProperty("tone", tone)
+        self.conn_pill.style().unpolish(self.conn_pill); self.conn_pill.style().polish(self.conn_pill)
+        self.conn_text.setText(text)
+        self.router_btn.setEnabled(bool(router))
+        if svc.port_open or not port:
+            self.conn_steps.setText("")
+        else:
+            self.conn_steps.setText(
+                "To fix it, either:\n"
+                f"1. Open your router's page{' (' + router + ')' if router else ''}, sign in, switch on UPnP "
+                "(often under Advanced, NAT or WAN), then press Test again.\n"
+                "2. Or add a Port Forwarding rule there:  "
+                f"port {port}  ·  protocol TCP  ·  to {pc or 'this computer'}  ·  same port inside and outside.\n"
+                "3. On Windows, press Allow through Windows Firewall once.\n"
+                "On a VPN, or a work, hotel or campus network, the port usually can't be opened; the slow route is fine.")
+
+    def _test_port(self):
+        from PySide6.QtCore import QRunnable, QThreadPool
+        s = self.svc.settings
+        s.upnp = self.upnp.isChecked()                       # test what's on screen; Save changes keeps it
+        self.test_btn.setEnabled(False); self.test_btn.setText("Testing…")
+        self._net_cache = None
+        page = self
+
+        class _Check(QRunnable):
+            def run(self):
+                try:
+                    page.svc.check_port()
+                finally:
+                    try:
+                        page.port_checked.emit()
+                    except RuntimeError:                     # the window closed meanwhile
+                        pass
+        QThreadPool.globalInstance().start(_Check())
+
+    def _port_checked(self):
+        self.test_btn.setEnabled(True); self.test_btn.setText("Test again")
+        self._show_connection()
+
+    def _open_router(self):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        router = self._net()[1]
+        if router:
+            QDesktopServices.openUrl(QUrl(f"http://{router}"))
+
+    def _allow_firewall(self):
+        from ..core import firewall
+        from ..core.slskd_manager import engine_exe
+        exe = engine_exe(self.svc.manager.binary_dir) if self.svc.manager.binary_dir else None
+        if exe is None:
+            QMessageBox.information(self, "Windows Firewall", "The built-in engine isn't part of this copy of the app.")
+            return
+        if firewall.rule_exists(exe):
+            QMessageBox.information(self, "Windows Firewall", f"{APP_NAME} is already allowed through Windows Firewall.")
+            return
+        if firewall.add_rule(exe):
+            s = self.svc.settings; s.firewall_done_for = str(exe); self.svc.save_settings(s)
+            QMessageBox.information(self, "Windows Firewall", f"Done: {APP_NAME} is allowed. Press Test again.")
+        else:
+            QMessageBox.warning(self, "Windows Firewall", "Windows didn't add the rule (the permission prompt was declined, "
+                                "or another security program manages the firewall).")
 
     def _start_fresh(self):
         if QMessageBox.question(self, "Start fresh", f"Wipe {APP_NAME}'s account, queue, history and quarantine on this "
@@ -251,8 +386,10 @@ class SettingsPage(QWidget):
         self.own_pass.setPlaceholderText("(unchanged)" if self.svc.manager.creds.get("soulseek_own_password") else "")
         self.use_own.setChecked(s.use_own_slskd); self.slskd_url.setText(s.slskd_url); self.slskd_key.setText(s.slskd_api_key)
         self.upnp.setChecked(bool(s.upnp))
-        port = s.listen_port
-        self.port_note.setText((f"Download port {port}: " + (self.svc.port_note or "not checked yet")) if port else "")
+        self.port.setValue(int(s.listen_port or 0) or self.port.minimum())
+        self.port.setEnabled(bool(s.listen_port))            # picked on the first start; nothing to edit before that
+        self._net_cache = None
+        self._show_connection()
         self.slskd_dl.setText(s.slskd_downloads_dir); self.ffmpeg.setText(s.ffmpeg_path)
 
     def _choose(self, edit: QLineEdit):
@@ -277,6 +414,8 @@ class SettingsPage(QWidget):
             self.svc.manager.creds.delete("soulseek_own_password")
         s.use_own_slskd = self.use_own.isChecked()
         s.upnp = self.upnp.isChecked()
+        if s.listen_port and self.port.value() != s.listen_port:
+            s.listen_port = self.port.value()
         s.slskd_url = self.slskd_url.text().strip() or "http://127.0.0.1:5030"
         s.slskd_api_key = self.slskd_key.text().strip(); s.slskd_downloads_dir = self.slskd_dl.text().strip()
         s.ffmpeg_path = self.ffmpeg.text().strip()

@@ -119,9 +119,21 @@ def delete_mapping(gw: Gateway, port: int) -> bool:
 
 def open_port(port: int, description: str) -> tuple[bool, str]:
     """One call: discover + map. Returns (opened, plain-English note)."""
+    ok, note, _why = open_port_why(port, description)
+    return ok, note
+
+
+def open_port_why(port: int, description: str) -> tuple[bool, str, str]:
+    """Like open_port, plus a reason the Connection panel can act on: open | no_router | refused."""
     gw = discover()
     if gw is None:
-        return False, "No UPnP router found; other users reach you the slow way."
+        return False, "No UPnP router found; other users reach you the slow way.", "no_router"
     if add_mapping(gw, port, description):
-        return True, f"Port {port} is open on your router."
-    return False, f"Your router refused to open port {port}; other users reach you the slow way."
+        return True, f"Port {port} is open on your router.", "open"
+    return False, f"Your router refused to open port {port}; other users reach you the slow way.", "refused"
+
+
+def close_port(port: int) -> bool:
+    """Remove a mapping we made earlier (after the user changes the port). Best effort."""
+    gw = discover(timeout=1.5)
+    return bool(gw and delete_mapping(gw, port))

@@ -224,6 +224,7 @@ QProgressBar[tag="Broken"]::chunk {{ background: {c['fail']}; }}
 QProgressBar[tag="Wait"]::chunk {{ background: {c['bar']}; }}
 QFrame#rule {{ background: {c['line']}; max-height: 1px; min-height: 1px; border: none; }}
 QFrame#card {{ background: {c['soft']}; border-radius: 3px; }}
+QFrame#conncard {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 3px; }}
 QFrame#card[tag="Good"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['pass_']}; }}
 QFrame#card[tag="Look"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['warn']}; }}
 QFrame#card[tag="Broken"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['fail']}; }}

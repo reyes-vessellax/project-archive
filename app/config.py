@@ -76,6 +76,7 @@ class Settings:
     share_folder: str = ""                    # opt-in: a folder to share back on Soulseek (empty = off)
     listen_port: int = 0                      # the engine's Soulseek port; picked once (49152-65535) and kept
     upnp: bool = True                         # ask the router to open that port (UPnP) so results reach us directly
+    port_help_shown: bool = False             # the one-time "your router didn't open the port" notice was shown
     # Advanced only. By default the app runs its own bundled copy of slskd (the Soulseek engine) with a
     # generated API key and a generated Soulseek login; the user never sees any of it.
     use_own_slskd: bool = False               # point the app at an slskd the user already runs instead
