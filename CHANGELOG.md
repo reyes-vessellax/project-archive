@@ -4,6 +4,14 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.12 (2026-11-10) — Discover fills in once you're connected
+
+- **Fix: Discover said "Connect to the network…" forever.** Its rows were built before the engine signed in and
+  nothing told them when it did (0.9.9 stopped the 2-second page rebuild that used to nudge them by accident). Now
+  the window tells Discover the moment it's connected, and Discover also looks again every 2 s while a row is
+  waiting. Rows only search once signed in.
+- An empty or failed search is never remembered, so a row that searched too early isn't stuck empty for 3 hours.
+
 ## 0.9.11 (2026-11-10) — For you that fits, rows that change daily, nothing slides sideways
 
 - **For you rebuilt:** it was using Deezer's "related artists", which drift to commercial vocal house (Freemasons,

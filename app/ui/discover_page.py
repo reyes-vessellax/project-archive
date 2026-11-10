@@ -858,7 +858,7 @@ class DiscoverPage(QWidget):
         from datetime import date
         for k, b in self.era_btns.items():
             b.setChecked(k == self.era)
-        connected = getattr(self.svc, "adapter", None) is not None
+        connected = self._online()
         today = date.today().toordinal()
         if self._loaded_for == (self.era, today) and not force:
             if connected and getattr(self, "_offline_rows", None):
@@ -909,17 +909,27 @@ class DiscoverPage(QWidget):
         self.styles_head_w.setVisible(bool(styles))
         self._fill_rows([n for n, _ in names])
 
+    def _online(self) -> bool:
+        """Signed in to the network (the window tells us; until it has, only the engine object counts)."""
+        return getattr(self.svc, "adapter", None) is not None and getattr(self, "signed_in", True)
+
     def _fill_rows(self, names: list[str]):
         from ..core import rows as R
-        connected = getattr(self.svc, "adapter", None) is not None
+        connected = self._online()
         self.spin_bar.title.setText("Finding you a track…" if connected else "Connect to the network to dig the crate.")
         names = [n for n in names if n in self.rows and n not in self._loading]
         if not connected:
             for n in names:
                 self.rows[n].offline()
             self._offline_rows = names
+            if not hasattr(self, "_net_check"):              # look again every 2 s until the engine is up
+                from PySide6.QtCore import QTimer
+                self._net_check = QTimer(self, interval=2000, timeout=self._retry_offline)
+            self._net_check.start()
             return
         self._offline_rows = []
+        if hasattr(self, "_net_check"):
+            self._net_check.stop()
         era_key, day, svc, engine = self.era, self._day, self.svc, self.engine
         lib = self.engine.library()
         stop = lambda: self.era != era_key                    # only switching genre cancels a search
@@ -944,6 +954,12 @@ class DiscoverPage(QWidget):
         for r in rounds:
             for nm, job in r:
                 self._run_bg(job, lambda res, nm=nm, ek=era_key: self._row_part(nm, res, ek))
+
+    def _retry_offline(self):
+        if self._online() and getattr(self, "_offline_rows", None):
+            self._fill_rows(self._offline_rows)
+        elif not getattr(self, "_offline_rows", None):
+            self._net_check.stop()
 
     def _row_part(self, nm: str, res, era_key):
         """One search's worth of tracks for a row: merge it in and show the row straight away."""

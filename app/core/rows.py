@@ -243,7 +243,8 @@ def style_row(svc, engine, style: str, owns=lambda a, t: False, cancelled=lambda
     min_kbps = getattr(getattr(svc, "settings", None), "mp3_min_kbps", 320) or 320
     tracks = C.build(res.candidates, owns, min_kbps, style, "style")
     out = check_style(svc.db, engine, tracks, style, cancelled, deezer)
-    C.remember(svc.db, key, out)
+    if out and not getattr(res, "error", None):   # never remember an empty or failed search
+        C.remember(svc.db, key, out)
     return out
 
 
@@ -311,7 +312,8 @@ def artist_crate(svc, artist: str, owns=lambda a, t: False, cancelled=lambda: Fa
     _forget(svc, res)
     min_kbps = getattr(getattr(svc, "settings", None), "mp3_min_kbps", 320) or 320
     out = by_artist(C.build(res.candidates, owns, min_kbps), artist)
-    C.remember(svc.db, key, out)
+    if out and not getattr(res, "error", None):   # never remember an empty or failed search
+        C.remember(svc.db, key, out)
     return out
 
 

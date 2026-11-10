@@ -10,7 +10,7 @@ from pathlib import Path
 # existing installs migrate; every visible use of the name reads this constant (window title, dialogs, engine, data folder).
 APP_NAME = "DigMart"
 APP_SLUG = "DigMart"                      # for file and artifact names that shouldn't carry a space
-APP_VERSION = "0.9.11"                     # keep in step with pyproject.toml; the build names the artifact with it
+APP_VERSION = "0.9.12"                     # keep in step with pyproject.toml; the build names the artifact with it
 try:                                      # CI writes app/_build.py with the run number: every push is a new version
     from ._build import BUILD as APP_BUILD  # type: ignore
 except ImportError:

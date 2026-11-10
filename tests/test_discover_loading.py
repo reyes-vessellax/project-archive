@@ -65,3 +65,29 @@ def test_rows_load_once_progressively_and_survive_refreshes(service, monkeypatch
     n = len(calls)
     d.set_era("chicago"); settle()                        # switching genre loads that genre's rows
     assert len(calls) > n and "For you" not in d.rows
+
+
+def test_rows_fill_once_signed_in_without_any_other_event(service, monkeypatch):
+    """The page opened before the engine signed in showed "Connect to the network…" forever (nothing told it)."""
+    from PySide6.QtWidgets import QApplication
+    from app.core import rows as R
+    from app.ui.discover_page import DiscoverPage
+    app = QApplication.instance() or QApplication([])
+    asked = []
+    monkeypatch.setattr(R, "style_row", lambda svc, engine, nm, owns=None, cancelled=None: asked.append(nm) or [_track("A " + nm, "t")])
+    monkeypatch.setattr(R, "artist_crate", lambda svc, a, owns=None, cancelled=None, log=None, use_cache=True: [_track(a, "t")])
+    monkeypatch.setattr(R, "for_you_start", lambda *a, **k: ([], [], []))
+    monkeypatch.setattr(R, "order_by_era", lambda engine, era, tracks, cancelled=None, cached_only=False: tracks)
+    monkeypatch.setattr(service, "_build_adapter", lambda: None)
+    service.adapter = object()
+    d = DiscoverPage(service); d.signed_in = False; d.resize(1300, 900); d.show()
+    d._loaded_for = "not yet"; d.refresh(service.jobs()); app.processEvents()
+    assert not asked and all(not r.tiles for r in d.rows.values())        # waiting, no searches yet
+    d.signed_in = True                                                     # signs in; nobody calls refresh
+    end = time.monotonic() + 5
+    while time.monotonic() < end and len(asked) < 5:
+        app.processEvents(); time.sleep(0.02)
+    end = time.monotonic() + 1
+    while time.monotonic() < end:
+        app.processEvents(); time.sleep(0.02)
+    assert len(asked) == 5 and all(d.rows[n].tiles for n, k in d._row_kind.items() if k == "STYLE")

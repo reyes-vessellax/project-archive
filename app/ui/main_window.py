@@ -179,6 +179,7 @@ class MainWindow(QMainWindow):
         sl.addWidget(right, 1)
         from .discover_page import DiscoverPage
         self.discover = DiscoverPage(self.svc)
+        self.discover.signed_in = not self.svc.managed_mode       # the bundled engine: wait for its sign-in
         self.home = HomePage(self.svc); self.searchp = SearchPage(self.svc); self.review = ReviewPage(self.svc)
         # Two independent search pages: the Search tab, and Discover's own finder (a record clicked in Discover is
         # searched there, so Back returns to the same spot). The running search / preview belongs to one of them.
@@ -626,6 +627,9 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(3000, self._batch_resume_all)      # unfinished playlists carry on once connected
         self.home.set_connected(self._connected, st.message)
         self.searchp.set_connected(self._connected); self.discover.finder.set_connected(self._connected)
+        self.discover.signed_in = self._connected               # Discover searches only once signed in
+        if self._connected and not was:
+            self.discover.refresh(self._jobs)                    # rows that showed "connect…" fill in now
         if self._waiting_screen():
             c = self.onboarding.connecting
             phase = getattr(self.svc, "phase", "")
