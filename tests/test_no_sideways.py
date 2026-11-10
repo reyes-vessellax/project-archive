@@ -46,3 +46,19 @@ def test_search_table_never_goes_sideways(service):
     page.show_results(SearchResult("q", "q", True, cands), searching=False); app.processEvents()
     assert page.tree.horizontalScrollBar().maximum() == 0
     page.close(); page.deleteLater(); app.processEvents()
+
+
+def test_account_menu_stays_on_screen_from_the_bottom_left():
+    """The avatar moved to the bottom-left of the sidebar; its menu opened below and to the left, off screen."""
+    from PySide6.QtWidgets import QPushButton, QWidget
+    from app.ui.widgets import AvatarMenu, menu_pos
+    app = _app()
+    win = QWidget(); win.resize(1200, 800); win.show(); app.processEvents()
+    area = win.screen().availableGeometry()
+    win.move(area.left(), area.bottom() - 800)
+    avatar = QPushButton("R", win); avatar.setGeometry(10, 760, 32, 32); avatar.show(); app.processEvents()
+    menu = AvatarMenu(win) if AvatarMenu.__init__.__code__.co_argcount > 1 else AvatarMenu()
+    p = menu_pos(menu, avatar)
+    assert area.left() <= p.x() and p.x() + menu.width() <= area.right() + 1
+    assert area.top() <= p.y() and p.y() + menu.height() <= area.bottom() + 1
+    menu.close(); menu.deleteLater(); win.close(); win.deleteLater(); app.processEvents()

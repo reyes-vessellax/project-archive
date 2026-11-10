@@ -241,6 +241,52 @@ QLabel#copyline {{ font-family: {mono}; font-size: 12px; font-weight: 700; color
 QFrame#spinbar {{ background: {c['panel']}; border: 1px solid {c['line']}; border-left: 4px solid {c['accent']}; border-radius: 3px; }}
 QLabel#spinbartitle {{ font-family: {display}; font-size: 18px; font-weight: 700; }}
 QLabel#rowtitle {{ font-family: {display}; font-size: 20px; font-weight: 700; }}
+/* Discover, editorial: masthead, the Dig the crate lead panel, section heads, era panels */
+QLabel#mast {{ font-family: {display}; font-size: 44px; font-weight: 800; letter-spacing: -1px; }}
+QFrame#mastRule {{ background: {c['text']}; border: none; }}
+QFrame#secRule {{ background: {c['text']}; border: none; }}
+QLabel#issue {{ font-family: {mono}; font-size: 11px; letter-spacing: 1.5px; color: {c['muted']}; }}
+QLabel#issueB {{ font-family: {display}; font-size: 13px; font-weight: 600; }}
+QLineEdit#mastsearch {{ background: {c['panel']}; border: 1px solid {c['line']}; padding: 9px 12px; font-size: 14px; }}
+QLineEdit#mastsearch:focus {{ border: 1px solid {c['accent']}; }}
+QLabel#strap {{ font-family: {mono}; font-size: 11px; letter-spacing: 1.5px; color: {c['muted']}; }}
+QLabel#secTitle {{ font-family: {display}; font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }}
+QLabel#secTag {{ font-family: {mono}; font-size: 11px; letter-spacing: 1.5px; color: {c['accent']}; }}
+QLabel#secIntro {{ font-size: 14px; color: {c['muted']}; }}
+QLabel#styleTitle {{ font-family: {display}; font-size: 22px; font-weight: 800; }}
+QLabel#styleBlurb {{ font-size: 14px; color: {c['muted']}; }}
+QLabel#tileNum {{ background: #111111; color: #ffd700; font-family: {display}; font-size: 12px; font-weight: 800; padding: 2px 7px; }}
+QFrame#hero {{ background: {c['disp_bg']}; border: 1px solid {c['disp_line']}; border-radius: 3px; }}
+QFrame#hero QLabel {{ background: transparent; color: #f5f3ee; }}
+QLabel#heroLive {{ font-family: {mono}; font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #ffffff; background: #dc143c; padding: 4px 8px; }}
+QFrame#hero QLabel#heroLive {{ background: #dc143c; color: #ffffff; }}
+QFrame#hero QLabel#heroKicker {{ font-family: {mono}; font-size: 12px; letter-spacing: 1.5px; color: #ffd700; }}
+QFrame#hero QLabel#heroTitle {{ font-family: {display}; font-size: 44px; font-weight: 800; letter-spacing: -1px; color: #f5f3ee; }}
+QFrame#hero QLabel#heroBy {{ font-family: {display}; font-size: 19px; font-weight: 600; color: #f5f3ee; }}
+QFrame#hero QLabel#heroDek {{ font-size: 15px; color: #d8d2c5; }}
+QFrame#hero QLabel#heroChip {{ font-family: {mono}; font-size: 12px; letter-spacing: 1px; border: 1px solid #3a3733; padding: 5px 10px; color: #f5f3ee; }}
+QFrame#hero QLabel#heroChip[ok="true"] {{ border-color: #2fbf6a; color: #2fbf6a; }}
+QFrame#hero QLabel#heroMono {{ font-family: {mono}; font-size: 11px; letter-spacing: 1.5px; color: #8f897d; }}
+QFrame#hero QLabel#miniTitle {{ font-family: {display}; font-size: 13px; font-weight: 600; color: #f5f3ee; }}
+QFrame#hero QLabel#miniArtist {{ font-size: 12px; color: #a7a093; }}
+QPushButton#heroPlay {{ background: #ffd700; color: #111111; border: none; border-radius: 2px; padding: 0 22px; min-height: 46px; max-height: 46px; font-family: {display}; font-size: 15px; font-weight: 700; }}
+QPushButton#heroPlay:hover {{ background: #ffe34d; }}
+QPushButton#heroDig {{ background: #dc143c; color: #ffffff; border: none; border-radius: 2px; padding: 0 22px; min-height: 46px; max-height: 46px; font-family: {display}; font-size: 15px; font-weight: 700; }}
+QPushButton#heroDig:hover {{ background: #f0244c; }}
+QPushButton#heroGhost {{ background: transparent; color: #f5f3ee; border: 1px solid #3a3733; border-radius: 2px; padding: 0 20px; min-height: 46px; max-height: 46px; font-family: {display}; font-size: 15px; font-weight: 600; }}
+QPushButton#heroGhost:hover {{ border-color: #ffd700; color: #ffd700; }}
+QPushButton#heroPlay:disabled, QPushButton#heroDig:disabled, QPushButton#heroGhost:disabled {{ background: #26241f; color: #6b665d; border-color: #26241f; }}
+QFrame#eraPanel {{ background: {c['disp_bg']}; border: 1px solid {c['disp_line']}; border-radius: 3px; }}
+QFrame#eraPanel QLabel {{ background: transparent; color: #f5f3ee; }}
+QFrame#eraPanel QLabel#eraYears {{ font-family: {display}; font-size: 58px; font-weight: 800; letter-spacing: -2px; color: #ffd700; }}
+QFrame#eraPanel QLabel#eraName {{ font-family: {display}; font-size: 24px; font-weight: 800; }}
+QFrame#eraPanel QLabel#eraBlurb {{ font-size: 14px; color: #cfc9bd; }}
+QFrame#eraPanel QLabel#muted {{ color: #a7a093; }}
+QFrame#eraPanel QLabel#fmtbadge {{ color: #4cc38a; }}
+QFrame#eraPanel QLabel#secTag, QFrame#eraPanel QLabel#tilemeta {{ color: #ffd700; }}
+QFrame#eraPanel QLabel#tileNum {{ color: #ffd700; }}
+QFrame#eraPanel QWidget#page {{ background: transparent; }}
+QFrame#eraPanel QScrollArea {{ background: transparent; }}
 QFrame#ghost {{ background: {c['bar']}; border-radius: 3px; }}
 QLabel#fmtbadge {{ font-family: {mono}; font-size: 10px; font-weight: 700; letter-spacing: 1px; color: {c['pass_']}; }}
 QPushButton#arrow {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 15px; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px; font-size: 18px; font-weight: 700; color: {c['text']}; padding: 0 0 2px 0; }}

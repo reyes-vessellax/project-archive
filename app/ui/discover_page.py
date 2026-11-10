@@ -472,22 +472,34 @@ class CrateRow(QWidget):
     play_tapped = Signal(object, object)
     see_all = Signal(str)
 
-    def __init__(self, name: str, tag: str = ""):
+    def __init__(self, name: str, tag: str = "", look: str = "plain", note: str = "", numbered: bool = False):
+        """look: "plain" (a style: name, one-line note), "big" (a section of its own: rule, big name, intro under it),
+        "panel" (inside an era panel, which shows the name itself: just the count and arrows)."""
         super().__init__()
         self.name = name
+        self.numbered = numbered
         lay = vbox(self, (0, 0, 0, 0), 8)
-        head = hbox(spacing=12)
-        head.addWidget(label(name, "rowtitle"))
-        self.tag = label(tag, "tilemeta"); head.addWidget(self.tag, 0, Qt.AlignBottom)
+        if look == "big":
+            r = QFrame(); r.setObjectName("secRule"); r.setFixedHeight(1); lay.addWidget(r)
+        head = hbox(spacing=14)
+        self.title_lb = label(name, {"big": "secTitle", "plain": "styleTitle"}.get(look, "rowtitle"))
+        head.addWidget(self.title_lb)
+        if look == "panel":
+            self.title_lb.hide()
+        self.tag = label(tag, "secTag" if look == "big" else "tilemeta"); head.addWidget(self.tag, 0, Qt.AlignBottom)
         if not tag:
             self.tag.hide()                                  # after it's in the layout: shown loose it'd be its own window
-        self.count = label("", "faint"); head.addWidget(self.count, 0, Qt.AlignBottom)
+        if note and look == "plain":
+            nl = label(note, "styleBlurb"); nl.setMinimumWidth(0); head.addWidget(nl, 1, Qt.AlignBottom)
+        self.count = label("", "secTag" if look != "big" else "faint"); head.addWidget(self.count, 0, Qt.AlignBottom)
         head.addStretch(1)
         self.more = button("See everything  →", "link", lambda: self.see_all.emit(self.name))
         head.addWidget(self.more, 0, Qt.AlignBottom)
         self.b_left = button("‹", "arrow", lambda: self._page(-1)); self.b_right = button("›", "arrow", lambda: self._page(1))
         head.addWidget(self.b_left, 0, Qt.AlignBottom); head.addWidget(self.b_right, 0, Qt.AlignBottom)
         lay.addLayout(head)
+        if note and look == "big":
+            lay.addWidget(label(note, "secIntro", wrap=True))
         from PySide6.QtWidgets import QScrollArea
         self.strip_host = QWidget(); self.strip_host.setObjectName("page")
         self.strip = hbox(self.strip_host, (0, 0, 0, 0), 14); self.strip.addStretch(1)
@@ -550,11 +562,13 @@ class CrateRow(QWidget):
         for t in self.tiles:
             t.setParent(None); t.deleteLater()
         self.tiles = []
-        for tr in tracks:
+        for i, tr in enumerate(tracks, 1):
             tile = TrackTile(tr, self.name); tile.clicked.connect(lambda tl: self.tapped.emit(self, tl))
+            if self.numbered:
+                n = QLabel(f"{i:02d}", tile.art); n.setObjectName("tileNum"); n.move(7, 7); n.adjustSize()
             tile.play_clicked.connect(lambda tl: self.play_tapped.emit(self, tl))
             self.strip.insertWidget(self.strip.count() - 1, tile); self.tiles.append(tile)
-        self.count.setText(f"{len(tracks)} ready now" if tracks else "")
+        self.count.setText(f"{len(tracks)} READY NOW" if tracks else "")
         self.note.setVisible(not tracks)
         self.area.setVisible(bool(tracks))
         if not tracks:
@@ -573,57 +587,166 @@ class CrateRow(QWidget):
         self._arrows()
 
 
+class EraPanel(QFrame):
+    """An era, editorial style: the years big in yellow, its name and story on the left, its row of tracks right."""
+    def __init__(self, era: dict, row: "CrateRow"):
+        super().__init__()
+        self.setObjectName("eraPanel")
+        lay = hbox(self, (26, 24, 0, 22), 26)
+        left = vbox(spacing=6)
+        yrs = era.get("years", "")
+        import re as _re
+        ys = _re.findall(r"\d{4}", yrs)
+        short = (f"'{ys[0][2:]}–'{ys[1][2:]}" if len(ys) > 1 else f"'{ys[0][2:]}–now") if ys else yrs
+        left.addWidget(label(short, "eraYears"))
+        left.addWidget(label(era["name"], "eraName", wrap=True))
+        left.addWidget(label(era.get("blurb", ""), "eraBlurb", wrap=True))
+        left.addStretch(1)
+        lw = QWidget(); lw.setLayout(left); lw.setFixedWidth(250)
+        lay.addWidget(lw)
+        lay.addWidget(row, 1)
+        self.row = row
+
+
+def ed_head(title: str, tag: str = "") -> QWidget:
+    """A section head in the editorial style: a rule, a big title, a small red tag."""
+    w = QWidget(); v = vbox(w, (0, 22, 0, 4), 10)
+    r = QFrame(); r.setObjectName("secRule"); r.setFixedHeight(1); v.addWidget(r)
+    h = hbox(spacing=14); h.addWidget(label(title, "secTitle"))
+    if tag:
+        h.addWidget(label(tag, "secTag"), 0, Qt.AlignBottom)
+    h.addStretch(1); v.addLayout(h)
+    return w
+
+
 class SpinBar(QFrame):
-    """Dig the crate: one random track from today's rows, its preview already loaded. Dig again shows the next and
-    plays it straight away, like flicking through a crate."""
+    """Dig the crate, as the page's lead story: one random track from today's rows, its preview already loaded, with
+    why it's here, its facts, and the next three already waiting. Dig again shows the next and plays it straight away,
+    like flicking through a crate."""
     play = Signal(object)
     stop = Signal()
     check = Signal(object)
     spin = Signal()
+    watch = Signal(str, str)
 
     def __init__(self):
         super().__init__()
-        self.setObjectName("spinbar")
+        self.setObjectName("hero")
         self.found = None
+        self.because = ""                      # "Fast Eddie & Adonis": set by the page for For you tracks
+        self.era_years: dict[str, str] = {}    # era row name -> "1984–1990"
         self._previewing = False
         self._img_token = None
-        outer = vbox(self, (18, 14, 18, 14), 10)
-        head = hbox(spacing=12)
-        head.addWidget(label("Dig the crate", "rowtitle"))
-        head.addWidget(label("A random track from today's rows, ready to hear. Not your thing? Dig again.",
-                             "faint", wrap=True), 1, Qt.AlignBottom)        # wraps: Windows fonts run wider
-        outer.addLayout(head)
-        lay = hbox(spacing=16)
-        self.art = CoverArt(); self.art.setFixedSize(76, 76); lay.addWidget(self.art)
-        txt = vbox(spacing=2)
-        self.where = label("", "tilemeta", wrap=True)
-        self.title = label("Finding you a track…", "spinbartitle", wrap=True)   # long titles wrap, never widen the bar
-        self.sub = label("", "muted", wrap=True)
-        txt.addWidget(self.where); txt.addWidget(self.title); txt.addWidget(self.sub)
-        lay.addLayout(txt, 1)
-        self.b_play = button("▶  Play", "ghost", self._play)
-        self.b_spin = button("Dig again", "accent", self.spin.emit)
+        outer = hbox(self, (26, 26, 26, 22), 30)
+        self.art = CoverArt(); self.art.setFixedSize(300, 300)
+        outer.addWidget(self.art, 0, Qt.AlignTop)
+        col = vbox(spacing=8)
+        kick = hbox(spacing=12)
+        live = label("DIG THE CRATE", "heroLive"); kick.addWidget(live)
+        self.where = label("", "heroKicker", wrap=True); kick.addWidget(self.where, 1)
+        col.addLayout(kick)
+        self.title = label("Finding you a track…", "heroTitle", wrap=True)   # long titles wrap, never widen the page
+        col.addWidget(self.title)
+        self.by = label("", "heroBy", wrap=True); col.addWidget(self.by)
+        self.dek = label("A random track from today's rows, ready to hear. Not your thing? Dig again.", "heroDek", wrap=True)
+        col.addWidget(self.dek)
+        self.chips = hbox(spacing=8); self.chips.addStretch(1)
+        col.addLayout(self.chips)
+        col.addSpacing(4)
+        btns = hbox(spacing=10)
+        self.b_play = button("▶  Play the drop", "heroPlay", self._play)
+        self.b_spin = button("Dig again  ↻", "heroDig", self.spin.emit)
         self.b_spin.setToolTip("The next random track: it starts playing straight away")
-        self.b_check = button("Check this file", "primary", lambda: self.found and self.check.emit(self.found.best))
+        self.b_check = button("Check this file", "heroGhost", lambda: self.found and self.check.emit(self.found.best))
         self.b_check.setToolTip("Download this copy, check its quality and club-readiness, and put it in your Queue")
-        for b in (self.b_play, self.b_spin, self.b_check):
-            lay.addWidget(b)
-        outer.addLayout(lay)
-        self.b_play.setEnabled(False); self.b_check.setEnabled(False)
+        self.b_watch = button("Watch it", "heroGhost",
+                              lambda: self.found and self.watch.emit(self.found.release.artist, self.found.track))
+        self.b_watch.setToolTip("Add it to your Wishlist: DigMart keeps looking for the best copy")
+        for b in (self.b_play, self.b_spin, self.b_check, self.b_watch):
+            btns.addWidget(b)
+        btns.addStretch(1)
+        col.addLayout(btns)
+        self.sub = label("", "heroMono", wrap=True); col.addWidget(self.sub)
+        self.next_host = QWidget(); self.next_row = hbox(self.next_host, (0, 10, 0, 0), 18)
+        self.next_row.addWidget(label("UP NEXT IN THE CRATE", "heroMono"))
+        self.next_row.addStretch(1)
+        col.addWidget(self.next_host); self.next_host.hide()
+        col.addStretch(1)
+        outer.addLayout(col, 1)
+        self.b_play.setEnabled(False); self.b_check.setEnabled(False); self.b_watch.setEnabled(False)
         self.status = None
 
+    def _chip(self, text: str, ok: bool = False):
+        c = label(text, "heroChip")
+        if ok:
+            c.setProperty("ok", True)
+        self.chips.insertWidget(self.chips.count() - 1, c)
+
     def show_found(self, f):
+        from ..core.crates import LOSSLESS, length_s
         self.found = f
         self.title.setText(f.track)
         c = f.best
         ext = (c.extension or "").upper() + (f" {c.bitrate_kbps}" if c.bitrate_kbps and (c.extension or "").lower() == "mp3" else "")
-        self.sub.setText(f"{f.release.artist}")
+        self.by.setText(f.release.artist)
+        row = f.label or ""
+        years = self.era_years.get(row, "")
+        self.where.setText("  ·  ".join(x for x in (f"FROM {row.upper()}" if row else "", years.upper(),
+                                                     f.release.catno) if x))
+        copies = list(f.alts or [c])
+        lossless = sum(1 for a in copies if (a.extension or "").lower() in LOSSLESS)
+        if row == "For you" and self.because:
+            why = f"Here because you play {self.because}."
+        elif years:
+            why = f"From today's era: {row}, {years}."
+        elif row:
+            why = f"From today's {row} row."
+        else:
+            why = ""
+        who = (f"{len(copies)} {'person is' if len(copies) == 1 else 'people are'} sharing it right now"
+               + (f", {lossless} in lossless." if lossless else "."))
+        self.dek.setText(f"{why} {who}".strip())
+        while self.chips.count() > 1:
+            w = self.chips.takeAt(0).widget()
+            if w:
+                w.setParent(None); w.deleteLater()
         bpm, cam = f.details.get("bpm"), f.details.get("camelot")
-        self.where.setText("  ·  ".join(x for x in (f.label, f.release.catno, ext, f"≈ {bpm} BPM" if bpm else "",
-                                                     cam or "", "ready now") if x))
-        self.b_play.setEnabled(True); self.b_check.setEnabled(True); self.b_check.setText("Check this file")
+        secs = length_s(c)
+        for text in (ext, f"{bpm} BPM" if bpm else "", cam or "", f"{int(secs // 60)}:{int(secs % 60):02d}" if secs else ""):
+            if text:
+                self._chip(text)
+        self._chip("READY NOW", ok=True)
+        for b in (self.b_play, self.b_check, self.b_watch):
+            b.setEnabled(True)
+        self.b_check.setText("Check this file")
         self.set_preview_state("")
         self.art.set_pixmap(None)
+        self.art.set_sleeve(f.release.artist[:30], f.track, f.release.catno)
+
+    def set_up_next(self, founds: list, thumb_dir=None):
+        """The next three tracks already loaded: Dig again is instant."""
+        while self.next_row.count() > 2:
+            w = self.next_row.takeAt(1).widget()
+            if w:
+                w.setParent(None); w.deleteLater()
+        import zlib
+        for f in founds[:3]:
+            box = QWidget(); bl = hbox(box, (0, 0, 0, 0), 8)
+            art = CoverArt(); art.setFixedSize(42, 42); art.set_sleeve(f.release.artist[:20], f.track, "")
+            url = f.details.get("cover") or f.release.thumb
+            if url and thumb_dir is not None:
+                p = Path(thumb_dir) / f"{zlib.crc32(url.encode()) & 0x7FFFFFFF}.jpg"
+                if p.exists():
+                    pm = QPixmap()
+                    if pm.load(str(p)):
+                        art.set_pixmap(pm)
+            bl.addWidget(art)
+            tv = vbox(spacing=0)
+            tv.addWidget(ElideLabel(f.track, "miniTitle")); tv.addWidget(ElideLabel(f.release.artist, "miniArtist"))
+            bl.addLayout(tv)
+            box.setMaximumWidth(220)
+            self.next_row.insertWidget(self.next_row.count() - 1, box)
+        self.next_host.setVisible(bool(founds))
 
     def _play(self):
         if self._previewing:
@@ -633,11 +756,8 @@ class SpinBar(QFrame):
 
     def set_preview_state(self, state: str, msg: str = ""):
         self._previewing = state in ("loading", "playing")
-        self.b_play.setText("■  Stop" if self._previewing else "▶  Play")
-        if msg:
-            self.sub.setText(msg)
-        elif self.found:
-            self.sub.setText(self.found.release.artist)
+        self.b_play.setText("■  Stop" if self._previewing else "▶  Play the drop")
+        self.sub.setText(msg.upper() if msg else "")
 
 
 def chip(text: str, on_click) -> "QWidget":
@@ -732,17 +852,27 @@ class DiscoverPage(QWidget):
         self.home_view = scroll(host); smooth(self.home_view)
         self.stack.addWidget(self.home_view)
 
-        top = hbox(spacing=16)
-        head = vbox(spacing=2)
-        head.addWidget(label("Discover", "h1"))
-        head.addWidget(label("What people are sharing right now, label by label. Play the drop, check the file.", "muted"))
-        top.addLayout(head, 1)
-        self.q = QLineEdit(); self.q.setPlaceholderText("Search a track, artist or label…"); self.q.setMinimumWidth(340)
+        # masthead: The Dig., today's date, the search box
+        from datetime import date as _date
+        top = hbox(spacing=24)
+        mast = QLabel("The Dig<span style='color:#dc143c'>.</span>"); mast.setObjectName("mast")
+        mast.setTextFormat(Qt.RichText)
+        top.addWidget(mast, 0, Qt.AlignBottom)
+        top.addStretch(1)
+        self.q = QLineEdit(); self.q.setObjectName("mastsearch"); self.q.setPlaceholderText("Search an artist, track or label…")
+        self.q.setMinimumWidth(240); self.q.setMaximumWidth(360)
         self.q.returnPressed.connect(self._search_typed)
-        top.addWidget(self.q, 0, Qt.AlignBottom)
+        top.addWidget(self.q, 1, Qt.AlignBottom)
+        issue = vbox(spacing=2)
+        d = _date.today()
+        issue.addWidget(label(f"{d:%A} {d.day} {d:%B}".upper(), "issue"), 0, Qt.AlignRight)
+        issue.addWidget(label("Today's issue · new every morning", "issueB"), 0, Qt.AlignRight)
+        top.addLayout(issue)
         lay.addLayout(top)
+        rule = QFrame(); rule.setObjectName("mastRule"); rule.setFixedHeight(3); lay.addWidget(rule)
 
         self.pulse = hbox(spacing=10)
+        self.strap = label("", "strap"); self.pulse.addWidget(self.strap)
         self.pulse_waiting = button("", "pulse", lambda: self.go.emit("queue"))
         self.pulse_found = button("", "pulse", lambda: self.go.emit("wishlist"))
         self.pulse_down = button("", "pulse", lambda: self.go.emit("queue"))
@@ -771,21 +901,17 @@ class DiscoverPage(QWidget):
         except Exception:
             pass
         self.spin_bar.check.connect(lambda c: self._card_check(self.spin_bar, c))
+        self.spin_bar.watch.connect(lambda a, t: self.watch.emit(a, t, ""))
         self.spin_bar.spin.connect(self._dig_again)
         lay.addWidget(self.spin_bar)
 
-        # For you, then Eras, then Styles. Every row is checked (app/core/rows.py): no rows from label names.
+        # For you, then the eras, then the styles of the day (editorial heads). Every row is checked
+        # (app/core/rows.py): no rows from label names.
         self.rows_box = vbox(spacing=34); lay.addLayout(self.rows_box)          # For you
-        self.eras_head_w = QWidget(); eh = vbox(self.eras_head_w, (0, 18, 0, 0), 4)
-        eh.addWidget(label("Eras", "section"))
-        eh.addWidget(label("The artists who made each era, a couple a day: only their records, the ones from "
-                           "those years first.", "faint", wrap=True))
+        self.eras_head_w = ed_head("The eras", "THREE TODAY · THEIR OWN RECORDS, THOSE YEARS FIRST")
         lay.addWidget(self.eras_head_w)
-        self.eras_box = vbox(spacing=34); lay.addLayout(self.eras_box)
-        self.styles_head_w = QWidget(); sh = vbox(self.styles_head_w, (0, 18, 0, 0), 4)
-        sh.addWidget(label("Styles", "section"))
-        sh.addWidget(label("What people are sharing right now, by sound. Every artist checked: known for "
-                           "this kind of music.", "faint", wrap=True))
+        self.eras_box = vbox(spacing=22); lay.addLayout(self.eras_box)
+        self.styles_head_w = ed_head("Styles of the day", "FIVE OF THIRTEEN · NEW EVERY DAY")
         lay.addWidget(self.styles_head_w)
         self.styles_box = vbox(spacing=34); lay.addLayout(self.styles_box)
         self.rows: dict[str, CrateRow] = {}
@@ -881,8 +1007,16 @@ class DiscoverPage(QWidget):
         self._row_kind = {n: tag for n, tag in names}
         self._era_of = {e["name"]: e for e in eras}
         box_for = {"FORYOU": self.rows_box, "ERA": self.eras_box, "STYLE": self.styles_box}
+        from ..core.eras import STYLE_NOTES
+        self.spin_bar.era_years = {n: e.get("years", "") for n, e in self._era_of.items()}
         for name, kind in names:
-            row = CrateRow(name, self._era_of[name]["years"] if kind == "ERA" else "")
+            if kind == "FORYOU":
+                row = CrateRow(name, "", look="big", numbered=True,
+                               note="People who play your records play these next. Today's picks; tomorrow, a different set.")
+            elif kind == "ERA":
+                row = CrateRow(name, "", look="panel")
+            else:
+                row = CrateRow(name, "", look="plain", note=STYLE_NOTES.get(name, ""))
             row.tapped.connect(self._tap_tile); row.play_tapped.connect(self._play_tile)
             if kind == "STYLE":
                 row.see_all.connect(self.find.emit)
@@ -891,7 +1025,8 @@ class DiscoverPage(QWidget):
             if kind == "FORYOU":
                 row.note.setText("Nothing ready from artists like yours right now. Save a few tracks to the library "
                                  "and this fills with artists like them.")
-            box_for[kind].addWidget(row); self.rows[name] = row
+            box_for[kind].addWidget(EraPanel(self._era_of[name], row) if kind == "ERA" else row)
+            self.rows[name] = row
         self.eras_head_w.setVisible(bool(eras))
         self.styles_head_w.setVisible(bool(styles))
         self._fill_rows([n for n, _ in names])
@@ -942,6 +1077,11 @@ class DiscoverPage(QWidget):
             for nm, job in r:
                 self._run_bg(job, lambda res, nm=nm, ek=era_key: self._row_part(nm, res, ek))
 
+    def _update_strap(self):
+        n = sum(len(v) for v in getattr(self, "_row_tracks", {}).values())
+        self.strap.setText(f"<span style='color:#dc143c'>●</span>&nbsp; {n} TRACKS READY TO HEAR NOW &nbsp;·&nbsp; "
+                           "LOSSLESS FIRST &nbsp;·&nbsp; ALL 4 MIN+" if n else "")
+
     def _retry_offline(self):
         if self._online() and getattr(self, "_offline_rows", None):
             self._fill_rows(self._offline_rows)
@@ -958,7 +1098,8 @@ class DiscoverPage(QWidget):
         more_jobs = []
         if kind == "FORYOU" and isinstance(res, tuple):
             res, because, rest = res
-            row.set_tag(("BECAUSE YOU HAVE " + " & ".join(because).upper()) if because else "")
+            row.set_tag(("BECAUSE YOU PLAY " + " & ".join(because).upper()) if because else "")
+            self.spin_bar.because = " and ".join(because)
             svc, lib, ek = self.svc, self.engine.library(), era_key
             stop = lambda: self.era != ek
             more_jobs = [lambda a=a: R.artist_crate(svc, a, lib.owns, stop) or [] for a in rest]
@@ -971,6 +1112,7 @@ class DiscoverPage(QWidget):
                 merged = R.order_by_era(self.engine, self._era_of[nm], merged, cached_only=True)
             self._row_tracks[nm] = merged
             row.fill(merged)
+            self._update_strap()
             self._covers_for(nm, merged)
             self._prefetch_spins()
         elif self._pending[nm] <= 0 and not self._row_tracks.get(nm):
@@ -1121,6 +1263,10 @@ class DiscoverPage(QWidget):
     SPIN_KEEP_HOURS = 3
 
     def _save_spins(self):
+        try:
+            self.spin_bar.set_up_next([f for f, _ in self._spins], self._thumb_dir())   # "Up next in the crate"
+        except Exception:
+            pass
         """Ready spins survive a restart (the clip is already here), so the first spin after opening is instant."""
         import json
         from dataclasses import asdict

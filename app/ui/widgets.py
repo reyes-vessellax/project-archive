@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QEvent, QSize, QPropertyAnimation, QRectF, QTimer, QUrl, QObject, QPoint, QRunnable, Qt, Signal
 from PySide6.QtGui import QPainterPath, QPen, QColor, QFont, QPainter, QPixmap
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QVBoxLayout, QWidget)
 
 from ..adapters.base import ConnectorError
@@ -474,9 +474,31 @@ class AvatarMenu(QFrame):
             self.sub.setText(f"{account.dj_name + ' · ' if account.dj_name else ''}Free plan")
         if self.appearance:
             self.appearance.setText(f"Appearance        {theme.title()}")
-        pos = anchor.mapToGlobal(QPoint(anchor.width() - self.width(), anchor.height() + 8))
-        self.move(pos)
+        self.move(menu_pos(self, anchor))
         self.show()
+
+
+def menu_pos(menu: QWidget, anchor: QWidget, gap: int = 8) -> QPoint:
+    """Where a pop-up menu goes so it's always fully on screen: below the anchor if it fits, else above it (the
+    avatar sits at the bottom-left); lined up with the anchor's left edge, else its right; then kept inside the
+    screen whatever happens."""
+    menu.adjustSize()
+    w, h = menu.width(), menu.height()
+    top_left = anchor.mapToGlobal(QPoint(0, 0))
+    ax, ay, aw, ah = top_left.x(), top_left.y(), anchor.width(), anchor.height()
+    scr = anchor.screen() or QApplication.primaryScreen()
+    area = scr.availableGeometry() if scr else None
+    if area is None:
+        return QPoint(ax, ay + ah + gap)
+    y = ay + ah + gap
+    if y + h > area.bottom():
+        y = ay - h - gap                                   # no room below: open upwards
+    x = ax
+    if x + w > area.right():
+        x = ax + aw - w                                    # no room to the right: line up with the right edge
+    x = max(area.left() + 4, min(x, area.right() - w - 4))
+    y = max(area.top() + 4, min(y, area.bottom() - h - 4))
+    return QPoint(x, y)
 
 
 # ------------------------------------------------------------------ queue row

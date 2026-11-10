@@ -158,6 +158,23 @@ LABEL_POOL = [
     "West End Records", "Salsoul Records", "Prelude Records", "Razor-N-Tape",
 ]
 
+# One line per style for Discover's editorial headers: what it sounds like, in a DJ's words.
+STYLE_NOTES = {
+    "Deep house": "Long fades and jazz chords for the last hour.",
+    "Chicago house": "Drum machines, bass and a voice: the jack that started it.",
+    "Acid house": "The 303 squelch, from Chicago to the UK.",
+    "Garage house": "New York and Jersey soul: gospel vocals, organ stabs, swing.",
+    "Detroit house": "Soul through machines: slow, dusty, heavy.",
+    "Soulful house": "Big vocals and warm keys for the peak of the night.",
+    "Disco edit": "Old disco, re-cut for the floor: longer intros, harder kicks.",
+    "Tech house": "Tight grooves and rolling bass, built to mix for hours.",
+    "Ghetto house": "Dance Mania at full speed, built for the footwork circle.",
+    "Lo-fi house": "Dusty, tape-warm, a little broken on purpose.",
+    "French house": "Filtered disco loops and that Paris pump.",
+    "Minimal house": "Less is more: clicks, space and a groove that won't quit.",
+    "Italo disco": "Synths, drum machines and big Euro melodies.",
+}
+
 STYLES = ["Deep house", "Chicago house", "Acid house", "Garage house", "Detroit house", "Soulful house", "Disco edit",
           "Tech house", "Ghetto house", "Lo-fi house", "French house", "Minimal house", "Italo disco"]
 

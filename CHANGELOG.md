@@ -4,6 +4,20 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.14 (2026-11-10) — Discover goes editorial: The Dig.
+
+- **Discover is now "The Dig."**, a daily issue: a masthead with today's date and the search box, and a strap
+  with how many tracks are ready to hear.
+- **Dig the crate leads the page:** a big dark panel with the cover, where the track came from (For you, an era, a
+  style), why it's here ("Here because you play Fast Eddie and Adonis. 3 people are sharing it right now, 2 in
+  lossless."), BPM / key / format / length chips, and Play the drop, Dig again, Check this file and Watch it.
+  "Up next in the crate" shows the three tracks already loaded.
+- **For you** gets a big section head and numbered tracks (01, 02…). **The eras** are black panels with the years in
+  big yellow type, the era's story, and its row of tracks. **Styles of the day** each get a one-line description
+  of the sound.
+- **Fix: the account menu (bottom-left) opened off screen.** It was still placed for the old top-right avatar; it
+  now opens upwards or downwards and left or right, wherever it fits, and always stays on screen.
+
 ## 0.9.13 (2026-11-10) — one Discover page that rotates by itself
 
 - The genre pills at the top of Discover are gone: the page is always the daily mix (For you, three eras, five
