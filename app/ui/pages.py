@@ -330,9 +330,11 @@ class SearchPage(QWidget):
         hdr = self.tree.header(); hdr.setSectionResizeMode(QHeaderView.Interactive); hdr.setStretchLastSection(False)
         for i, w in enumerate(self.WIDTHS):
             self.tree.setColumnWidth(i, w)
-        hdr.setSectionResizeMode(self.COLS.index("Availability"), QHeaderView.Stretch)   # Source stays narrow, last
-        for c in ("Title", "Folder"):                     # long names squeeze (with …) instead of widening the table
-            hdr.setSectionResizeMode(self.COLS.index(c), QHeaderView.Stretch)
+        # every column can be dragged; Title, Folder and Availability take up (or give back) the slack, so the
+        # table always fills its width and never scrolls sideways. (Stretch columns can't be dragged in Qt.)
+        hdr.setMinimumSectionSize(self.MIN_COL); hdr.setSectionsMovable(False)
+        self._fitting = False
+        hdr.sectionResized.connect(self._col_resized)
         self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)     # never sideways (the user asked)
         self.tree.setTextElideMode(Qt.ElideRight)
         # click a heading to sort by it (again to flip); # puts the list back to best first
@@ -380,7 +382,49 @@ class SearchPage(QWidget):
     def eventFilter(self, obj, ev):
         if obj is self.tree.viewport() and ev.type() == QEvent.Resize:
             self.empty.setGeometry(self.tree.viewport().rect().adjusted(40, 0, -40, 0))
+            self._fit_columns()
         return False
+
+    # ------------------------------------------------------------ column widths
+    FLEX = ("Title", "Folder", "Availability")       # these absorb what the others don't use
+    MIN_COL = 34
+
+    def _col_resized(self, col: int, _old: int, _new: int):
+        if not self._fitting:
+            self._fit_columns(dragged=col)
+
+    def _fit_columns(self, dragged: int | None = None):
+        """Make the columns add up to the table's width. The slack goes to the flexible columns (right of the
+        dragged one first), then to any other column to its right; if nothing can give, the drag stops there."""
+        hdr = self.tree.header()
+        width = self.tree.viewport().width()
+        if width <= 0 or self._fitting:
+            return
+        self._fitting = True
+        try:
+            n = len(self.COLS)
+            w = [hdr.sectionSize(i) for i in range(n)]
+            flex = [self.COLS.index(c) for c in self.FLEX]
+            start = (dragged + 1) if dragged is not None else 0
+            order = ([i for i in flex if i >= start and i != dragged] + [i for i in range(start, n) if i not in flex and i != dragged]
+                     + [i for i in flex if i < start and i != dragged])
+            delta = width - sum(w)
+            if delta > 0:                                             # room to spare: share it between the flexible ones
+                takers = [i for i in order if i in flex] or order
+                for k, i in enumerate(takers):
+                    add = delta // (len(takers) - k); w[i] += add; delta -= add
+            else:
+                for i in order:                                       # too wide: take it back, never below the minimum
+                    if delta >= 0:
+                        break
+                    give = min(-delta, max(0, w[i] - self.MIN_COL)); w[i] -= give; delta += give
+                if delta < 0 and dragged is not None:                 # nothing left to give: the dragged column stops
+                    w[dragged] = max(self.MIN_COL, w[dragged] + delta)
+            for i in range(n):
+                if hdr.sectionSize(i) != w[i]:
+                    hdr.resizeSection(i, w[i])
+        finally:
+            self._fitting = False
 
     def _show_empty(self, text: str):
         self.empty.setText(text)
