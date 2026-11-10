@@ -89,7 +89,7 @@ class LibraryPage(QWidget):
                                "someone is sharing right now")
         head.addWidget(self.up_btn)
         self.export_btn = button("Export to Rekordbox", "ghost", self._export_rekordbox)
-        self.export_btn.setToolTip("The tracks shown here as a Rekordbox playlist: BPM, key and a hot cue at the drop. "
+        self.export_btn.setToolTip("The tracks shown here as a Rekordbox playlist: BPM, key and hot cues at the start and where the preview starts. "
                                    "Optionally copies the files to a USB stick.")
         head.addWidget(self.export_btn)
         self.folder_btn = button("Open downloads folder", "ghost", self._open_folder); head.addWidget(self.folder_btn)
@@ -355,7 +355,7 @@ class LibraryPage(QWidget):
         self.p_title = label("", "h2"); self.p_artist = label("", "muted"); self.p_meta = label("", "faint")
         names.addWidget(self.p_title); names.addWidget(self.p_artist); names.addWidget(self.p_meta)
         top.addLayout(names, 1)
-        self.p_preview = button("▶  Preview the drop", "small", lambda: self.spectrum and self.spectrum.play_preview())
+        self.p_preview = button("▶  Preview", "small", lambda: self.spectrum and self.spectrum.play_preview())
         self.p_preview.setVisible(False)                   # downloaded tracks play in full
         left.addLayout(top)
         self.spectrum = SpectrumView(170); self.spectrum.set_accent(self._accent); left.addWidget(self.spectrum)
@@ -723,7 +723,7 @@ class LibraryPage(QWidget):
                                 + (f", and copied the files to {usb}" if usb else "") + ".\n\n"
                                 "In Rekordbox: Preferences → Advanced → rekordbox xml → choose this file. The playlist "
                                 "appears under “rekordbox xml” in the tree; drag it into your collection. Hot cue A is "
-                                "the start, B is the drop.")
+                                "the start, B is where the preview starts.")
 
     def _open_folder(self):
         d = self.svc.settings.downloads_dir()

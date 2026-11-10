@@ -19,7 +19,7 @@ def test_xml_has_tracks_cues_and_playlist(tmp_path):
     assert t1.get("AverageBpm") == "124.60" and t1.get("Tonality") == "Am" and t1.get("Kind") == "MP3 File"
     assert t1.get("Location").startswith("file://localhost/") and "Phuture%20-%20Acid%20Tracks.mp3" in t1.get("Location")
     marks = [(m.get("Name"), m.get("Num"), m.get("Start")) for m in t1.findall("POSITION_MARK")]
-    assert ("Start", "0", "0.000") in marks and ("Drop", "1", "64.500") in marks and ("Drop", "-1", "64.500") in marks
+    assert ("Start", "0", "0.000") in marks and ("Preview", "1", "64.500") in marks and ("Preview", "-1", "64.500") in marks
     assert [m.get("Name") for m in t2.findall("POSITION_MARK")] == ["Start"]          # no drop known: no drop cue
     pl = root.find("PLAYLISTS/NODE/NODE")
     assert pl.get("Name") == "DigMart · Test" and [t.get("Key") for t in pl.findall("TRACK")] == ["1", "2"]

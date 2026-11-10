@@ -1098,9 +1098,9 @@ class SpectrumView(QLabel):
                 xd = int(self._x_of(self._drop_s / dur))
                 pen = QPen(QColor("#ffffff")); pen.setWidth(2); p.setPen(pen)
                 p.drawLine(xd, r.top(), xd, r.bottom())
-                tag = f"drop {int(self._drop_s) // 60}:{int(self._drop_s) % 60:02d}"
-                lx = xd + 4 if xd + 82 < r.right() else xd - 82            # bottom edge: never under the cutoff label
-                p.fillRect(lx, r.bottom() - 21, 78, 17, QColor(0, 0, 0, 150))
+                tag = f"preview {int(self._drop_s) // 60}:{int(self._drop_s) % 60:02d}"
+                lx = xd + 4 if xd + 100 < r.right() else xd - 100           # bottom edge: never under the cutoff label
+                p.fillRect(lx, r.bottom() - 21, 96, 17, QColor(0, 0, 0, 150))
                 p.setPen(QColor("#ffffff")); p.drawText(lx + 5, r.bottom() - 8, tag)
         # playhead
         if self._audio and self._duration_ms > 0 and (pos > 0 or self.is_playing()):

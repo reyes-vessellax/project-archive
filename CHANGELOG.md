@@ -4,6 +4,13 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.16 (2026-11-10) — "Preview", not "the drop"
+
+- "Play the drop" is now **Preview** everywhere (Dig the crate, track cards, the Queue, the Library, the tour):
+  the 20 seconds aren't always the drop, so nothing promises it. The spectrogram marker, the comment written into
+  saved files, and the Rekordbox hot cue B say "preview" too.
+- Includes 0.9.15 (the first-run tour, up to date).
+
 ## 0.9.15 (2026-11-10) — the first-run tour, up to date
 
 - The tour a new user gets after signing up now matches the app: Dig the crate (Play the drop, Check this file,

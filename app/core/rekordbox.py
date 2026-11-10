@@ -82,9 +82,9 @@ def export(tracks: list[RbTrack], xml_path: Path, playlist: str, copy_to: Path |
         # hot cue A: the start; hot cue B + a memory cue: the drop (colours: DigMart yellow, crimson)
         ET.SubElement(el, "POSITION_MARK", Name="Start", Type="0", Start="0.000", Num="0", Red="255", Green="215", Blue="0")
         if t.drop_s and (not t.seconds or t.drop_s < t.seconds - 1):
-            ET.SubElement(el, "POSITION_MARK", Name="Drop", Type="0", Start=f"{t.drop_s:.3f}", Num="1",
+            ET.SubElement(el, "POSITION_MARK", Name="Preview", Type="0", Start=f"{t.drop_s:.3f}", Num="1",
                           Red="220", Green="20", Blue="60")
-            ET.SubElement(el, "POSITION_MARK", Name="Drop", Type="0", Start=f"{t.drop_s:.3f}", Num="-1")
+            ET.SubElement(el, "POSITION_MARK", Name="Preview", Type="0", Start=f"{t.drop_s:.3f}", Num="-1")
     pls = ET.SubElement(root, "PLAYLISTS")
     top = ET.SubElement(pls, "NODE", Type="0", Name="ROOT", Count="1")
     node = ET.SubElement(top, "NODE", Name=playlist, Type="1", KeyType="0", Entries=str(len(tracks)))

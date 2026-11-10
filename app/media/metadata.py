@@ -309,7 +309,7 @@ def write_tags(path: Path, meta: Meta | None, musical: dict | None, cover: Path 
     if mu.get("key"):
         fill["key"] = classic_key(mu["key"])
     comment = " · ".join(x for x in (mu.get("camelot") or "", fill.get("bpm", ""),
-                                     f"drop {int(mu['drop_s']) // 60}:{int(mu['drop_s']) % 60:02d}" if mu.get("drop_s") else "")
+                                     f"preview {int(mu['drop_s']) // 60}:{int(mu['drop_s']) % 60:02d}" if mu.get("drop_s") else "")
                          if x)
     art = cover.read_bytes() if cover and cover.is_file() and not have["has_cover"] else None
     mime = "image/png" if cover and cover.suffix == ".png" else "image/jpeg"

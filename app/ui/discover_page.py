@@ -341,8 +341,8 @@ class RecordCard(QFrame):
             info.addWidget(w)
         info.addStretch(1)
         acts = hbox(spacing=10)
-        self.b_play = button("▶  Play the drop", "accent", self._play)
-        self.b_play.setToolTip("About 20 seconds from the drop, straight from the person sharing it. Nothing is kept.")
+        self.b_play = button("▶  Preview", "accent", self._play)
+        self.b_play.setToolTip("A 20-second preview, straight from the person sharing it. Nothing is kept.")
         self.b_check = button("Check this file", "primary", lambda: self.found and self.check.emit(self.found.best))
         self.b_check.setToolTip("Download this copy into quarantine and check it. Nothing reaches your library until you say so.")
         self.b_watch = button("Watch it", "ghost", lambda: self.found and self.watch.emit(self.found.release.artist, self.found.track))
@@ -399,7 +399,7 @@ class RecordCard(QFrame):
 
     def set_preview_state(self, state: str, msg: str = ""):
         self._previewing = state in ("loading", "playing")
-        self.b_play.setText("■  Stop" if self._previewing else "▶  Play the drop")
+        self.b_play.setText("■  Stop" if self._previewing else "▶  Preview")
         self.status.setText(msg)
 
 
@@ -655,7 +655,7 @@ class SpinBar(QFrame):
         col.addWidget(chips_w)
         col.addSpacing(4)
         btns_w = QWidget(); btns = FlowLayout(btns_w, spacing=10)          # wraps too: never wider than the page
-        self.b_play = button("▶  Play the drop", "heroPlay", self._play)
+        self.b_play = button("▶  Preview", "heroPlay", self._play)
         self.b_spin = button("Dig again  ↻", "heroDig", self.spin.emit)
         self.b_spin.setToolTip("The next random track: it starts playing straight away")
         self.b_check = button("Check this file", "heroGhost", lambda: self.found and self.check.emit(self.found.best))
@@ -733,7 +733,7 @@ class SpinBar(QFrame):
 
     def set_preview_state(self, state: str, msg: str = ""):
         self._previewing = state in ("loading", "playing")
-        self.b_play.setText("■  Stop" if self._previewing else "▶  Play the drop")
+        self.b_play.setText("■  Stop" if self._previewing else "▶  Preview")
         self.sub.setText(msg.upper() if msg else "")
 
 
@@ -1348,7 +1348,7 @@ class DiscoverPage(QWidget):
         if wav and f and Path(wav).exists():
             Player.get().next_art = self.spin_bar.art._pm
             Player.get().play(wav, f.track, f"{f.release.artist} · preview · not downloaded", stop_after_s=21)
-            self.spin_bar.set_preview_state("playing", "Playing the drop. Check this file to download it.")
+            self.spin_bar.set_preview_state("playing", "Playing the preview. Check this file to download it.")
 
     def _show_found(self, card, f):
         if card._previewing:

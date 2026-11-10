@@ -75,7 +75,7 @@ def analyze(path: Path, settings: Settings, progress: Progress = lambda s: None)
     checks = pre + rules.evaluate(path.suffix, facts, decode, cutoff, settings)
     out = _result(digest, facts, magic, decode, cutoff, spec_path, checks)
     if facts.readable and out["decode_ok"]:
-        progress("Finding BPM, key and the drop")
+        progress("Finding BPM and key")
         future = locals().get("music_future")
         try:
             music = future.result(timeout=180) if future is not None else analyze_music(path, settings.ffmpeg_path)

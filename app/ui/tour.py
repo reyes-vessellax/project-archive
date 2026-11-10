@@ -30,13 +30,13 @@ def default_steps() -> list[Step]:
         Step("", f"Welcome to {APP_NAME}",
              "A quick tour of how it works. It takes about a minute, and you can skip it any time."),
         Step("discover.spin_bar", "Dig the crate",
-             "Discover is a new issue every morning. This is the lead track: Play the drop plays 20 seconds from the "
-             "drop without downloading anything. Like it? Check this file. Not your thing? Dig again for the next one.",
+             "Discover is a new issue every morning. This is the lead track: Preview plays 20 seconds of it without "
+             "downloading anything. Like it? Check this file. Not your thing? Dig again for the next one.",
              page="discover"),
         Step("discover.rows.For you", "For you, eras and styles",
              "Below it: For you (artists people play alongside the ones in your library), three eras, and five styles. "
-             "Every track is being shared right now, 4 minutes or longer, lossless first. Click a cover to hear its "
-             "drop; click the title to open it.", page="discover"),
+             "Every track is being shared right now, 4 minutes or longer, lossless first. Click a cover to preview "
+             "it; click the title to open it.", page="discover"),
         Step("topbar.tabs.search", "Search",
              "Know what you want? Search finds it across everyone's libraries, fastest and best quality first. If "
              "nobody has it, Watch this search and DigMart keeps looking for you."),
@@ -63,7 +63,7 @@ def default_steps() -> list[Step]:
              "Settings, appearance (light or dark), help and sign-out live here. Your library folder and what you "
              "share are under Settings → Library & sharing."),
         Step("", "That's it",
-             "The whole loop: hear the drop, Check this file, then Download to Library from the Queue. Every file is "
+             "The whole loop: Preview it, Check this file, then Download to Library from the Queue. Every file is "
              "checked first (fake 320s, broken files, club-ready), so nothing bad ever touches your library."),
     ]
 

@@ -874,8 +874,8 @@ class ReviewPage(QWidget):
         self.dl_note = label("", "muted"); dl.addWidget(self.dl_note)
         det.addWidget(self.dl_host); self.dl_host.hide()
         sh = hbox(spacing=12); sh.addWidget(label("Spectrogram", "h2"))
-        self.btn_preview = button("▶  Preview the drop", "small", lambda: self.spectrum.play_preview())
-        self.btn_preview.setToolTip("Plays 20 seconds starting just before the drop")
+        self.btn_preview = button("▶  Preview", "small", lambda: self.spectrum.play_preview())
+        self.btn_preview.setToolTip("Plays a 20-second preview")
         self.btn_preview.setVisible(False)                 # downloaded tracks play in full; preview lives in Search
         sh.addStretch(1)
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
