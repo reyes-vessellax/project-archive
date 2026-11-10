@@ -492,15 +492,18 @@ class CrateRow(QWidget):
             self.tag.hide()                                  # after it's in the layout: shown loose it'd be its own window
         if note and look == "plain":
             nl = label(note, "styleBlurb"); nl.setMinimumWidth(0); head.addWidget(nl, 1, Qt.AlignBottom)
-        self.count = label("", "secTag" if look != "big" else "faint"); head.addWidget(self.count, 0, Qt.AlignBottom)
         head.addStretch(1)
         self.more = button("See everything  →", "link", lambda: self.see_all.emit(self.name))
         head.addWidget(self.more, 0, Qt.AlignBottom)
         self.b_left = button("‹", "arrow", lambda: self._page(-1)); self.b_right = button("›", "arrow", lambda: self._page(1))
         head.addWidget(self.b_left, 0, Qt.AlignBottom); head.addWidget(self.b_right, 0, Qt.AlignBottom)
         lay.addLayout(head)
-        if note and look == "big":
-            lay.addWidget(label(note, "secIntro", wrap=True))
+        self.look, self._note_text = look, note
+        self.intro = None
+        if look == "big":
+            self.tag.hide()                                  # its "because you play…" opens the subtitle instead
+            self.intro = label(note, "secIntro", wrap=True); lay.addWidget(self.intro)
+            self.intro.setVisible(bool(note))
         from PySide6.QtWidgets import QScrollArea
         self.strip_host = QWidget(); self.strip_host.setObjectName("page")
         self.strip = hbox(self.strip_host, (0, 0, 0, 0), 14); self.strip.addStretch(1)
@@ -569,7 +572,6 @@ class CrateRow(QWidget):
                 n = QLabel(f"{i:02d}", tile.art); n.setObjectName("tileNum"); n.move(7, 7); n.adjustSize()
             tile.play_clicked.connect(lambda tl: self.play_tapped.emit(self, tl))
             self.strip.insertWidget(self.strip.count() - 1, tile); self.tiles.append(tile)
-        self.count.setText(f"{len(tracks)} READY NOW" if tracks else "")
         self.note.setVisible(not tracks)
         self.area.setVisible(bool(tracks))
         if not tracks:
@@ -578,6 +580,9 @@ class CrateRow(QWidget):
         self._arrows()
 
     def set_tag(self, text: str):
+        if self.intro is not None:                           # For you: one subtitle line, the reason first
+            self.intro.setText(" ".join(x for x in (text, self._note_text) if x)); self.intro.setVisible(True)
+            return
         self.tag.setText(text); self.tag.setVisible(bool(text))
 
     def offline(self):
@@ -685,8 +690,7 @@ class SpinBar(QFrame):
         self.by.setText(f.release.artist)
         row = f.label or ""
         years = self.era_years.get(row, "")
-        self.where.setText("  ·  ".join(x for x in (f"FROM {row.upper()}" if row else "", years.upper(),
-                                                     f.release.catno) if x))
+        self.where.setText("")
         copies = list(f.alts or [c])
         lossless = sum(1 for a in copies if (a.extension or "").lower() in LOSSLESS)
         if row == "For you" and self.because:
@@ -838,11 +842,11 @@ class DiscoverPage(QWidget):
         self.q = QLineEdit(); self.q.setObjectName("mastsearch"); self.q.setPlaceholderText("Search an artist, track or label…")
         self.q.setMinimumWidth(240); self.q.setMaximumWidth(360)
         self.q.returnPressed.connect(self._search_typed)
-        top.addWidget(self.q, 1, Qt.AlignBottom)
-        issue = vbox(spacing=2)
+        self.q.setFixedWidth(360)
+        issue = vbox(spacing=8)                               # the date, and the search box right under it
         d = _date.today()
         issue.addWidget(label(f"{d:%A} {d.day} {d:%B}".upper(), "issue"), 0, Qt.AlignRight)
-        issue.addWidget(label("Today's issue · new every morning", "issueB"), 0, Qt.AlignRight)
+        issue.addWidget(self.q, 0, Qt.AlignRight)
         top.addLayout(issue)
         lay.addLayout(top)
         rule = QFrame(); rule.setObjectName("mastRule"); rule.setFixedHeight(3); lay.addWidget(rule)
@@ -884,10 +888,10 @@ class DiscoverPage(QWidget):
         # For you, then the eras, then the styles of the day (editorial heads). Every row is checked
         # (app/core/rows.py): no rows from label names.
         self.rows_box = vbox(spacing=34); lay.addLayout(self.rows_box)          # For you
-        self.eras_head_w = ed_head("The eras", "THREE TODAY · THEIR OWN RECORDS, THOSE YEARS FIRST")
+        self.eras_head_w = ed_head("The eras")
         lay.addWidget(self.eras_head_w)
         self.eras_box = vbox(spacing=22); lay.addLayout(self.eras_box)
-        self.styles_head_w = ed_head("Styles of the day", "FIVE OF THIRTEEN · NEW EVERY DAY")
+        self.styles_head_w = ed_head("Styles of the day")
         lay.addWidget(self.styles_head_w)
         self.styles_box = vbox(spacing=34); lay.addLayout(self.styles_box)
         self.rows: dict[str, CrateRow] = {}
@@ -1070,8 +1074,7 @@ class DiscoverPage(QWidget):
 
     def _update_strap(self):
         n = sum(len(v) for v in getattr(self, "_row_tracks", {}).values())
-        self.strap.setText(f"<span style='color:#dc143c'>●</span>&nbsp; {n} TRACKS READY TO HEAR NOW &nbsp;·&nbsp; "
-                           "LOSSLESS FIRST &nbsp;·&nbsp; ALL 4 MIN+" if n else "")
+        self.strap.setText(f"<span style='color:#dc143c'>●</span>&nbsp; {n} TRACKS READY TO HEAR NOW" if n else "")
 
     def _retry_offline(self):
         if self._online() and getattr(self, "_offline_rows", None):
@@ -1089,7 +1092,7 @@ class DiscoverPage(QWidget):
         more_jobs = []
         if kind == "FORYOU" and isinstance(res, tuple):
             res, because, rest = res
-            row.set_tag(("BECAUSE YOU PLAY " + " & ".join(because).upper()) if because else "")
+            row.set_tag(("Because you play " + " & ".join(because) + ".") if because else "")
             self.spin_bar.because = " and ".join(because)
             svc, lib, ek = self.svc, self.engine.library(), era_key
             stop = lambda: self.era != ek
