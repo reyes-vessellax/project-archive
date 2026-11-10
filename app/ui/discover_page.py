@@ -276,27 +276,29 @@ class CoverArt(QWidget):
         p.setRenderHint(QPainter.Antialiasing); p.setRenderHint(QPainter.SmoothPixmapTransform)
         side = r.height()
         c = r.center()
-        # the centre circle of a record sleeve, with our mark inside it; the name (2 lines at most) ends above it and
-        # the title starts below it, so text and circle never touch
-        rad = int(side * 0.17)
-        cy = r.top() + int(side * 0.58)
+        # The centre circle of a record sleeve, dead centre of the square, with our mark inside it: the smiley's own
+        # centre on the circle's centre (it sits at 49.3% across, 69% down the mark file, not the image's middle) and
+        # scaled so the whole starburst stays inside the circle. The name ends above it, the title starts below it.
+        rad = int(side * 0.19)
+        cx, cy = r.left() + side // 2, r.top() + side // 2
         dark_bg = QColor(bg).lightness() < 128
         p.setPen(Qt.NoPen); p.setBrush(QColor(255, 255, 255, 34) if dark_bg else QColor(0, 0, 0, 30))
-        p.drawEllipse(QPoint(c.x(), cy), rad, rad)
+        p.drawEllipse(QPoint(cx, cy), rad, rad)
         mark = _sleeve_mark(idx)                                # coloured for this sleeve
         if not mark.isNull():
-            w = int(rad * 1.7); h = int(w * mark.height() / max(1, mark.width()))
-            p.drawPixmap(QRect(c.x() - w // 2, cy - h // 2, w, h), mark)
+            w = int(rad * 0.80 / 0.5105)                       # 0.5105: the burst reach from the face (per mark width); 0.80 leaves a margin
+            h = int(w * mark.height() / max(1, mark.width()))
+            p.drawPixmap(QRect(cx - int(w * 0.4931), cy - int(h * 0.6904), w, h), mark)
         pad = int(side * 0.08)
-        f = QFont("Poppins"); f.setBold(True); f.setPixelSize(max(9, int(side * 0.095)))
+        f = QFont("Poppins"); f.setBold(True); f.setPixelSize(max(9, int(side * 0.08)))
         p.setFont(f); p.setPen(QColor(fg))
-        name_h = int(side * 0.58) - int(side * 0.17) - pad - int(side * 0.05)   # stops short of the circle
+        name_h = (cy - rad) - (r.top() + pad) - int(side * 0.03)                  # stops short of the circle
         name_h = min(name_h, p.fontMetrics().lineSpacing() * 2)                  # two lines at most
         p.drawText(QRect(r.left() + pad, r.top() + pad, r.width() - 2 * pad, name_h),
                    int(Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap), (lab or "").upper()[:40])
         f2 = QFont("Open Sans"); f2.setPixelSize(max(9, int(side * 0.072)))
         p.setFont(f2)
-        circle_bottom = r.top() + int(side * 0.58) + int(side * 0.17)
+        circle_bottom = cy + rad
         tr = QRect(r.left() + pad, circle_bottom + int(side * 0.03), r.width() - 2 * pad,
                    r.bottom() - pad - circle_bottom - int(side * 0.03))
         p.drawText(tr, int(Qt.AlignLeft | Qt.AlignBottom),
