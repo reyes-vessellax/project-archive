@@ -50,6 +50,14 @@ def test_rapid_ticks_build_momentum_and_stay_monotonic():
                              Qt.NoModifier, Qt.ScrollUpdate, False)
             app.sendEvent(tree.viewport(), ev); sent += 1
         app.processEvents(); values.append(bar.value()); time.sleep(0.005)
+    settle = time.monotonic() + 3.0                          # a slow machine (CI) needs longer to finish the glide
+    while time.monotonic() < settle:
+        before = bar.value()
+        for _ in range(10):
+            app.processEvents(); time.sleep(0.01)
+        values.append(bar.value())
+        if bar.value() == before:
+            break
     assert all(b >= a for a, b in zip(values, values[1:])), "scrolled backwards at some point"
     from app.ui.widgets import SmoothWheel
     assert bar.value() >= 25 * SmoothWheel.PX_PER_NOTCH * 0.9, bar.value()   # momentum carried most of the distance
