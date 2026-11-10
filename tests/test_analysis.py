@@ -16,9 +16,12 @@ def run(path):
     import shutil, tempfile
     from pathlib import Path
     d = Path(tempfile.mkdtemp())
-    staged = d / path.name
-    shutil.copy(path, staged)
-    return analyze(staged, Settings())
+    try:
+        staged = d / path.name
+        shutil.copy(path, staged)
+        return analyze(staged, Settings())
+    finally:
+        shutil.rmtree(d, ignore_errors=True)        # each run left ~1.5 MB behind (2 GB over many test runs)
 
 
 def status(result, check_id):
