@@ -292,7 +292,6 @@ class SearchPage(QWidget):
         head = hbox(spacing=12)
         self.title = label("Search", "h2"); head.addWidget(self.title)
         self.state = label("", "faint"); head.addWidget(self.state); head.addStretch(1)
-        head.addWidget(label("What you see is what each source reports. Every file is checked before it can reach your library.", "faint"))
         lay.addLayout(head)
         # filters: a file-type drop-down, Lossless, 320 only (MP3s), ready now, private
         from PySide6.QtWidgets import QComboBox
