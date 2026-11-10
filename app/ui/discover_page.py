@@ -751,22 +751,9 @@ class DiscoverPage(QWidget):
         self.pulse.addStretch(1)
         lay.addLayout(self.pulse)
 
-        # genre pills: what fills the page (its labels' rows and its style rows)
-        from ..core.eras import GENRES, genre as find_genre
+        # No genre pills (the user preferred one page that rotates by itself): always the daily mix.
         self.era_btns = {}
-        fl = FlowLayout(spacing=8)
-        for key, name, dot in [("", "Everything", "")] + [(g["key"], g["name"], g["dot"]) for g in GENRES]:
-            b = button(name, "genre", lambda _=False, k=key: self.set_era(k)); b.setCheckable(True)
-            if dot:                                          # a small colour dot per genre
-                pm = QPixmap(24, 24); pm.fill(Qt.transparent)
-                pp = QPainter(pm); pp.setRenderHint(QPainter.Antialiasing); pp.setPen(Qt.NoPen)
-                pp.setBrush(QColor(dot)); pp.drawEllipse(5, 5, 14, 14); pp.end()
-                b.setIcon(QIcon(pm)); b.setIconSize(QSize(10, 10))
-            self.era_btns[key] = b; fl.addWidget(b)
-        fw = QWidget(); fw.setLayout(fl); lay.addWidget(fw)
-        self.era = getattr(self.svc.settings, "discover_era", "") or ""
-        if self.era and not find_genre(self.era):
-            self.era = ""                                   # an old era key from before genres
+        self.era = ""
 
         self.spin_bar = SpinBar()
         self.spin_bar.play.connect(lambda c: self._spin_play())

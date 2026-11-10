@@ -45,7 +45,7 @@ SPECIFIC = {
     "nu disco": r"nu[- ]disco|disco", "tech house": r"tech house|tech-house|techno", "ghetto house": r"ghetto|juke|footwork",
     "lo-fi house": r"lo-?fi|outsider", "outsider house": r"outsider|lo-?fi", "french house": r"french|filter",
     "filter house": r"filter|french", "minimal house": r"minimal|micro", "microhouse": r"micro|minimal",
-    "afro house": r"afro|south africa|amapiano", "italo disco": r"italo", "cosmic disco": r"cosmic|italo|balearic",
+"italo disco": r"italo", "cosmic disco": r"cosmic|italo|balearic",
     "balearic": r"balearic|cosmic"}
 FAMILY = {"disco edit": DISCO, "nu disco": DISCO, "italo disco": DISCO, "cosmic disco": DISCO, "balearic": DISCO}
 

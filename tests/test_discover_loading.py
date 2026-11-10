@@ -62,9 +62,8 @@ def test_rows_load_once_progressively_and_survive_refreshes(service, monkeypatch
     for name, kind in d._row_kind.items():
         assert d.rows[name].tiles, name                   # every row filled
     assert not d._loading
-    n = len(calls)
-    d.set_era("chicago"); settle()                        # switching genre loads that genre's rows
-    assert len(calls) > n and "For you" not in d.rows
+    assert not d.era_btns                                 # no genre pills: always the daily mix
+    assert "Afro house" not in d._row_kind
 
 
 def test_rows_fill_once_signed_in_without_any_other_event(service, monkeypatch):

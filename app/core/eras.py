@@ -159,7 +159,7 @@ LABEL_POOL = [
 ]
 
 STYLES = ["Deep house", "Chicago house", "Acid house", "Garage house", "Detroit house", "Soulful house", "Disco edit",
-          "Tech house", "Ghetto house", "Lo-fi house", "French house", "Minimal house", "Afro house", "Italo disco"]
+          "Tech house", "Ghetto house", "Lo-fi house", "French house", "Minimal house", "Italo disco"]
 
 
 def todays_labels(day_ordinal: int, n: int = 8) -> list[str]:
@@ -199,7 +199,6 @@ GENRES = [
      "labels": ["Roulé", "Crydamoure", "Versatile Records", "Yellow Productions"]},
     {"key": "minimal", "eras": [], "name": "Minimal", "dot": "#9e9e9e", "styles": ["Minimal house", "Microhouse"],
      "labels": ["Perlon", "Mojuba"]},
-    {"key": "afro", "eras": [], "name": "Afro house", "dot": "#f4b400", "styles": ["Afro house"], "labels": []},
     {"key": "italo", "eras": ["disco"], "name": "Italo & cosmic", "dot": "#e040fb", "styles": ["Italo disco", "Cosmic disco"], "labels": []},
     {"key": "balearic", "eras": [], "name": "Balearic", "dot": "#26c6da", "styles": ["Balearic"], "labels": ["Running Back"]},
 ]

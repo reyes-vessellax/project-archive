@@ -4,6 +4,12 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.13 (2026-11-10) — one Discover page that rotates by itself
+
+- The genre pills at the top of Discover are gone: the page is always the daily mix (For you, three eras, five
+  styles), and it changes every day on its own.
+- Afro house is no longer one of the styles.
+
 ## 0.9.12 (2026-11-10) — Discover fills in once you're connected
 
 - **Fix: Discover said "Connect to the network…" forever.** Its rows were built before the engine signed in and
