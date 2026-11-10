@@ -4,6 +4,14 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.7 (2026-11-10) — genre pills; play after switching fixed
+
+- **Genres instead of eras on Discover:** Everything, Deep, Chicago, Detroit, Garage & NY, Soulful, Disco & edits,
+  Acid, Ghetto & juke, Tech house, Lo-fi, French filter, Minimal, Afro house, Italo & cosmic, Balearic. Each fills
+  the page with its labels' rows and its style rows. Rounded pills with a colour dot; the chosen one is filled.
+- **Fix:** after switching era/genre, ▶ on a track did nothing (the track card lived inside a row that was rebuilt
+  and got deleted with it).
+
 ## 0.9.6 (2026-11-10) — club badges, BPM/key before you download, Rekordbox export, upgrade finder
 
 - **Club-ready at a glance:** a row of badges on a track's details (CDJ ✓ · MONO ✓ · PEAK −0.3 dBTP · −8.1 LUFS ·

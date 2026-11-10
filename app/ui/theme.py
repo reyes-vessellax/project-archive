@@ -246,6 +246,10 @@ QLabel#fmtbadge {{ font-family: {mono}; font-size: 10px; font-weight: 700; lette
 QPushButton#arrow {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 15px; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px; font-size: 18px; font-weight: 700; color: {c['text']}; padding: 0 0 2px 0; }}
 QPushButton#arrow:hover {{ border-color: {c['accent']}; color: {c['accent']}; }}
 QPushButton#arrow:disabled {{ color: {c['line']}; border-color: {c['line']}; }}
+QPushButton#genre {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 17px; padding: 0 16px;
+    min-height: 34px; max-height: 34px; font-family: {display}; font-size: 13px; font-weight: 600; color: {c['text']}; }}
+QPushButton#genre:hover {{ border-color: {c['accent']}; }}
+QPushButton#genre:checked {{ background: {c['accent']}; border-color: {c['accent']}; color: {c['accent_text']}; }}
 QLabel#clubbadge {{ font-family: {mono}; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 3px 9px; }}
 QLabel#clubhead {{ font-family: {mono}; font-size: 12px; font-weight: 700; letter-spacing: 1px; }}
 QFrame#cover {{ background: transparent; border: none; border-bottom: 3px solid transparent; }}

@@ -94,3 +94,32 @@ def test_ready_spins_survive_a_restart_and_wheel_scrolls_the_page(service, tmp_p
     for w in (d, d2):
         w.deleteLater()
     app.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
+def test_play_works_after_switching_genre(service):
+    """Switching genre rebuilds the rows; the track card that lived in one of them must survive, so ▶ still plays."""
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QApplication
+    from app.adapters.base import Candidate
+    from app.core.crates import CrateTrack
+    from app.ui.discover_page import CrateRow, DiscoverPage
+    app = QApplication.instance() or QApplication([])
+    service.adapter = object()                                         # "connected", so rows are built
+    service.search = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no network in tests"))
+    d = DiscoverPage(service); d.show(); app.processEvents()
+    played = []
+    d.preview.connect(played.append)
+
+    def add_row():
+        row = CrateRow("L"); row.tapped.connect(d._tap_tile); row.play_tapped.connect(d._play_tile)
+        d.rows_box.addWidget(row); d.rows["L"] = row
+        t = CrateTrack("A", "T", "", Candidate("soulseek", "u", "p", 1, extension="flac", free_slot=True)); t.alts = [t.best]
+        row.fill([t]); app.processEvents()
+        return row
+    row = add_row()
+    d._play_tile(row, row.tiles[0]); assert len(played) == 1
+    d.set_era("chicago"); app.processEvents()                         # rows rebuilt
+    row = add_row()
+    d.set_preview_state(""); d._play_tile(row, row.tiles[0])
+    assert len(played) == 2 and d.track_card.isVisible()
+    d.deleteLater(); app.sendPostedEvents(None, QEvent.DeferredDelete)

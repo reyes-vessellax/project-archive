@@ -747,14 +747,22 @@ class DiscoverPage(QWidget):
         self.pulse.addStretch(1)
         lay.addLayout(self.pulse)
 
-        # era chips: which labels' crates are shown (and spun)
+        # genre pills: what fills the page (its labels' rows and its style rows)
+        from ..core.eras import GENRES, genre as find_genre
         self.era_btns = {}
         fl = FlowLayout(spacing=8)
-        for key, name in [("", "Everything")] + [(e["key"], e["name"]) for e in ERAS]:
-            b = button(name, "chip", lambda _=False, k=key: self.set_era(k)); b.setCheckable(True)
+        for key, name, dot in [("", "Everything", "")] + [(g["key"], g["name"], g["dot"]) for g in GENRES]:
+            b = button(name, "genre", lambda _=False, k=key: self.set_era(k)); b.setCheckable(True)
+            if dot:                                          # a small colour dot per genre
+                pm = QPixmap(24, 24); pm.fill(Qt.transparent)
+                pp = QPainter(pm); pp.setRenderHint(QPainter.Antialiasing); pp.setPen(Qt.NoPen)
+                pp.setBrush(QColor(dot)); pp.drawEllipse(5, 5, 14, 14); pp.end()
+                b.setIcon(QIcon(pm)); b.setIconSize(QSize(10, 10))
             self.era_btns[key] = b; fl.addWidget(b)
         fw = QWidget(); fw.setLayout(fl); lay.addWidget(fw)
         self.era = getattr(self.svc.settings, "discover_era", "") or ""
+        if self.era and not find_genre(self.era):
+            self.era = ""                                   # an old era key from before genres
 
         self.spin_bar = SpinBar()
         self.spin_bar.play.connect(lambda c: self._spin_play())
@@ -825,11 +833,10 @@ class DiscoverPage(QWidget):
 
     # ---- crate rows ------------------------------------------------------------------------------
     def _row_labels(self) -> list[str]:
-        from ..core.eras import ESSENTIAL_LABELS
-        if self.era:
-            e = find_era(self.era)
-            if e:
-                return list(dict.fromkeys(e["labels"]))
+        from ..core.eras import ESSENTIAL_LABELS, genre as find_genre
+        g = find_genre(self.era) if self.era else None
+        if g:
+            return list(dict.fromkeys(g["labels"]))
         return [n for n, _ in ESSENTIAL_LABELS]
 
     def set_era(self, key: str):
@@ -852,6 +859,7 @@ class DiscoverPage(QWidget):
             return
         self._loaded_for = want
         self._close_card()
+        self.track_card.setParent(self); self.track_card.hide()   # keep it alive: it lived inside a row being removed
         for box in (self.rows_box, self.styles_box):
             while box.count():
                 w = box.takeAt(0).widget()
@@ -860,8 +868,10 @@ class DiscoverPage(QWidget):
         self.rows = {}
         self._tiles_by_img = {}
         from ..core.eras import STYLES, todays_labels
-        if self.era:
-            names = [(n, "") for n in self._row_labels()]
+        from ..core.eras import genre as find_genre
+        g = find_genre(self.era) if self.era else None
+        if g:
+            names = [(n, "") for n in g["labels"]] + [(st, "STYLE") for st in g["styles"]]
         else:
             labels = todays_labels(date.today().toordinal(), 8)
             styles = list(STYLES)
