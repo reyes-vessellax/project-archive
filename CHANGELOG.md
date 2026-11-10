@@ -4,6 +4,16 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.4 (2026-11-10) — redesign, round one (includes 0.9.3, which never shipped)
+
+- **Discover ("record shop"):** records without art get a typographic label sleeve in brand colours (label,
+  catalogue number, title) instead of a grey disc; hovering a cover shows ▶ (click: its card opens and the drop
+  plays); the playing track shows animated level bars on its cover.
+- **Player bar in three parts:** cover and track | play/stop over the scrubber with time either side | volume.
+- **Library ("pro booth"):** tighter rows, numbers in IBM Plex Mono, and a verdict pill per track
+  (GOOD / LOOK / BROKEN, plus CLUB when it's club-ready).
+- Test fix: the smooth-scroll test waits for the glide to settle (it failed falsely on slow CI machines).
+
 ## 0.9.3 (2026-11-10) — smooth meter, Dig the crate, dance only (stricter)
 
 - **Level meter rebuilt:** reads the track's real loudness (left and right, every 20 ms) instead of the spectrogram

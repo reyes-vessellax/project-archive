@@ -14,7 +14,7 @@ import itertools
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QPoint, QRect, QRunnable, QSize, Qt, QThreadPool, Signal
-from PySide6.QtGui import QColor, QIcon, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (QFrame, QLabel, QHeaderView, QLayout, QLineEdit, QSizePolicy, QStackedWidget, QTreeWidget,
                                QTreeWidgetItem, QWidget)
 
@@ -167,13 +167,46 @@ class Tile(QFrame):
         super().mouseReleaseEvent(e)
 
 
+# Sleeve colours for records without art: the brand's black, crimson, yellow and cream, picked by label name
+_SLEEVES = [("#141414", "#ffd700", "#8a857a"), ("#dc143c", "#ffffff", "#ffd1d9"), ("#ffd700", "#141414", "#6b5a00"),
+            ("#efe9dc", "#141414", "#8a857a"), ("#2a2a2a", "#ffffff", "#9a9a9a"), ("#a50f2d", "#ffd700", "#f3b7c2")]
+
+
 class CoverArt(QWidget):
-    """A square record cover that fills its column (placeholder disc until the image arrives)."""
+    """A square record cover that fills its column. Without art it's a typographic sleeve (label, title, cat #) in
+    brand colours, the way a white-label or company sleeve looks, instead of the same grey disc everywhere.
+    It can also show a play overlay on hover and an animated level while its track plays."""
 
     def __init__(self):
         super().__init__()
         self._pm = None
+        self._sleeve = None                     # (label, title, catno)
+        self._hover_play = False                # show ▶ on hover (tiles)
+        self._playing = False
+        self._phase = 0.0
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.setAttribute(Qt.WA_Hover)
+
+    def set_sleeve(self, label_: str, title: str, catno: str = ""):
+        self._sleeve = (label_ or "", title or "", catno or ""); self.update()
+
+    def set_playing(self, on: bool):
+        from PySide6.QtCore import QTimer
+        self._playing = on
+        if on and not hasattr(self, "_eq"):
+            self._eq = QTimer(self, interval=60, timeout=self._eq_step)
+        if hasattr(self, "_eq"):
+            self._eq.start() if on else self._eq.stop()
+        self.update()
+
+    def _eq_step(self):
+        self._phase += 0.35; self.update()
+
+    def event(self, e):
+        from PySide6.QtCore import QEvent
+        if e.type() in (QEvent.HoverEnter, QEvent.HoverLeave):
+            self.update()
+        return super().event(e)
 
     def hasHeightForWidth(self):
         return True
@@ -188,20 +221,65 @@ class CoverArt(QWidget):
         self._pm = pm; self.update()
 
     def paintEvent(self, e):
-        from PySide6.QtGui import QPainter
         p = QPainter(self); p.setRenderHint(QPainter.SmoothPixmapTransform)
         side = min(self.width(), self.height())
         r = QRect(0, 0, self.width(), side)
         if self._pm is not None and not self._pm.isNull():
             pm = self._pm.scaled(r.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
             p.drawPixmap(r, pm, QRect((pm.width() - r.width()) // 2, (pm.height() - r.height()) // 2, r.width(), r.height()))
+        elif self._sleeve:
+            self._paint_sleeve(p, r)
         else:
             p.fillRect(r, QColor(128, 128, 128, 40))
-            p.setPen(Qt.NoPen); p.setBrush(QColor(20, 20, 20, 160))
-            c = r.center(); rad = side * 0.38
-            p.drawEllipse(c, int(rad), int(rad))
-            p.setBrush(QColor(220, 20, 60)); p.drawEllipse(c, int(rad * 0.3), int(rad * 0.3))
+        p.setRenderHint(QPainter.Antialiasing)
+        if self._playing:                                         # animated level bars over the cover
+            import math
+            p.fillRect(r, QColor(0, 0, 0, 110))
+            bw, gap = max(4, side // 18), max(3, side // 30)
+            x0 = r.center().x() - (3 * bw + 2 * gap) // 2
+            for i in range(3):
+                h = side * (0.18 + 0.22 * (0.5 + 0.5 * math.sin(self._phase * (1.3 + i * 0.4) + i * 1.7)))
+                p.setPen(Qt.NoPen); p.setBrush(QColor("#ffd700"))
+                p.drawRoundedRect(QRect(int(x0 + i * (bw + gap)), int(r.center().y() + side * 0.2 - h), bw, int(h)), 2, 2)
+        elif self._hover_play and self.underMouse():               # ▶ to play the drop
+            p.fillRect(r, QColor(0, 0, 0, 70))
+            d = max(34, side // 3)
+            c = r.center()
+            p.setPen(Qt.NoPen); p.setBrush(QColor(220, 20, 60))
+            p.drawEllipse(c, d // 2, d // 2)
+            from PySide6.QtGui import QPolygonF
+            from PySide6.QtCore import QPointF
+            t = d * 0.18
+            p.setBrush(QColor("#ffffff"))
+            p.drawPolygon(QPolygonF([QPointF(c.x() - t * 0.8, c.y() - t * 1.2), QPointF(c.x() - t * 0.8, c.y() + t * 1.2),
+                                     QPointF(c.x() + t * 1.3, c.y())]))
         p.end()
+
+    def _paint_sleeve(self, p, r):
+        import zlib
+        from PySide6.QtGui import QFont
+        lab, title, cat = self._sleeve
+        bg, fg, sub = _SLEEVES[zlib.crc32(f"{lab}|{cat or title}".lower().encode()) % len(_SLEEVES)]
+        p.fillRect(r, QColor(bg))
+        p.setRenderHint(QPainter.Antialiasing)
+        side = r.height()
+        c = r.center()
+        p.setPen(Qt.NoPen); p.setBrush(QColor(0, 0, 0, 40))                     # the centre hole of a company sleeve
+        p.drawEllipse(c, int(side * 0.19), int(side * 0.19))
+        pad = int(side * 0.08)
+        f = QFont("Poppins"); f.setBold(True); f.setPixelSize(max(10, int(side * 0.115)))
+        p.setFont(f); p.setPen(QColor(fg))
+        p.drawText(QRect(r.left() + pad, r.top() + pad, r.width() - 2 * pad, int(side * 0.36)),
+                   int(Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap), (lab or "").upper()[:40])
+        f2 = QFont("Open Sans"); f2.setPixelSize(max(9, int(side * 0.075)))
+        p.setFont(f2)
+        tr = QRect(r.left() + pad, int(r.bottom() - pad - side * 0.22), r.width() - 2 * pad, int(side * 0.22))
+        p.drawText(tr, int(Qt.AlignLeft | Qt.AlignBottom | Qt.TextWordWrap),
+                   p.fontMetrics().elidedText(title, Qt.ElideRight, (r.width() - 2 * pad) * 2))
+        if cat:
+            f3 = QFont("IBM Plex Mono"); f3.setPixelSize(max(8, int(side * 0.065))); p.setFont(f3); p.setPen(QColor(sub))
+            p.drawText(QRect(r.left() + pad, r.top() + int(side * 0.42), r.width() - 2 * pad, int(side * 0.1)),
+                       int(Qt.AlignLeft), cat)
 
 
 class CoverCard(QFrame):
@@ -351,12 +429,15 @@ class TrackTile(QFrame):
     """One track in a crate row: cover, title, artist, format. Tap: its card opens under the row."""
     clicked = Signal(object)
 
-    def __init__(self, t):
+    def __init__(self, t, label_name: str = ""):
         super().__init__()
         self.track = t
+        self._label_name = label_name
         self.setObjectName("cover"); self.setCursor(Qt.PointingHandCursor); self.setFixedWidth(158)
         lay = vbox(self, (0, 0, 0, 6), 2)
         self.art = CoverArt(); self.art.setFixedSize(158, 158); lay.addWidget(self.art)
+        self.art._hover_play = True
+        self.art.set_sleeve(getattr(self, "_label_name", "") or t.folder.split(" - ")[0][:30], t.title, t.catno)
         lay.addSpacing(6)
         tip = f"{t.artist} – {t.title}" + (f" ({t.mix})" if t.mix else "")
         for text, role in ((t.title, "covertitle"), (t.artist, "muted")):
@@ -373,15 +454,22 @@ class TrackTile(QFrame):
     def set_open(self, on: bool):
         self.setProperty("open", on); self.style().unpolish(self); self.style().polish(self)
 
+    play_clicked = Signal(object)
+
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.LeftButton and self.rect().contains(e.position().toPoint()):
-            self.clicked.emit(self)
+            pos = e.position().toPoint()
+            if self.art.geometry().contains(pos):
+                self.play_clicked.emit(self)          # the cover: open it AND play the drop
+            else:
+                self.clicked.emit(self)
         super().mouseReleaseEvent(e)
 
 
 class CrateRow(QWidget):
     """A label's crate: a header, a sideways strip of tracks shared right now, and room for the open card."""
     tapped = Signal(object, object)    # row, tile
+    play_tapped = Signal(object, object)
     see_all = Signal(str)
 
     def __init__(self, name: str, tag: str = ""):
@@ -462,7 +550,8 @@ class CrateRow(QWidget):
             t.setParent(None); t.deleteLater()
         self.tiles = []
         for tr in tracks:
-            tile = TrackTile(tr); tile.clicked.connect(lambda tl: self.tapped.emit(self, tl))
+            tile = TrackTile(tr, self.name); tile.clicked.connect(lambda tl: self.tapped.emit(self, tl))
+            tile.play_clicked.connect(lambda tl: self.play_tapped.emit(self, tl))
             self.strip.insertWidget(self.strip.count() - 1, tile); self.tiles.append(tile)
         self.count.setText(f"{len(tracks)} ready now" if tracks else "")
         self.note.setVisible(not tracks)
@@ -785,6 +874,7 @@ class DiscoverPage(QWidget):
         for name, tag in names:
             row = CrateRow(name, "LABEL OF THE DAY" if tag == "LABEL OF THE DAY" else "")
             row.tapped.connect(self._tap_tile); row.see_all.connect(self.find.emit)
+            row.play_tapped.connect(self._play_tile)
             (self.styles_box if tag == "STYLE" else self.rows_box).addWidget(row); self.rows[name] = row
             if not connected:
                 row.offline()
@@ -896,6 +986,22 @@ class DiscoverPage(QWidget):
         self.track_card.show()
         from PySide6.QtCore import QTimer
         QTimer.singleShot(60, lambda: self.home_view.ensureWidgetVisible(self.track_card, 0, 30))
+
+    def _play_tile(self, row, tile):
+        """Cover clicked: open its card (if it isn't already) and play the drop."""
+        if self._open_tile is not tile:
+            self._tap_tile(row, tile)
+        if not self.track_card._previewing:
+            self._card_play(self.track_card, self.track_card.found.best)
+
+    def _sync_eq(self):
+        tile = self._open_tile
+        for row in self.rows.values():
+            for t in row.tiles:
+                try:
+                    t.art.set_playing(t is tile and self.track_card._previewing)
+                except RuntimeError:
+                    pass
 
     def _close_card(self):
         if self._open_tile is not None:
@@ -1028,6 +1134,7 @@ class DiscoverPage(QWidget):
             Player.get().stop(); self.spin_bar.set_preview_state(""); return
         wav, f = getattr(self, "_spin_wav", None), self.spin_bar.found
         if wav and f and Path(wav).exists():
+            Player.get().next_art = self.spin_bar.art._pm
             Player.get().play(wav, f.track, f"{f.release.artist} · preview · not downloaded", stop_after_s=21)
             self.spin_bar.set_preview_state("playing", "Playing the drop. Check this file to download it.")
 
@@ -1046,6 +1153,8 @@ class DiscoverPage(QWidget):
         if self._active_card is not card and self._active_card._previewing:
             self.stop_preview.emit()
         self._active_card = card
+        from .player import Player
+        Player.get().next_art = card.art._pm                  # the bar at the bottom shows this cover
         self.preview.emit(cand)
 
     def _card_check(self, card, cand):
@@ -1059,6 +1168,7 @@ class DiscoverPage(QWidget):
 
     def set_preview_state(self, state: str, msg: str = ""):
         self._active_card.set_preview_state(state, msg)
+        self._sync_eq()
 
     def mark_busy(self, cand):
         f = self._active_card.found

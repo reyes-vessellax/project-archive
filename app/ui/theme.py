@@ -68,6 +68,7 @@ QToolTip {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['
 /* now playing bar (one player for the whole app) */
 QFrame#nowplaying {{ background: {c['disp_bg']}; border-top: 1px solid {c['disp_line']}; }}
 QFrame#nowplaying QLabel {{ background: transparent; color: #f2f2f0; }}
+QFrame#nowplaying QLabel#bartitle {{ font-family: {display}; font-size: 15px; font-weight: 700; }}
 QFrame#nowplaying QLabel#faint {{ color: {c['disp_label']}; }}
 QFrame#nowplaying QLabel#mono {{ color: {c['disp_text']}; font-size: 13px; }}
 QFrame#nowplaying QSlider::groove:horizontal {{ height: 4px; background: #2c2c2c; border-radius: 2px; }}
@@ -251,6 +252,8 @@ QPushButton#menuitem:hover {{ background: {c['soft']}; }}
 /* tables */
 QTreeWidget {{ background: transparent; border: none; alternate-background-color: transparent; outline: 0; }}
 QTreeWidget::item {{ padding: 9px 4px; border-bottom: 1px solid {c['line']}; }}
+QTreeWidget#booth::item {{ padding: 5px 6px; }}
+QTreeWidget#booth::item:hover {{ background: {c['soft']}; }}
 QTreeWidget::item:hover {{ background: {c['soft']}; }}
 QTreeWidget::item:selected {{ background: {c['sel']}; color: {c['sel_text']}; }}
 QHeaderView {{ background: transparent; border: none; }}

@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QTimer, QUrl, Qt, Signal
-from PySide6.QtGui import QDesktopServices, QPixmap
+from PySide6.QtGui import QColor, QDesktopServices, QPixmap
 from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHeaderView, QLabel, QLineEdit, QTreeWidget, QTreeWidgetItem, QWidget
 from ..media.musical import compatible_keys
 
@@ -33,13 +33,41 @@ def reveal_in_folder(path: Path) -> None:
     QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
 
 
+class PillDelegate(KeepColourDelegate):
+    """The Checked column as a coloured pill (GOOD / LOOK / BROKEN, plus CLUB when it's club-ready)."""
+
+    def __init__(self, parent, column: int):
+        super().__init__(parent)
+        self.column = column
+
+    def paint(self, painter, option, index):
+        if index.column() != self.column or not index.data():
+            return super().paint(painter, option, index)
+        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QFont, QPainter
+        from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
+        opt = QStyleOptionViewItem(option); opt.text = ""
+        option.widget.style().drawControl(QStyle.CE_ItemViewItem, opt, painter, option.widget)   # row background
+        text = str(index.data())
+        fg = index.data(Qt.ForegroundRole)
+        col = fg.color() if hasattr(fg, "color") else QColor("#1f8a4c")
+        painter.save(); painter.setRenderHint(QPainter.Antialiasing)
+        f = QFont("IBM Plex Mono"); f.setPixelSize(10); f.setBold(True); painter.setFont(f)
+        w = painter.fontMetrics().horizontalAdvance(text) + 14
+        r = QRectF(option.rect.left() + 4, option.rect.center().y() - 9, w, 18)
+        bg = QColor(col); bg.setAlpha(36)
+        painter.setPen(Qt.NoPen); painter.setBrush(bg); painter.drawRoundedRect(r, 9, 9)
+        painter.setPen(col); painter.drawText(r, int(Qt.AlignCenter), text)
+        painter.restore()
+
+
 class LibraryPage(QWidget):
     open_job = Signal(str)
     delete_job = Signal(str)          # move the file to the Trash and take it out of the library
     club_copy = Signal(str)           # make a verified club-ready copy
     crates_changed = Signal()
     COLS = ["Title", "Artist", "Mix", "BPM", "Key", "Format", "Bitrate", "Length", "Checked", "Added", "File"]
-    WIDTHS = [210, 150, 100, 60, 50, 64, 84, 56, 80, 110, 160]
+    WIDTHS = [200, 150, 80, 64, 50, 64, 96, 56, 128, 92, 160]
     C_BPM, C_KEY, C_FMT, C_KBPS, C_LEN, C_GRADE, C_ADDED, C_FILE = 3, 4, 5, 6, 7, 8, 9, 10
 
     def __init__(self, svc: ArchiveService):
@@ -76,7 +104,10 @@ class LibraryPage(QWidget):
         lay.addLayout(fl)
 
         self.tree = QTreeWidget(); self.tree.setColumnCount(len(self.COLS)); self.tree.setHeaderLabels(self.COLS)
-        self.tree.setItemDelegate(KeepColourDelegate(self.tree))
+        self.tree.setObjectName("booth")                     # dense, fast rows (see theme)
+        self.tree.setItemDelegate(PillDelegate(self.tree, self.C_GRADE))
+        from PySide6.QtGui import QFont
+        self._mono = QFont("IBM Plex Mono"); self._mono.setPixelSize(12)
         self.tree.setRootIsDecorated(False); self.tree.setSortingEnabled(True); self.tree.setAlternatingRowColors(False)
         self.tree.setIndentation(0)                          # the drop-down row sits flush with its track
         self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
@@ -235,8 +266,14 @@ class LibraryPage(QWidget):
             grade = T.GRADE_LONG.get((a or {}).get("overall_status", ""), "")
             added = (job.get("updated_at") or "")[:10]
             kbps = f"{round(f['bitrate_bps'] / 1000)} {f.get('bitrate_mode') if f.get('bitrate_mode') in ('CBR','VBR') else 'kbps'}" if f.get("bitrate_bps") else ("lossless" if f.get("lossless") else "")
+            club = ((a or {}).get("club") or {})
+            pill = {"Good": "GOOD", "Have a look": "LOOK", "Broken": "BROKEN"}.get(grade, grade.upper())
+            if pill and club.get("ready") and not club.get("error"):
+                pill += " · CLUB"
             it = QTreeWidgetItem([title, artist, mix, "", cam, (f.get("container") or "").upper(), kbps,
-                                  fmt_time(f["duration_s"]) if f.get("duration_s") else "", grade, added, fname])
+                                  fmt_time(f["duration_s"]) if f.get("duration_s") else "", pill, added, fname])
+            for c in (self.C_BPM, self.C_KEY, self.C_FMT, self.C_KBPS, self.C_LEN, self.C_ADDED):
+                it.setFont(c, self._mono)
             if bpm:
                 it.setData(self.C_BPM, Qt.DisplayRole, round(float(bpm), 1))      # sorts as a number
             it.setForeground(self.C_KEY, accent)

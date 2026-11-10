@@ -6,7 +6,7 @@ thing ever plays at a time, and whatever plays is always visible in the bar with
 from __future__ import annotations
 
 from PySide6.QtCore import QObject, QTimer, QUrl, Qt, Signal
-from PySide6.QtWidgets import QFrame, QSlider, QStyle, QStyleOptionSlider
+from PySide6.QtWidgets import QFrame, QSlider, QStyle, QStyleOptionSlider, QWidget
 
 from .widgets import PlayButton, StopButton, hbox, label, vbox
 
@@ -29,6 +29,8 @@ class Player(QObject):
         self.out = None
         self.volume = 0.8                      # 0..1, one volume for the whole app (Settings.volume)
         self.title, self.subtitle, self.path = "", "", ""
+        self.art = None                        # QPixmap of the cover, when the caller had one (shown in the bar)
+        self.next_art = None                   # set just before play() by pages that know the cover
         self._stop_at = QTimer(self, singleShot=True, timeout=self.stop)
 
     def _ensure(self) -> bool:
@@ -91,6 +93,7 @@ class Player(QObject):
             self.media.stop()
             self.media.setSource(QUrl.fromLocalFile(path))
         self.title, self.subtitle, self.path = title, subtitle, path
+        self.art, self.next_art = self.next_art, None
         self.media.setPosition(int(start_s * 1000))
         self.media.play()
         start_ms = int(start_s * 1000)
@@ -173,13 +176,13 @@ class NowPlayingBar(QFrame):
         super().__init__()
         self.setObjectName("nowplaying")
         self.p = Player.get()
-        lay = hbox(self, (20, 10, 20, 10), 14)
+        lay = hbox(self, (16, 8, 20, 8), 18)
         self.btn = PlayButton(); self.btn.setObjectName("barplay"); self.btn.setCursor(Qt.PointingHandCursor)
         self.btn.clicked.connect(self.p.toggle); self.btn.setToolTip("Play / pause")
         self.stop_btn = StopButton(); self.stop_btn.setObjectName("barstop"); self.stop_btn.setCursor(Qt.PointingHandCursor)
         self.stop_btn.clicked.connect(self.p.stop); self.stop_btn.setToolTip("Stop")
         names = vbox(spacing=0)
-        self.title = label("", "rowtitle"); self.sub = label("", "faint")
+        self.title = label("", "bartitle"); self.sub = label("", "faint")
         names.addWidget(self.title); names.addWidget(self.sub)
         self.pos = SeekSlider()
         self.pos.seek.connect(lambda f: self.p.duration() and self.p.seek(f * self.p.duration()))
@@ -189,8 +192,21 @@ class NowPlayingBar(QFrame):
         self.vol.setFixedWidth(90); self.vol.setValue(int(round(self.p.volume * 100))); self.vol.setToolTip("Volume")
         self.vol.valueChanged.connect(self._vol_moved)
         self.on_volume = None                  # the window sets this to remember the volume in Settings
-        lay.addWidget(self.btn); lay.addSpacing(-4); lay.addWidget(self.stop_btn); lay.addSpacing(6); lay.addLayout(names, 2); lay.addWidget(self.pos, 3); lay.addWidget(self.time)
-        lay.addWidget(label("vol", "faint")); lay.addWidget(self.vol)
+        # three parts: what's playing | controls over the scrubber | volume
+        from .discover_page import CoverArt
+        self.art = CoverArt(); self.art.setFixedSize(46, 46)
+        left = hbox(spacing=12); left.addWidget(self.art); left.addLayout(names, 1)
+        lw = QWidget(); lw.setLayout(left); lw.setMinimumWidth(220)
+        center = vbox(spacing=4)
+        ctl = hbox(spacing=10); ctl.addStretch(1); ctl.addWidget(self.btn); ctl.addWidget(self.stop_btn); ctl.addStretch(1)
+        center.addLayout(ctl)
+        self.time_l = label("", "mono"); self.time_r = label("", "mono")
+        scrub = hbox(spacing=10); scrub.addWidget(self.time_l); scrub.addWidget(self.pos, 1); scrub.addWidget(self.time_r)
+        center.addLayout(scrub)
+        cw = QWidget(); cw.setLayout(center)
+        right = hbox(spacing=8); right.addStretch(1); right.addWidget(label("VOL", "faint")); right.addWidget(self.vol)
+        rw = QWidget(); rw.setLayout(right); rw.setMinimumWidth(160)
+        lay.addWidget(lw, 3); lay.addWidget(cw, 4); lay.addWidget(rw, 2)
         self.tick = QTimer(self, interval=250, timeout=self._refresh)
         self.p.changed.connect(self._refresh)
         self.setVisible(False)
@@ -220,3 +236,9 @@ class NowPlayingBar(QFrame):
         else:
             self.pos.setValue(int(1000 * t / d) if d > 0 else 0)
         self.time.setText(f"{_mmss(t)} / {_mmss(d)}" if d > 0 else _mmss(t))
+        self.time_l.setText(_mmss(t)); self.time_r.setText(_mmss(d) if d > 0 else "")
+        art = self.p.art
+        if art is not getattr(self, "_shown_art", object()):
+            self._shown_art = art
+            self.art.set_pixmap(art)
+            self.art.set_sleeve("", self.p.title, "")
