@@ -704,9 +704,8 @@ class SpinBar(QFrame):
             w = self.chips.takeAt(0).widget()
             if w:
                 w.setParent(None); w.deleteLater()
-        bpm, cam = f.details.get("bpm"), f.details.get("camelot")
-        secs = length_s(c)
-        for text in (ext, f"{bpm} BPM" if bpm else "", cam or "", f"{int(secs // 60)}:{int(secs % 60):02d}" if secs else ""):
+        secs = length_s(c)       # no BPM/key guess here: 20 s of preview isn't enough to measure them; the check does
+        for text in (ext, f"{int(secs // 60)}:{int(secs % 60):02d}" if secs else ""):
             if text:
                 self._chip(text)
         self._chip("READY NOW", ok=True)
@@ -1324,12 +1323,6 @@ class DiscoverPage(QWidget):
                     continue
                 dest = spin_dir / Path(wav).name
                 _sh.move(str(wav), dest)
-                try:                                           # BPM and key from the clip, shown on the Dig bar
-                    from ..media.musical import analyze_music
-                    m = analyze_music(dest, svc.settings.ffmpeg_path)
-                    c._music = (f"{m.bpm:.0f}" if m.bpm else "", m.camelot or "")
-                except Exception:
-                    c._music = ("", "")
                 return c, str(dest), start
             return None
 
@@ -1339,8 +1332,6 @@ class DiscoverPage(QWidget):
                 c, wav, _start = res
                 t.best = c
                 f = self._found_for(name, t)
-                bpm, cam = getattr(c, "_music", ("", ""))
-                f.details["bpm"], f.details["camelot"] = bpm, cam
                 self._spins.append((f, wav))
                 self._save_spins()
                 if self.spin_bar.found is None:
