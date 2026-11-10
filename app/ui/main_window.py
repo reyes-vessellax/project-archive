@@ -251,6 +251,11 @@ class MainWindow(QMainWindow):
             from .widgets import KeepColourDelegate
             KeepColourDelegate.keep_colours = bool(T.colours(theme).get("keep_sel_colours", True))
             QApplication.instance().setStyleSheet(T.stylesheet(theme))
+            from . import discover_page as _dp
+            _dp.SLEEVE_THEME = theme                        # no-cover sleeves have their own dark set
+            for w in QApplication.instance().allWidgets():
+                if isinstance(w, _dp.CoverArt):
+                    w.update()
         if hasattr(self, "home"):
             accent = T.colours(self.svc.settings.theme)["accent"]
             self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent); self.library.set_accent(accent)

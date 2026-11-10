@@ -179,6 +179,14 @@ def _sleeve_mark(i: int):
     return _MARKS[i]
 
 
+SLEEVE_THEME = "light"          # set by the window when the theme changes
+# Dark mode: no cream or yellow sleeves glaring on a black page. (bg, text, sub, which mark colourway)
+_SLEEVES_DARK = [("#1c1c1c", "#ffd700", "#8a857a", 0),   # was black   -> soft black, yellow name
+                 ("#dc143c", "#ffffff", "#ffd1d9", 1),   # was crimson -> crimson
+                 ("#2a2a2a", "#ffd700", "#9a9a9a", 4),   # was yellow  -> charcoal, yellow name
+                 ("#2b2620", "#f5f3ee", "#9a948a", 0),   # was cream   -> warm charcoal
+                 ("#232323", "#ffffff", "#9a9a9a", 4),   # was charcoal-> charcoal
+                 ("#a50f2d", "#ffd700", "#f3b7c2", 5)]   # was deep red-> deep red
 _SLEEVES = [("#141414", "#ffd700", "#8a857a"), ("#dc143c", "#ffffff", "#ffd1d9"), ("#ffd700", "#141414", "#6b5a00"),
             ("#efe9dc", "#141414", "#8a857a"), ("#2a2a2a", "#ffffff", "#9a9a9a"), ("#a50f2d", "#ffd700", "#f3b7c2")]
 
@@ -271,7 +279,10 @@ class CoverArt(QWidget):
         from PySide6.QtGui import QFont
         lab, title, cat = self._sleeve
         idx = zlib.crc32(f"{lab}|{cat or title}".lower().encode()) % len(_SLEEVES)
-        bg, fg, sub = _SLEEVES[idx]
+        if SLEEVE_THEME == "dark":
+            bg, fg, sub, idx = _SLEEVES_DARK[idx % len(_SLEEVES_DARK)]
+        else:
+            bg, fg, sub = _SLEEVES[idx]
         p.fillRect(r, QColor(bg))
         p.setRenderHint(QPainter.Antialiasing); p.setRenderHint(QPainter.SmoothPixmapTransform)
         side = r.height()
