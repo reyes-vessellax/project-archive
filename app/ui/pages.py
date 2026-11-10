@@ -51,6 +51,9 @@ def row_data(job: dict, analysis: dict | None, steps: dict[str, str]) -> dict:
     if st == J.READY and analysis:
         f = analysis["facts"]
         kbps = f"{round(f['bitrate_bps'] / 1000)} kbps" if f.get("bitrate_bps") else (f.get("container") or "").upper()
+        club = analysis.get("club") or {}
+        if club and not club.get("error"):
+            kbps = ("CLUB ✓  " if club.get("ready") else "CLUB ✗  ") + kbps
         return dict(tag=T.GRADE_WORD[analysis["overall_status"]], title=title, artist=artist, pct=100, meta=kbps, removable=True)
     if st == J.PROMOTED:
         return dict(tag="Done", title=title, artist=artist, pct=None, meta="in library", removable=True)
@@ -96,7 +99,7 @@ class HomePage(QWidget):
 
         # queue column
         qcol = vbox(spacing=6)
-        head = hbox(spacing=12); head.addWidget(label("In progress", "h2")); head.addStretch(1)
+        head = hbox(spacing=12); head.addWidget(label("Tracks", "h2")); head.addStretch(1)
         self.qnote = label("newest first", "faint"); head.addWidget(self.qnote)
         self.clear_btn = button("Clear finished", "link", self.clear_finished.emit); head.addWidget(self.clear_btn)
         qcol.addLayout(head)
@@ -139,6 +142,9 @@ class HomePage(QWidget):
         rail.addStretch(1)
         rw = QWidget(); rw.setLayout(rail); rw.setMinimumWidth(320); rw.setMaximumWidth(420)
         body.addWidget(rw, 2)
+        rw.hide()                                         # replaced by the selected track's details, right here
+        self.detail_slot = vbox(spacing=0)
+        body.addLayout(self.detail_slot, 4)
 
     def _show_more(self):
         self._queue_limit += QUEUE_ROWS
@@ -197,6 +203,10 @@ class HomePage(QWidget):
             self.empty.setVisible(not jobs)
             self.list_host.setUpdatesEnabled(True)
         self._row_widgets = existing
+        sel = getattr(self, "selected_id", None)                  # keep the open track highlighted after a refresh
+        for jid, row in existing.items():
+            if row.property("selected") != (jid == sel):
+                row.setProperty("selected", jid == sel); row.style().unpolish(row); row.style().polish(row)
         keep_scroll(self.list_scroll, rebuild)
         down = sum(1 for j in jobs if j["state"] == J.QUEUED)
         chk = sum(1 for j in jobs if j["state"] in (J.STAGING, J.ANALYZING))
@@ -810,6 +820,7 @@ class ReviewPage(QWidget):
         rail.addWidget(label("↑↓ move · ⏎ download · ⌫ delete", "mono"))
         rw = QWidget(); rw.setLayout(rail); rw.setMinimumWidth(280); rw.setMaximumWidth(360)
         body.addWidget(rw, 2)
+        self.rail_w = rw
 
         # detail
         det = vbox(spacing=22)
@@ -908,6 +919,11 @@ class ReviewPage(QWidget):
         cw = QWidget(); cw.setLayout(col)
         body.addWidget(cw, 5)
         self.show_job(None, None)
+
+    def embed(self):
+        """Shown inside the Queue tab: the Queue's own list replaces this page's list."""
+        self.rail_w.hide()
+        self.layout().setContentsMargins(0, 0, 0, 0)
 
     def _on_playing(self, on: bool):
         if on:

@@ -4,6 +4,13 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.5 (2026-11-10) — Queue: details in place
+
+- **Queue is list + details:** click a track and its details (BPM, key, spectrogram, every check, CLUB-READY,
+  Download / Delete) open beside the list, in the Queue tab. No separate Review screen to jump to.
+- Queue rows: tighter, the status as a coloured pill (GOOD / LOOK / BROKEN / DOWN / CHECK), CLUB ✓/✗ next to the
+  bitrate, and the open track highlighted.
+
 ## 0.9.4 (2026-11-10) — redesign, round one (includes 0.9.3, which never shipped)
 
 - **Discover ("record shop"):** records without art get a typographic label sleeve in brand colours (label,

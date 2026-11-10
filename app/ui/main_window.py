@@ -178,7 +178,8 @@ class MainWindow(QMainWindow):
         self._sp = self._pv_page = self.searchp
         self.settings = SettingsPage(self.svc); self.library = LibraryPage(self.svc); self.batchp = BatchPage()
         self.wishlistp = WishlistPage(self.svc)
-        for p in (self.discover, self.home, self.searchp, self.review, self.settings, self.library, self.batchp, self.wishlistp):
+        self.review.embed(); self.home.detail_slot.addWidget(self.review)     # details open in place, inside Queue
+        for p in (self.discover, self.home, self.searchp, self.settings, self.library, self.batchp, self.wishlistp):
             self.pages.addWidget(p)
         self._wire_wishlist()
         self.library.open_job.connect(self._open_job)
@@ -424,7 +425,7 @@ class MainWindow(QMainWindow):
         self._show_review()
 
     def _show_review(self):
-        self.pages.setCurrentWidget(self.review)
+        self.pages.setCurrentWidget(self.home); self.topbar.set_active("queue")
         self._refresh_review()
 
     # ---------------------------------------------------------------- data -> view
@@ -452,7 +453,7 @@ class MainWindow(QMainWindow):
         ready = sum(1 for j in jobs if j["state"] == J.READY)
         active = sum(1 for j in jobs if j["state"] in (J.QUEUED, J.STAGING, J.ANALYZING))
         self.topbar.set_counts(active, ready)
-        if self.pages.currentWidget() is self.review:
+        if self.pages.currentWidget() is self.home:
             self._refresh_review()
         elif self.pages.currentWidget() is self.library:
             self.library.refresh()
@@ -473,6 +474,13 @@ class MainWindow(QMainWindow):
         self.review.job_id = job["id"] if job else None       # so the list highlights the track being opened, not the last one
         self.review.set_rail(self._jobs, self._analyses, self.steps)
         self.review.show_job(job, a, self.steps)
+        self.home.selected_id = self.selected
+        for jid, row in getattr(self.home, "_row_widgets", {}).items():   # the open track is highlighted in the list
+            try:
+                if row.property("selected") != (jid == self.selected):
+                    row.setProperty("selected", jid == self.selected); row.style().unpolish(row); row.style().polish(row)
+            except RuntimeError:
+                pass
 
     def _after_decision(self, job_id: str):
         """After Download to Library / Delete the track has left the Ready list: move on to the next one waiting."""
@@ -1395,7 +1403,7 @@ class MainWindow(QMainWindow):
         self._enqueue_paths([Path(u.toLocalFile()) for u in md.urls() if u.isLocalFile()])
 
     def keyPressEvent(self, e):
-        if self.pages.currentWidget() is self.review and self.selected:
+        if self.pages.currentWidget() is self.home and self.selected:
             ids = [j["id"] for j in self._jobs if j["state"] == J.READY]
             if e.key() in (Qt.Key_Up, Qt.Key_Down) and ids:
                 i = ids.index(self.selected) if self.selected in ids else -1

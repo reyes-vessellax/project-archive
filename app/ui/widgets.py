@@ -464,8 +464,8 @@ class QueueRow(QWidget):
         self.setObjectName("row")
         self.setProperty("tag", tag)
         self.setCursor(Qt.PointingHandCursor)
-        self.setMinimumHeight(60)
-        lay = hbox(self, (4, 10, 12, 10), 12)
+        self.setMinimumHeight(48)
+        lay = hbox(self, (4, 6, 12, 6), 12)
         # × first, on the left, where the hand already is; a blank spacer keeps rows aligned when it's hidden
         # NOTE: every child is added to the layout BEFORE any setVisible(): a parentless widget that is shown
         # becomes its own top-level window for a frame — the "flashing dialog boxes" of 0.3/0.4.
@@ -475,10 +475,10 @@ class QueueRow(QWidget):
         self.x_space = QWidget(self); self.x_space.setFixedWidth(22)
         lay.addWidget(self.x); lay.addWidget(self.x_space)
         self.x.setVisible(removable); self.x_space.setVisible(not removable)
-        self.tag = label(tag.upper(), "tag", tag); self.tag.setFixedWidth(60)
-        lay.addWidget(self.tag)
+        self.tag = label(tag.upper(), "tag", tag); self.tag.setFixedWidth(64); self.tag.setFixedHeight(20)
+        lay.addWidget(self.tag, 0, Qt.AlignVCenter)
         names = vbox(spacing=2)
-        self.title = label(title); self.title.setStyleSheet("font-weight: 600; font-size: 15px;")
+        self.title = label(title); self.title.setStyleSheet("font-weight: 600; font-size: 14px;")
         self.title.setToolTip(title)
         self.artist = label(artist or " ", "muted")
         for lbl in (self.title, self.artist):                # long names clip instead of pushing the row wider than the list
@@ -490,7 +490,7 @@ class QueueRow(QWidget):
         lay.addWidget(self.bar)
         # a full bar on a finished track says nothing: hidden, and its room goes to the title
         self.bar.setVisible(pct is not None and pct < 100)
-        self.meta = label(meta, "mono"); self.meta.setFixedWidth(120); self.meta.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.meta = label(meta, "mono"); self.meta.setFixedWidth(150); self.meta.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lay.addWidget(self.meta)
         for w in (self.tag, self.title, self.artist, self.meta, self.bar, self.x_space):
             w.setAttribute(Qt.WA_TransparentForMouseEvents)

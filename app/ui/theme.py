@@ -58,6 +58,14 @@ def stylesheet(theme: str) -> str:
         f'QLabel#tag[tag="{word}"], QLabel#count[tag="{word}"], QLabel#verdict[tag="{word}"] {{ color: {c[key]}; }}'
         for word, key in TAG_COLOUR.items()
     )
+
+    def _rgba(hexc: str, a: float) -> str:
+        h = hexc.lstrip("#")
+        return f"rgba({int(h[0:2], 16)}, {int(h[2:4], 16)}, {int(h[4:6], 16)}, {a})"
+    tags += "\n" + "\n".join(                                  # queue rows: the tag as a coloured pill
+        f'QWidget#row QLabel#tag[tag="{word}"] {{ background: {_rgba(c[key], 0.16)}; }}'
+        for word, key in TAG_COLOUR.items() if c[key].startswith("#") and len(c[key]) == 7
+    )
     return f"""
 * {{ font-family: {sans}; font-size: 13px; color: {c['text']}; }}
 QMainWindow, QDialog {{ background-color: {c['bg']}; }}
@@ -205,6 +213,7 @@ QPushButton#navitem[active="true"] {{ background: {c['nav_bg']}; color: {c['nav_
 /* rows and lists */
 QWidget#row {{ background: transparent; border-bottom: 1px solid {c['line']}; }}
 QWidget#row:hover, QWidget#row[flash="true"] {{ background: {c['pass_']}22; border-color: {c['pass_']}; }}
+QWidget#row QLabel#tag {{ border-radius: 9px; padding: 2px 0; font-size: 10px; qproperty-alignment: AlignCenter; }}
 QWidget#row[selected="true"] {{ background: {c['soft']}; border-radius: 3px; }}
 QProgressBar {{ background: {c['bar']}; border: none; border-radius: 2px; max-height: 3px; min-height: 3px; }}
 QProgressBar::chunk {{ background: {c['text']}; border-radius: 2px; }}

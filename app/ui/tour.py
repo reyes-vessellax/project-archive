@@ -37,11 +37,9 @@ def default_steps() -> list[Step]:
              "Everything you've asked for, newest first. The word on the left says where it is: DOWN (downloading), "
              "CHECK (being checked), WAIT (its turn is next), then GOOD, LOOK or BROKEN once it's been checked. "
              "The × at the left clears a finished row; Clear finished clears them all."),
-        Step("home.scope", "Last checked",
-             "The spectrogram of the most recent track we checked. A real 320 reaches up to about 20 kHz; a file "
-             "made from a low-quality MP3 stops short, and the line shows where."),
-        Step("home.review_btn", "Ready for you",
-             "Nothing reaches your library on its own. Checked tracks wait in the Queue for your decision."),
+        Step("review", "Details, right here",
+             "Click any track in the Queue and its details open beside it: the spectrogram, every check, CLUB-READY, "
+             "and Download or Delete. Nothing reaches your library on its own.", page="queue"),
         Step("review.btn_save", "Download or Delete",
              f"On a checked track: Download to Library moves it into your {APP_NAME} folder. Delete removes it for good. "
              "GOOD gets a plain Download; LOOK asks you to confirm; BROKEN can only be deleted.", page="ready"),
