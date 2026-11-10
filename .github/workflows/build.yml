@@ -62,9 +62,10 @@ jobs:
           if ($lic) { Copy-Item $lic.FullName vendor/ffmpeg/FFMPEG-LICENSE.txt }
       - name: Fetch the Soulseek engine (slskd) to bundle
         shell: pwsh
-        env:
-          SLSKD_VERSION: "0.26.2"
         run: |
+          # the engine version lives in app/config.py (ENGINE_VERSION); see docs/ENGINE_UPDATES.md
+          $env:SLSKD_VERSION = (python -c "from app.config import ENGINE_VERSION; print(ENGINE_VERSION)")
+          if (-not $env:SLSKD_VERSION) { throw "ENGINE_VERSION not found in app/config.py" }
           Invoke-WebRequest -Uri "https://github.com/slskd/slskd/releases/download/$env:SLSKD_VERSION/slskd-$env:SLSKD_VERSION-win-x64.zip" -OutFile slskd.zip
           New-Item -ItemType Directory -Force vendor/slskd | Out-Null
           Expand-Archive slskd.zip -DestinationPath vendor/slskd
@@ -171,10 +172,11 @@ jobs:
           ../vendor/ffmpeg/ffmpeg -version | head -1
           curl -fsSL -o ../vendor/ffmpeg/FFMPEG-LICENSE.txt "https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/COPYING.GPLv3" || true
       - name: Fetch the Soulseek engine (slskd) to bundle
-        env:
-          SLSKD_VERSION: "0.26.2"
         run: |
           set -e
+          # the engine version lives in app/config.py (ENGINE_VERSION); see docs/ENGINE_UPDATES.md
+          SLSKD_VERSION=$(python -c "from app.config import ENGINE_VERSION; print(ENGINE_VERSION)")
+          test -n "$SLSKD_VERSION"
           mkdir -p vendor/slskd
           curl -fsSL -o slskd.zip "https://github.com/slskd/slskd/releases/download/${SLSKD_VERSION}/slskd-${SLSKD_VERSION}-${{ matrix.slskd_arch }}.zip"
           unzip -o -q slskd.zip -d vendor/slskd

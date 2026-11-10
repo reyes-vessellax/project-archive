@@ -91,3 +91,22 @@ python packaging/build.py    # local packaged build
 New here? Start with [`docs/HANDOFF.md`](docs/HANDOFF.md) (what must not change, where things are, how to build and ship).
 Decisions and open legal flags: [`docs/DECISIONS_AND_FLAGS.md`](docs/DECISIONS_AND_FLAGS.md).
 Change history: [`CHANGELOG.md`](CHANGELOG.md).
+
+
+## Thanks and open-source licences
+
+Special thanks to the **slskd** team. DigMart's download engine is [slskd](https://github.com/slskd/slskd)
+0.26.2, bundled unmodified and renamed *DigMart Engine*, under the
+[GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html).
+
+| Component | Version | Licence | Source |
+|---|---|---|---|
+| slskd (ships as *DigMart Engine*) | 0.26.2 | AGPL-3.0, copy at `vendor/engine/LICENSE` | <https://github.com/slskd/slskd/tree/0.26.2> |
+| FFmpeg / FFprobe | latest GPL build at build time | GPL-3.0, copy at `vendor/ffmpeg/FFMPEG-LICENSE.txt` | <https://github.com/FFmpeg/FFmpeg> (builds: <https://github.com/BtbN/FFmpeg-Builds>) |
+| PySide6 (Qt for Python) | see `requirements.txt` | LGPL-3.0 | <https://code.qt.io/cgit/pyside/pyside-setup.git/> |
+| NumPy, Mutagen, yt-dlp | see `requirements.txt` | BSD-3-Clause, GPL-2.0-or-later, Unlicense | their project pages |
+
+You may copy, study, change and share slskd and FFmpeg under their licences; nothing in DigMart's own terms
+limits that. The same notes ship inside every copy of the app (`README.txt`). The engine version is set in one
+place, `ENGINE_VERSION` in `app/config.py`; moving to a new engine release is described in
+[`docs/ENGINE_UPDATES.md`](docs/ENGINE_UPDATES.md).

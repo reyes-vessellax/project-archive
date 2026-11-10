@@ -16,6 +16,12 @@ try:                                      # CI writes app/_build.py with the run
 except ImportError:
     APP_BUILD = 0
 FULL_VERSION = f"{APP_VERSION}.{APP_BUILD}" if APP_BUILD else APP_VERSION   # what the updater compares
+# The bundled download engine is slskd (https://github.com/slskd/slskd, AGPL-3.0), shipped unmodified and renamed
+# "<APP_NAME> Engine". Its version, in ONE place: the builds (CI and local) and the shipped licence notes read this.
+# To move to a new engine release, see docs/ENGINE_UPDATES.md.
+ENGINE_NAME = "slskd"
+ENGINE_VERSION = "0.26.2"
+ENGINE_SOURCE_URL = f"https://github.com/slskd/slskd/tree/{ENGINE_VERSION}"
 PREVIOUS_NAMES = ("Pied Piper", "DEADWAX", "Project Archive")   # earlier placeholders; existing installs are migrated from them
 
 
