@@ -752,6 +752,10 @@ class SpectrumView(QLabel):
         self.play_btn.hide()
         self.update()
 
+    def set_cutoff_bad(self, bad: bool) -> None:
+        """The spectrum check didn't pass: mark the cutoff red and shade the missing highs."""
+        self._cutoff_bad = bad; self.update()
+
     def show_png(self, path: str, sample_rate: int, cutoff_hz: float | None, audio: str | None = None,
                  duration_s: float | None = None):
         pix = QPixmap(path)
@@ -1012,12 +1016,17 @@ class SpectrumView(QLabel):
             p.drawText(2, y + 3, f"{khz}k")
         if self._cutoff:
             y = r.bottom() - int(r.height() * self._cutoff / self._nyq)
-            pen = p.pen(); pen.setColor(QColor(self._accent)); pen.setWidth(2); pen.setStyle(Qt.DashLine); p.setPen(pen)
+            bad = getattr(self, "_cutoff_bad", False)
+            if bad:                                             # the missing highs, shaded: what a transcode looks like
+                p.fillRect(QRectF(r.left(), r.top(), r.width(), max(0, y - r.top())), QColor(220, 20, 60, 70))
+            pen = p.pen(); pen.setColor(QColor("#ff3b5c" if bad else self._accent)); pen.setWidth(2); pen.setStyle(Qt.DashLine); p.setPen(pen)
             p.drawLine(r.left(), y, r.right(), y)
             p.setPen(QColor("#ffffff"))
+            text = f"cutoff {self._cutoff / 1000:.1f} kHz" + ("  ·  highs missing" if bad else "")
+            tw = p.fontMetrics().horizontalAdvance(text) + 12
             ly = y - 18 if y - 18 >= r.top() + 2 else y + 4
-            p.fillRect(r.right() - 112, ly, 108, 16, QColor(0, 0, 0, 140))
-            p.drawText(r.right() - 108, ly + 12, f"cutoff {self._cutoff / 1000:.1f} kHz")
+            p.fillRect(r.right() - tw - 4, ly, tw, 16, QColor(160, 10, 35, 200) if bad else QColor(0, 0, 0, 140))
+            p.drawText(r.right() - tw + 2, ly + 12, text)
         # preview window + drop marker
         p.save(); p.setClipRect(r)
         if self._duration_ms > 0 and (self._prev_start is not None or self._drop_s is not None):
@@ -1079,4 +1088,39 @@ def club_heading(a: dict, theme: str):
     w = label(f"{text}{note}", "clubhead")
     w.setStyleSheet(f"color: {colour};")
     w.setToolTip("Will it load and sound right on a club or festival system? Separate from the verdict above.")
+    return w
+
+
+def club_badges(a: dict, theme: str):
+    """CLUB-READY at a glance: CDJ ✓ · MONO ✓ · PEAK -0.3 dBTP · -8.1 LUFS · LOW END ✓ · USB ✓, each coloured by its
+    result (green good, amber note, red problem). None for tracks checked before the club check existed."""
+    club = (a or {}).get("club") or {}
+    if not club or club.get("error"):
+        return None
+    from . import theme as T
+    c = T.colours(theme)
+    by_id = {x["id"]: x for x in club.get("checks") or []}
+    names = [("club_load", "CDJ"), ("club_mono", "MONO"), ("club_clip", "PEAK"), ("club_loud", "LUFS"),
+             ("club_low", "LOW END"), ("club_usb", "USB")]
+    w = QWidget(); lay = hbox(w, (0, 4, 0, 4), 6)
+    head = label("CLUB-READY ✓" if club.get("ready") else "NOT CLUB-READY ✗", "clubhead")
+    head.setStyleSheet(f"color: {c['pass_'] if club.get('ready') else c['fail']};")
+    lay.addWidget(head); lay.addSpacing(6)
+    for cid, name in names:
+        x = by_id.get(cid)
+        if not x:
+            continue
+        col = {"PASS": c["pass_"], "WARN": c["warn"], "FAIL": c["fail"]}.get(x["status"], c["muted"])
+        text = name + " " + {"PASS": "✓", "WARN": "!", "FAIL": "✗"}.get(x["status"], "")
+        if cid == "club_clip" and club.get("true_peak") is not None:
+            text = f"PEAK {club['true_peak']:+.1f} dBTP"
+        if cid == "club_loud" and club.get("lufs") is not None:
+            text = f"{club['lufs']:.1f} LUFS"
+        b = label(text, "clubbadge")
+        h = col.lstrip("#")
+        rgba = f"rgba({int(h[0:2], 16)}, {int(h[2:4], 16)}, {int(h[4:6], 16)}, 0.16)" if len(h) == 6 else "transparent"
+        b.setStyleSheet(f"color: {col}; background: {rgba};")
+        b.setToolTip(f"{x['title']}: {x['message']}")
+        lay.addWidget(b)
+    lay.addStretch(1)
     return w

@@ -1114,19 +1114,20 @@ class ReviewPage(QWidget):
             if a.get("spectrogram_path") and Path(a["spectrogram_path"]).exists():
                 self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
                                        audio=_audio_path(job), duration_s=f.get("duration_s"))
+                self.spectrum.set_cutoff_bad(next((c["status"] for c in a.get("checks", []) if c["id"] == "spectrum"), "PASS") != "PASS")
                 self.spectrum.set_preview(mu.get("drop_s"), None)        # mark the drop; no preview window here
                 self.spectrum.set_track(d["title"], d["artist"])
             else:
                 self.spectrum.clear_view("Spectrogram unavailable." if job["state"] not in J.FINAL else "Staged copy removed.")
             cut = a.get("cutoff_hz")
             self.spec_note.setText(f"Energy reaches about {cut / 1000:.1f} kHz" if cut else "")
-            from .widgets import club_heading
+            from .widgets import club_badges, club_heading
             club = (a.get("club") or {}).get("checks") or []
             rows = sorted(a["checks"], key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}[c["status"]])
             rows += [None] + sorted(club, key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}[c["status"]]) if club else []
             for c in rows:
                 if c is None:
-                    head = club_heading(a, getattr(self.svc.settings, "theme", "light"))
+                    head = club_badges(a, getattr(self.svc.settings, "theme", "light"))
                     if head is not None:
                         head.setContentsMargins(0, 14, 0, 4); self.checks.addWidget(head)
                     continue

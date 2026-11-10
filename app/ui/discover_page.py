@@ -614,7 +614,9 @@ class SpinBar(QFrame):
         c = f.best
         ext = (c.extension or "").upper() + (f" {c.bitrate_kbps}" if c.bitrate_kbps and (c.extension or "").lower() == "mp3" else "")
         self.sub.setText(f"{f.release.artist}")
-        self.where.setText("  ·  ".join(x for x in (f.label, f.release.catno, ext, "ready now") if x))
+        bpm, cam = f.details.get("bpm"), f.details.get("camelot")
+        self.where.setText("  ·  ".join(x for x in (f.label, f.release.catno, ext, f"≈ {bpm} BPM" if bpm else "",
+                                                     cam or "", "ready now") if x))
         self.b_play.setEnabled(True); self.b_check.setEnabled(True); self.b_check.setText("Check this file")
         self.set_preview_state("")
         self.art.set_pixmap(None)
@@ -1049,6 +1051,7 @@ class DiscoverPage(QWidget):
         items = [(f, w) for f, w in self._spins if Path(w).exists()]
         data = [{"wav": w, "label": f.label, "track": f.track, "artist": f.release.artist, "title": f.release.title,
                  "catno": f.release.catno, "thumb": f.release.thumb, "best": asdict(f.best),
+                 "bpm": f.details.get("bpm", ""), "camelot": f.details.get("camelot", ""),
                  "alts": [asdict(c) for c in f.alts]} for f, w in items]
         try:
             (self._spin_dir() / "ready3.json").write_text(json.dumps(data), encoding="utf-8")
@@ -1072,7 +1075,8 @@ class DiscoverPage(QWidget):
                 continue
             best = Candidate(**x["best"])
             rel = Release(0, x.get("title", ""), x.get("artist", ""), None, x.get("catno", ""), "", x.get("label", ""), x.get("thumb", ""))
-            self._spins.append((Found(rel, {"cover": x.get("thumb", "")}, x.get("label", ""), x.get("track", ""), best,
+            self._spins.append((Found(rel, {"cover": x.get("thumb", ""), "bpm": x.get("bpm", ""), "camelot": x.get("camelot", "")},
+                                      x.get("label", ""), x.get("track", ""), best,
                                       [Candidate(**c) for c in x.get("alts") or []] or [best]), str(w)))
             keep.add(w.name)
         for f in d.glob("*.wav"):                                  # anything else is left over: tidy
@@ -1107,6 +1111,12 @@ class DiscoverPage(QWidget):
                     continue
                 dest = spin_dir / Path(wav).name
                 _sh.move(str(wav), dest)
+                try:                                           # BPM and key from the clip, shown on the Dig bar
+                    from ..media.musical import analyze_music
+                    m = analyze_music(dest, svc.settings.ffmpeg_path)
+                    c._music = (f"{m.bpm:.0f}" if m.bpm else "", m.camelot or "")
+                except Exception:
+                    c._music = ("", "")
                 return c, str(dest), start
             return None
 
@@ -1115,7 +1125,10 @@ class DiscoverPage(QWidget):
             if res and not isinstance(res, Exception):
                 c, wav, _start = res
                 t.best = c
-                self._spins.append((self._found_for(name, t), wav))
+                f = self._found_for(name, t)
+                bpm, cam = getattr(c, "_music", ("", ""))
+                f.details["bpm"], f.details["camelot"] = bpm, cam
+                self._spins.append((f, wav))
                 self._save_spins()
                 if self.spin_bar.found is None:
                     self.spin()

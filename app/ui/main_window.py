@@ -1194,6 +1194,16 @@ class MainWindow(QMainWindow):
                 self.signals.notice.emit("PREVIEW_FAILED " + str(e))
         self.io.start(Task(work, self.signals))
 
+    def _preview_music(self, wav: str):
+        """BPM and key from the ~20 s preview clip, before anything is downloaded (an estimate; the full check
+        measures the whole track)."""
+        def work():
+            from ..media.musical import analyze_music
+            m = analyze_music(Path(wav), self.svc.settings.ffmpeg_path)
+            bpm = f"{m.bpm:.0f}" if m.bpm else ""
+            self.signals.notice.emit(f"PREVIEW_MUSIC {bpm}\t{m.camelot or ''}\t{m.key or ''}")
+        self.io.start(Task(work, self.signals))
+
     def _preview_busy(self, message: str):
         """The copy queued us: show it as busy and try another ready copy of the same track."""
         failed = getattr(self, "_pv_cand", None)
@@ -1346,6 +1356,14 @@ class MainWindow(QMainWindow):
             Player.get().play(wav, name, f"{artist + ' · ' if artist else ''}preview from {pos // 60}:{pos % 60:02d} · not downloaded",
                               stop_after_s=21)
             self._pv_page.set_preview_state("playing", "Playing a preview from the middle. Nothing was kept; press Check this file to download it.")
+            self._preview_music(wav)
+            return
+        if message.startswith("PREVIEW_MUSIC "):
+            bpm, cam, key = (message.split(" ", 1)[1].split("\t") + ["", "", ""])[:3]
+            if self._pv_page._previewing:
+                bits = [f"≈ {bpm} BPM" if bpm else "", f"{cam} ({key})" if cam else ""]
+                self._pv_page.set_preview_state("playing", "  ·  ".join(b for b in bits if b) +
+                                                "  ·  from the preview. Check this file to download it.")
             return
         if message.startswith("UPDATE_READY "):
             self.topbar.set_update(f"Update to {message.split()[1]} · restart")

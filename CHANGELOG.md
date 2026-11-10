@@ -4,6 +4,17 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.6 (2026-11-10) — club badges, BPM/key before you download, Rekordbox export, upgrade finder
+
+- **Club-ready at a glance:** a row of badges on a track's details (CDJ ✓ · MONO ✓ · PEAK −0.3 dBTP · −8.1 LUFS ·
+  LOW END ✓ · USB ✓), coloured by result; hover one for the full sentence.
+- **Fakes marked on the spectrogram:** when the spectrum check doesn't pass, the cutoff line turns red and the missing
+  highs above it are shaded ("highs missing").
+- **BPM and key before you download:** playing a preview measures the clip and shows "≈ 124 BPM · 8A (A minor)";
+  Dig the crate shows them for every ready track.
+- **Export to Rekordbox** (Library, or a crate): rekordbox.xml with BPM, key, label, year, bitrate, hot cue A at the
+  start and B (plus a memory cue) at the drop; optionally copies the files to a USB stick and points at the copies.
+
 ## 0.9.5 (2026-11-10) — Queue: details in place
 
 - **Queue is list + details:** click a track and its details (BPM, key, spectrogram, every check, CLUB-READY,

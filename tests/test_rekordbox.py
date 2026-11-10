@@ -1,0 +1,42 @@
+"""Rekordbox export: valid rekordbox.xml with BPM, key, cues, file URLs; optional copy to a folder."""
+from __future__ import annotations
+
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+from app.core.rekordbox import RbTrack, export, location
+from tests.conftest import needs_ffmpeg
+
+
+def test_xml_has_tracks_cues_and_playlist(tmp_path):
+    f = tmp_path / "Phuture - Acid Tracks.mp3"; f.write_bytes(b"x" * 100)
+    g = tmp_path / "Fast Eddie - Yo Yo Get Funky.flac"; g.write_bytes(b"y" * 50)
+    out = export([RbTrack(f, "Acid Tracks", "Phuture", label="Trax Records", year="1987", bpm=124.6, key="Am",
+                          seconds=742, kbps=320, sample_rate=44100, drop_s=64.5),
+                  RbTrack(g, "Yo Yo Get Funky", "Fast Eddie", bpm=125.0)], tmp_path / "x.xml", "DigMart · Test", version="0.9.6")
+    root = ET.parse(out).getroot()
+    t1, t2 = root.find("COLLECTION").findall("TRACK")
+    assert t1.get("AverageBpm") == "124.60" and t1.get("Tonality") == "Am" and t1.get("Kind") == "MP3 File"
+    assert t1.get("Location").startswith("file://localhost/") and "Phuture%20-%20Acid%20Tracks.mp3" in t1.get("Location")
+    marks = [(m.get("Name"), m.get("Num"), m.get("Start")) for m in t1.findall("POSITION_MARK")]
+    assert ("Start", "0", "0.000") in marks and ("Drop", "1", "64.500") in marks and ("Drop", "-1", "64.500") in marks
+    assert [m.get("Name") for m in t2.findall("POSITION_MARK")] == ["Start"]          # no drop known: no drop cue
+    pl = root.find("PLAYLISTS/NODE/NODE")
+    assert pl.get("Name") == "DigMart · Test" and [t.get("Key") for t in pl.findall("TRACK")] == ["1", "2"]
+
+
+def test_copy_to_usb_points_at_the_copies(tmp_path):
+    f = tmp_path / "lib" / "a.mp3"; f.parent.mkdir(); f.write_bytes(b"z" * 10)
+    usb = tmp_path / "USB"
+    out = export([RbTrack(f, "A", "B")], tmp_path / "x.xml", "Friday", copy_to=usb)
+    copy = usb / "DigMart" / "Friday" / "a.mp3"
+    assert copy.exists() and f.exists()                                               # copied, original kept
+    assert ET.parse(out).getroot().find("COLLECTION/TRACK").get("Location") == location(copy)
+
+
+@needs_ffmpeg
+def test_from_library(service, fixtures):
+    from app.core.rekordbox import from_library
+    job = service.stage(fixtures["mp3_320"]); service.analyze(job["id"]); service.promote(job["id"])
+    [t] = from_library(service, [job["id"]])
+    assert t.path.exists() and t.bpm and t.kbps == 320

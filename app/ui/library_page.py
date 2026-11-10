@@ -83,6 +83,10 @@ class LibraryPage(QWidget):
         self.q = QLineEdit(); self.q.setObjectName("filter"); self.q.setPlaceholderText("Filter by title, artist, label…")
         self.q.setFixedWidth(300); self.q.textChanged.connect(self._filter)
         head.addWidget(self.q)
+        self.export_btn = button("Export to Rekordbox", "ghost", self._export_rekordbox)
+        self.export_btn.setToolTip("The tracks shown here as a Rekordbox playlist: BPM, key and a hot cue at the drop. "
+                                   "Optionally copies the files to a USB stick.")
+        head.addWidget(self.export_btn)
         self.folder_btn = button("Open downloads folder", "ghost", self._open_folder); head.addWidget(self.folder_btn)
         lay.addLayout(head)
         fl = hbox(spacing=10)
@@ -156,6 +160,7 @@ class LibraryPage(QWidget):
     def set_crate(self, crate_id: str | None, name: str = ""):
         """Show one crate (None = the whole library)."""
         self.crate_id = crate_id
+        self.crate_name = name if crate_id else None
         self._crate_members = self.svc.db.crate_jobs(crate_id) if crate_id else set()
         self.title.setText(name or "Library")
         self._key = None
@@ -497,6 +502,7 @@ class LibraryPage(QWidget):
         if a.get("spectrogram_path") and Path(a["spectrogram_path"]).exists():
             self.spectrum.show_png(a["spectrogram_path"], f.get("sample_rate_hz"), a.get("cutoff_hz"),
                                    audio=final if exists else None, duration_s=f.get("duration_s"))
+            self.spectrum.set_cutoff_bad(next((c["status"] for c in a.get("checks", []) if c["id"] == "spectrum"), "PASS") != "PASS")
             self.spectrum.set_preview(mu.get("drop_s"), None)
             self.spectrum.set_track(it.text(0), it.text(1))
         elif exists:
@@ -527,13 +533,13 @@ class LibraryPage(QWidget):
             w = self.checks_host.takeAt(0).widget()
             if w:
                 w.hide(); w.deleteLater()      # hidden now: no ghost rows painted over the new ones
-        from .widgets import club_heading
+        from .widgets import club_badges, club_heading
         club = (a.get("club") or {}).get("checks") or []
         rows = sorted(a.get("checks", []), key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}.get(c["status"], 3))
         rows += [None] + sorted(club, key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}.get(c["status"], 3)) if club else []
         for c in rows:
             if c is None:
-                head = club_heading(a, getattr(self.svc.settings, "theme", "light"))
+                head = club_badges(a, getattr(self.svc.settings, "theme", "light"))
                 if head is not None:
                     head.setContentsMargins(0, 10, 0, 2); self.checks_host.addWidget(head)
                 continue
@@ -595,6 +601,40 @@ class LibraryPage(QWidget):
         it = self._selected()
         if it:
             self.open_job.emit(it.data(0, Qt.UserRole))
+
+    def _export_rekordbox(self):
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from ..config import APP_VERSION
+        from ..core.rekordbox import export, from_library
+        ids = [rec["id"] for it, rec in getattr(self, "_items", []) if not it.isHidden()]
+        tracks = from_library(self.svc, ids)
+        if not tracks:
+            QMessageBox.information(self, "Export to Rekordbox", "No tracks to export here (their files may have moved).")
+            return
+        name = getattr(self, "crate_name", None) or "DigMart"
+        default = str(Path.home() / "Music" / f"{name} rekordbox.xml")
+        path, _ = QFileDialog.getSaveFileName(self, "Save the Rekordbox playlist", default, "rekordbox xml (*.xml)")
+        if not path:
+            return
+        usb = None
+        if QMessageBox.question(self, "Export to Rekordbox",
+                                f"Also copy the {len(tracks)} files to a USB stick or folder?\n\n"
+                                "Yes: choose where; the playlist will point at the copies. No: it points at your "
+                                "library files.") == QMessageBox.Yes:
+            usb = QFileDialog.getExistingDirectory(self, "Copy the files to…", str(Path("/Volumes") if Path("/Volumes").exists() else Path.home()))
+            if not usb:
+                return
+        try:
+            out = export(tracks, Path(path), f"DigMart · {name}", Path(usb) if usb else None, APP_VERSION)
+        except OSError as e:
+            QMessageBox.warning(self, "Export to Rekordbox", f"Couldn't export: {e}")
+            return
+        QMessageBox.information(self, "Export to Rekordbox",
+                                f"Saved {out.name} with {len(tracks)} tracks"
+                                + (f", and copied the files to {usb}" if usb else "") + ".\n\n"
+                                "In Rekordbox: Preferences → Advanced → rekordbox xml → choose this file. The playlist "
+                                "appears under “rekordbox xml” in the tree; drag it into your collection. Hot cue A is "
+                                "the start, B is the drop.")
 
     def _open_folder(self):
         d = self.svc.settings.downloads_dir()
