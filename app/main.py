@@ -4,6 +4,21 @@ from __future__ import annotations
 import sys
 
 
+LOG_MAX_BYTES = 5_000_000
+
+
+def rotate_log(path, max_bytes: int = LOG_MAX_BYTES) -> None:
+    """At start-up (only the running copy, after the lock): a log over max_bytes becomes app.log.1, replacing the
+    one before, so the log never grows without end. Reports send the tail of the current one."""
+    from pathlib import Path
+    p = Path(path)
+    try:
+        if p.stat().st_size > max_bytes:
+            p.replace(p.with_name(p.name + ".1"))
+    except OSError:
+        pass
+
+
 def _log_crashes(path) -> None:
     """Windowed builds have no console; anything uncaught goes to app.log in the data folder."""
     import traceback
@@ -80,6 +95,7 @@ def main() -> int:
     if not lock.tryLock(100):
         QMessageBox.information(None, APP_NAME, f"{APP_NAME} is already running. Look for its window (or its icon in the taskbar).")
         return 0
+    rotate_log(data_dir() / "app.log")
     from .ui.theme import load_fonts
     load_fonts()
     global _wlog

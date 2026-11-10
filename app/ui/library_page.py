@@ -536,7 +536,7 @@ class LibraryPage(QWidget):
         self.facts["Length"].setText(it.text(self.C_LEN) or "–")
         self.facts["BPM"].setText((f"{mu['bpm']:g}" + ("  · from tags" if mu.get("bpm_from_tags") else ""))
                                   if mu.get("bpm") else "–")
-        self.facts["Key"].setText((f"{mu['camelot']}  ({mu['key']})" + ("  · from tags" if mu.get("key_from_tags") else ""))
+        self.facts["Key"].setText((mu['camelot'] + (f"  ({mu['key']})" if mu.get("key") else "") + ("  · from tags" if mu.get("key_from_tags") else ""))
                                   if mu.get("camelot") else "–")
         self.facts["Added"].setText(it.text(self.C_ADDED))
 

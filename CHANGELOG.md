@@ -4,6 +4,24 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.9 (2026-11-10) — Discover without label rows: For you, Eras, Styles, every artist checked
+
+Label rows searched the network for a label's name and kept whatever was filed under it, so wrong songs got in.
+They're gone (and Label of the Day with them). Every row now checks its tracks before showing them:
+- **For you** (new, top): artists Deezer lists as related to the ones you have most of in your library, tracks
+  by those artists only. The row says why: "Because you have Fast Eddie & Moodymann".
+- **Eras** (new): the hand-picked artists for each era (Chicago jack 1984–1990, NY & Jersey garage, Detroit deep…),
+  a couple a day; tracks by those artists only, and first released inside the era's years (MusicBrainz).
+- **Styles** (14 now, five a day on Everything): each artist must be known for that music on MusicBrainz;
+  pop/rock/rap artists with a stray "dance" tag are out (checked on real data: Metallica, Taylor Swift, Dua Lipa,
+  Drake out; Kerri Chandler, Moodymann, Fast Eddie, Larry Levan, Black Coffee in). Artists MusicBrainz doesn't
+  know fall back to Deezer.
+- Genre pills now pick that genre's eras and styles. Tracks without art get a sleeve with the artist's name.
+- Lookups are remembered for weeks, so only the first load of a row is slower.
+
+Also: app.log is rotated at start-up once it's over 5 MB (the previous one kept as app.log.1); the Library
+drop-down no longer shows "10A  ()" when a tag gives a Camelot key without its name.
+
 ## 0.9.8 (2026-11-10) — club length only on Discover
 
 - **Discover shows club-length tracks only:** 4 minutes or longer, and no radio / short / intro / 7" edits by name.

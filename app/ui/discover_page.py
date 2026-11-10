@@ -437,7 +437,7 @@ class TrackTile(QFrame):
         lay = vbox(self, (0, 0, 0, 6), 2)
         self.art = CoverArt(); self.art.setFixedSize(158, 158); lay.addWidget(self.art)
         self.art._hover_play = True
-        self.art.set_sleeve(getattr(self, "_label_name", "") or t.folder.split(" - ")[0][:30], t.title, t.catno)
+        self.art.set_sleeve(t.artist[:30] or t.folder.split(" - ")[0][:30], t.title, t.catno)   # rows aren't labels now
         lay.addSpacing(6)
         tip = f"{t.artist} – {t.title}" + (f" ({t.mix})" if t.mix else "")
         for text, role in ((t.title, "covertitle"), (t.artist, "muted")):
@@ -477,9 +477,10 @@ class CrateRow(QWidget):
         self.name = name
         lay = vbox(self, (0, 0, 0, 0), 8)
         head = hbox(spacing=12)
-        if tag:
-            head.addWidget(label(tag, "tilemeta"), 0, Qt.AlignBottom)
         head.addWidget(label(name, "rowtitle"))
+        self.tag = label(tag, "tilemeta"); head.addWidget(self.tag, 0, Qt.AlignBottom)
+        if not tag:
+            self.tag.hide()                                  # after it's in the layout: shown loose it'd be its own window
         self.count = label("", "faint"); head.addWidget(self.count, 0, Qt.AlignBottom)
         head.addStretch(1)
         self.more = button("See everything  →", "link", lambda: self.see_all.emit(self.name))
@@ -560,6 +561,9 @@ class CrateRow(QWidget):
             self.note.setText("Nobody's sharing this in good quality right now. Tomorrow brings different labels.")
         self.area.horizontalScrollBar().setValue(0)
         self._arrows()
+
+    def set_tag(self, text: str):
+        self.tag.setText(text); self.tag.setVisible(bool(text))
 
     def offline(self):
         for g in getattr(self, "_ghosts", []):
@@ -783,13 +787,18 @@ class DiscoverPage(QWidget):
         self.spin_bar.spin.connect(self._dig_again)
         lay.addWidget(self.spin_bar)
 
-        self.labels_head = self._section("Labels", "")
-        self.labels_note = self.labels_head.itemAt(self.labels_head.count() - 1).widget() if self.labels_head.count() > 1 else None
-        lay.addLayout(self.labels_head)
-        self.rows_box = vbox(spacing=34); lay.addLayout(self.rows_box)
+        # For you, then Eras, then Styles. Every row is checked (app/core/rows.py): no rows from label names.
+        self.rows_box = vbox(spacing=34); lay.addLayout(self.rows_box)          # For you
+        self.eras_head_w = QWidget(); eh = vbox(self.eras_head_w, (0, 18, 0, 0), 4)
+        eh.addWidget(label("Eras", "section"))
+        eh.addWidget(label("The artists who made each era, a few a day: only their records, first released in "
+                           "those years.", "faint", wrap=True))
+        lay.addWidget(self.eras_head_w)
+        self.eras_box = vbox(spacing=34); lay.addLayout(self.eras_box)
         self.styles_head_w = QWidget(); sh = vbox(self.styles_head_w, (0, 18, 0, 0), 4)
         sh.addWidget(label("Styles", "section"))
-        sh.addWidget(label("Across every label: what people are sharing right now, by sound.", "faint", wrap=True))
+        sh.addWidget(label("What people are sharing right now, by sound. Every artist checked: known for "
+                           "this kind of music.", "faint", wrap=True))
         lay.addWidget(self.styles_head_w)
         self.styles_box = vbox(spacing=34); lay.addLayout(self.styles_box)
         self.rows: dict[str, CrateRow] = {}
@@ -832,13 +841,6 @@ class DiscoverPage(QWidget):
         self._load_rows()
 
     # ---- crate rows ------------------------------------------------------------------------------
-    def _row_labels(self) -> list[str]:
-        from ..core.eras import ESSENTIAL_LABELS, genre as find_genre
-        g = find_genre(self.era) if self.era else None
-        if g:
-            return list(dict.fromkeys(g["labels"]))
-        return [n for n, _ in ESSENTIAL_LABELS]
-
     def set_era(self, key: str):
         self.era = key
         s = self.svc.settings
@@ -850,7 +852,6 @@ class DiscoverPage(QWidget):
     def _load_rows(self):
         """Build the rows for the current era and fill each from memory or ONE search, top to bottom."""
         from datetime import date
-        from ..core.eras import label_of_the_day
         for k, b in self.era_btns.items():
             b.setChecked(k == self.era)
         connected = getattr(self.svc, "adapter", None) is not None
@@ -860,53 +861,66 @@ class DiscoverPage(QWidget):
         self._loaded_for = want
         self._close_card()
         self.track_card.setParent(self); self.track_card.hide()   # keep it alive: it lived inside a row being removed
-        for box in (self.rows_box, self.styles_box):
+        for box in (self.rows_box, self.eras_box, self.styles_box):
             while box.count():
                 w = box.takeAt(0).widget()
                 if w:
                     w.setParent(None); w.deleteLater()
         self.rows = {}
         self._tiles_by_img = {}
-        from ..core.eras import STYLES, todays_labels
+        from ..core import rows as R
+        from ..core.eras import ERAS, STYLES
         from ..core.eras import genre as find_genre
+        day = date.today().toordinal()
         g = find_genre(self.era) if self.era else None
+        eras_by_key = {e["key"]: e for e in ERAS}
         if g:
-            names = [(n, "") for n in g["labels"]] + [(st, "STYLE") for st in g["styles"]]
+            eras = [eras_by_key[k] for k in g.get("eras", []) if k in eras_by_key]
+            styles = list(g["styles"])
         else:
-            labels = todays_labels(date.today().toordinal(), 8)
-            styles = list(STYLES)
-            names = [(labels[0], "LABEL OF THE DAY")]
-            for i, lb in enumerate(labels[1:]):           # a style row after every second label
-                names.append((lb, ""))
-                if i % 2 == 1 and styles:
-                    names.append((styles.pop(0), "STYLE"))
-            names += [(st, "STYLE") for st in styles]
+            eras = R.todays(ERAS, 3, day, "eras")
+            styles = R.todays(STYLES, 5, day, "styles")
+        names = ([("For you", "FORYOU")] if not g else []) + [(e["name"], "ERA") for e in eras] + \
+                [(st, "STYLE") for st in styles]
         self._row_kind = {n: tag for n, tag in names}
-        names_only = [n for n, _ in names]
-        for name, tag in names:
-            row = CrateRow(name, "LABEL OF THE DAY" if tag == "LABEL OF THE DAY" else "")
-            row.tapped.connect(self._tap_tile); row.see_all.connect(self.find.emit)
-            row.play_tapped.connect(self._play_tile)
-            (self.styles_box if tag == "STYLE" else self.rows_box).addWidget(row); self.rows[name] = row
+        era_of = {e["name"]: e for e in eras}
+        box_for = {"FORYOU": self.rows_box, "ERA": self.eras_box, "STYLE": self.styles_box}
+        for name, kind in names:
+            row = CrateRow(name, era_of[name]["years"] if kind == "ERA" else "")
+            row.tapped.connect(self._tap_tile); row.play_tapped.connect(self._play_tile)
+            if kind == "STYLE":
+                row.see_all.connect(self.find.emit)
+            else:
+                row.more.hide()                              # "search everything" means nothing for these rows
+            if kind == "FORYOU":
+                row.note.setText("Nothing ready from artists like yours right now. Save a few tracks to the library "
+                                 "and this fills with artists like them.")
+            box_for[kind].addWidget(row); self.rows[name] = row
             if not connected:
                 row.offline()
-        self.styles_head_w.setVisible(any(tag == "STYLE" for _, tag in names))
+        self.eras_head_w.setVisible(bool(eras))
+        self.styles_head_w.setVisible(bool(styles))
         self.spin_bar.title.setText("Finding you a track…" if connected else "Connect to the network to dig the crate.")
         if not connected:
             return
-        names = names_only
         gen = self._rows_gen = next(self._tokens)
         lib = self.engine.library()
-        svc = self.svc
-        from ..core.crates import crate
-        for name in names:
-            def work(nm=name):
-                return crate(svc, nm, owns=lib.owns, cancelled=lambda: self._rows_gen != gen,
-                             kind="style" if self._row_kind.get(nm) == "STYLE" else "label")
+        svc, engine = self.svc, self.engine
+        stop = lambda: self._rows_gen != gen
+        for name, kind in names:
+            def work(nm=name, k=kind):
+                if k == "FORYOU":
+                    return R.for_you_row(svc, day, owns=lib.owns, cancelled=stop)
+                if k == "ERA":
+                    return R.era_row(svc, engine, era_of[nm], day, owns=lib.owns, cancelled=stop)
+                return R.style_row(svc, engine, nm, owns=lib.owns, cancelled=stop)
 
-            def then(res, nm=name):
+            def then(res, nm=name, k=kind):
                 if self._rows_gen != gen or nm not in self.rows:
                     return
+                if k == "FORYOU" and isinstance(res, tuple):
+                    res, because = res
+                    self.rows[nm].set_tag(("BECAUSE YOU HAVE " + " & ".join(because).upper()) if because else "")
                 if isinstance(res, Exception) or res is None:
                     self.rows[nm].fill([]); return
                 self.rows[nm].fill(res)
@@ -933,7 +947,7 @@ class DiscoverPage(QWidget):
 
         if all(t.thumb for t in tracks):
             paint(); return
-        is_style = self._row_kind.get(name) == "STYLE"
+        is_style = self._row_kind.get(name) != "LABEL"          # no label rows any more: covers come from Deezer
 
         def work():
             from ..media.metadata import deezer_cover
@@ -1064,7 +1078,7 @@ class DiscoverPage(QWidget):
                  "bpm": f.details.get("bpm", ""), "camelot": f.details.get("camelot", ""),
                  "alts": [asdict(c) for c in f.alts]} for f, w in items]
         try:
-            (self._spin_dir() / "ready4.json").write_text(json.dumps(data), encoding="utf-8")
+            (self._spin_dir() / "ready5.json").write_text(json.dumps(data), encoding="utf-8")
         except OSError:
             pass
 
@@ -1076,7 +1090,7 @@ class DiscoverPage(QWidget):
         d = self._spin_dir()
         keep = set()
         try:
-            data = json.loads((d / "ready4.json").read_text(encoding="utf-8"))
+            data = json.loads((d / "ready5.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = []
         for x in data:

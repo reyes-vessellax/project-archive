@@ -158,7 +158,8 @@ LABEL_POOL = [
     "West End Records", "Salsoul Records", "Prelude Records", "Razor-N-Tape",
 ]
 
-STYLES = ["Deep house", "Acid house", "Chicago house", "Garage house", "Disco edit", "Tech house"]
+STYLES = ["Deep house", "Chicago house", "Acid house", "Garage house", "Detroit house", "Soulful house", "Disco edit",
+          "Tech house", "Ghetto house", "Lo-fi house", "French house", "Minimal house", "Afro house", "Italo disco"]
 
 
 def todays_labels(day_ordinal: int, n: int = 8) -> list[str]:
@@ -169,37 +170,38 @@ def todays_labels(day_ordinal: int, n: int = 8) -> list[str]:
     return pool[:n]
 
 
-# Discover's genre pills: each fills the page with its labels' rows and its style rows (phrases searched as written).
+# Discover's genre pills: each fills the page with its era crates and its style rows. "labels" stays for
+# reference only; Discover no longer shows label rows (they let in whatever someone filed under the name).
 GENRES = [
-    {"key": "deep", "name": "Deep", "dot": "#2f6fed", "styles": ["Deep house"],
+    {"key": "deep", "eras": ["deep90s", "deep00s"], "name": "Deep", "dot": "#2f6fed", "styles": ["Deep house"],
      "labels": ["Prescription", "Guidance Recordings", "Mahogani Music", "Freerange Records", "Sound Signature",
                 "Moods & Grooves", "Large Records"]},
-    {"key": "chicago", "name": "Chicago", "dot": "#dc143c", "styles": ["Chicago house", "Jackin house"],
+    {"key": "chicago", "eras": ["chicago"], "name": "Chicago", "dot": "#dc143c", "styles": ["Chicago house", "Jackin house"],
      "labels": ["Trax Records", "DJ International Records", "Dance Mania", "Relief Records", "Cajual Records", "Chiwax"]},
-    {"key": "detroit", "name": "Detroit", "dot": "#7a7a7a", "styles": ["Detroit house"],
+    {"key": "detroit", "eras": ["detroit"], "name": "Detroit", "dot": "#7a7a7a", "styles": ["Detroit house"],
      "labels": ["KMS", "Transmat", "Planet E", "KDJ", "Metroplex", "Underground Resistance", "FXHE Records"]},
-    {"key": "garage", "name": "Garage & NY", "dot": "#9b51e0", "styles": ["Garage house"],
+    {"key": "garage", "eras": ["nyc"], "name": "Garage & NY", "dot": "#9b51e0", "styles": ["Garage house"],
      "labels": ["Nu Groove Records", "Strictly Rhythm", "King Street Sounds", "Nervous Records", "Henry Street Music",
                 "Movin' Records"]},
-    {"key": "soulful", "name": "Soulful", "dot": "#f2994a", "styles": ["Soulful house"],
+    {"key": "soulful", "eras": ["deep00s"], "name": "Soulful", "dot": "#f2994a", "styles": ["Soulful house"],
      "labels": ["Defected", "King Street Sounds", "Spiritual Life Music", "Ibadan Records", "Glitterbox Recordings"]},
-    {"key": "disco", "name": "Disco & edits", "dot": "#ff4fa3", "styles": ["Disco edit", "Nu disco"],
+    {"key": "disco", "eras": ["disco"], "name": "Disco & edits", "dot": "#ff4fa3", "styles": ["Disco edit", "Nu disco"],
      "labels": ["Salsoul Records", "West End Records", "Prelude Records", "Glitterbox Recordings", "Razor-N-Tape"]},
-    {"key": "acid", "name": "Acid", "dot": "#b5e61d", "styles": ["Acid house"],
+    {"key": "acid", "eras": ["acid"], "name": "Acid", "dot": "#b5e61d", "styles": ["Acid house"],
      "labels": ["Trax Records", "Djax-Up-Beats", "Warehouse Records"]},
-    {"key": "ghetto", "name": "Ghetto & juke", "dot": "#ff6b2c", "styles": ["Ghetto house", "Juke"],
+    {"key": "ghetto", "eras": ["ghetto"], "name": "Ghetto & juke", "dot": "#ff6b2c", "styles": ["Ghetto house", "Juke"],
      "labels": ["Dance Mania", "Relief Records"]},
-    {"key": "tech", "name": "Tech house", "dot": "#00b3a4", "styles": ["Tech house"],
+    {"key": "tech", "eras": ["tech"], "name": "Tech house", "dot": "#00b3a4", "styles": ["Tech house"],
      "labels": ["Dirtybird", "Hot Creations", "Toolroom", "Solid Grooves Records", "Repopulate Mars", "Snatch! Records"]},
-    {"key": "lofi", "name": "Lo-fi", "dot": "#a1887f", "styles": ["Lo-fi house", "Outsider house"],
+    {"key": "lofi", "eras": ["lofi"], "name": "Lo-fi", "dot": "#a1887f", "styles": ["Lo-fi house", "Outsider house"],
      "labels": ["L.I.E.S.", "Lobster Theremin", "Shall Not Fade", "Rhythm Section International", "Local Talk"]},
-    {"key": "french", "name": "French filter", "dot": "#3b82f6", "styles": ["French house", "Filter house"],
+    {"key": "french", "eras": ["french"], "name": "French filter", "dot": "#3b82f6", "styles": ["French house", "Filter house"],
      "labels": ["Roulé", "Crydamoure", "Versatile Records", "Yellow Productions"]},
-    {"key": "minimal", "name": "Minimal", "dot": "#9e9e9e", "styles": ["Minimal house", "Microhouse"],
+    {"key": "minimal", "eras": [], "name": "Minimal", "dot": "#9e9e9e", "styles": ["Minimal house", "Microhouse"],
      "labels": ["Perlon", "Mojuba"]},
-    {"key": "afro", "name": "Afro house", "dot": "#f4b400", "styles": ["Afro house"], "labels": []},
-    {"key": "italo", "name": "Italo & cosmic", "dot": "#e040fb", "styles": ["Italo disco", "Cosmic disco"], "labels": []},
-    {"key": "balearic", "name": "Balearic", "dot": "#26c6da", "styles": ["Balearic"], "labels": ["Running Back"]},
+    {"key": "afro", "eras": [], "name": "Afro house", "dot": "#f4b400", "styles": ["Afro house"], "labels": []},
+    {"key": "italo", "eras": ["disco"], "name": "Italo & cosmic", "dot": "#e040fb", "styles": ["Italo disco", "Cosmic disco"], "labels": []},
+    {"key": "balearic", "eras": [], "name": "Balearic", "dot": "#26c6da", "styles": ["Balearic"], "labels": ["Running Back"]},
 ]
 
 
