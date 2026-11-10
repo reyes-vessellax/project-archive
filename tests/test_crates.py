@@ -121,3 +121,12 @@ def test_club_length_only():
     assert abs(length_s(wav_unknown) - 425) < 5 and club_length(wav_unknown) and not club_length(tiny_wav)
     out = C.build([long_mp3, short, radio])
     assert [t.best.user for t in out] == ["a"]
+
+
+def test_radio_in_a_name_is_not_a_radio_edit():
+    keep = Candidate("soulseek", "u", "p/Radio Slave - Koma Koma.flac", 60_000_000, extension="flac",
+                     display_name="Radio Slave - Koma Koma.flac", artist="Radio Slave", title="Koma Koma")
+    assert C.club_length(keep)
+    for name in ("Track (Radio Edit)", "Track (Radio)", "Track [radio mix]"):
+        c = Candidate("soulseek", "u", f"p/{name}.flac", 60_000_000, extension="flac", display_name=name)
+        assert not C.club_length(c), name

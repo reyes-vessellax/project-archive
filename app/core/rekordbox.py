@@ -49,10 +49,14 @@ def export(tracks: list[RbTrack], xml_path: Path, playlist: str, copy_to: Path |
     if copy_to is not None:
         dest = Path(copy_to) / "DigMart" / _safe(playlist)
         dest.mkdir(parents=True, exist_ok=True)
-        copied = []
+        copied, used = [], set()
         for t in tracks:
             target = dest / t.path.name
-            if not target.exists() or target.stat().st_size != t.path.stat().st_size:
+            n = 2
+            while target.name.lower() in used or (target.exists() and target.stat().st_size != t.path.stat().st_size):
+                target = dest / f"{t.path.stem} ({n}){t.path.suffix}"; n += 1    # same name, different file: keep both
+            used.add(target.name.lower())
+            if not target.exists():
                 shutil.copy2(t.path, target)
             copied.append(RbTrack(**{**t.__dict__, "path": target}))
         tracks = copied

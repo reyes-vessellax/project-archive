@@ -66,8 +66,8 @@ def weak_tracks(svc) -> list[Weak]:
         club = a.get("club") or {}
         if club and not club.get("error") and not club.get("ready"):
             reasons.append("not club-ready")
-        if not reasons:
-            continue
+        if not reasons or rank >= 3:
+            continue                               # nothing to fix, or already lossless and sound: no copy beats it
         pa, pt, pm = parse_track(job.get("original_name") or "")
         have = ext.upper() + (f" {kbps}" if ext == "mp3" and kbps else "")
         out.append(Weak(job["id"], me.get("artist") or pa, me.get("title") or pt, me.get("mix") or pm, have,

@@ -48,11 +48,27 @@ class Task(QRunnable):
             self.fn()
         except (Rejected, ActionBlocked, ToolMissing, ConnectorError) as e:
             _applog(f"task failed: {type(e).__name__}: {e}")
-            self.signals.failed.emit("", str(e))
+            self._emit_failed(str(e))
         except Exception as e:                                      # keep the app alive, report it
+            if _after_shutdown(e):
+                return                                              # the app closed under a running task: nothing to report
             import traceback
             _applog("task crashed: " + traceback.format_exc())
-            self.signals.failed.emit("", f"Unexpected error: {e}")
+            self._emit_failed(f"Unexpected error: {e}")
+
+    def _emit_failed(self, msg: str):
+        try:
+            self.signals.failed.emit("", msg)
+        except RuntimeError:                                        # the window that would show it is gone
+            pass
+
+
+def _after_shutdown(e: Exception) -> bool:
+    """A background task outliving the app: the database closed or the receiving widget deleted mid-task."""
+    import sqlite3
+    msg = str(e)
+    return (isinstance(e, sqlite3.ProgrammingError) and "closed database" in msg) or \
+        (isinstance(e, RuntimeError) and ("Signal source has been deleted" in msg or "already deleted" in msg))
 
 
 # ------------------------------------------------------------------ small helpers
@@ -874,8 +890,10 @@ class SpectrumView(QLabel):
             if not pl._ensure():                 # no audio device: play buttons do nothing rather than crash
                 return False
             self._player = pl.media
-            self._player.positionChanged.connect(lambda _: self.update() if self._mine() else None)
-            self._player.durationChanged.connect(lambda ms: self._got_duration(ms) if self._mine() else None)
+            # bound methods, not lambdas: Qt drops these connections when this view is deleted (a lambda kept
+            # firing at the dead widget many times a second - thousands of errors in the log)
+            self._player.positionChanged.connect(self._on_position)
+            self._player.durationChanged.connect(self._on_duration)
             pl.changed.connect(self._state_changed)
             return True
         except Exception:
@@ -884,6 +902,14 @@ class SpectrumView(QLabel):
 
     def _mine(self) -> bool:
         return bool(self._audio) and self._player is not None and self._player.source().toLocalFile() == self._audio
+
+    def _on_position(self, _ms: int):
+        if self._mine():
+            self.update()
+
+    def _on_duration(self, ms: int):
+        if self._mine():
+            self._got_duration(ms)
 
     def _got_duration(self, ms: int):
         if ms > 0:

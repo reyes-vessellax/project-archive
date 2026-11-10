@@ -12,6 +12,15 @@ one line changes and this file gets a note.
 - **Search:** a new "4 min+" filter chip does the same there (on by default in Discover's own search).
 - Rows and ready tracks remembered from before are discarded so nothing short shows.
 
+Audit fixes (from a full check: the error log, a code scan, every button clicked):
+- **The big one:** after a Library track's panel was rebuilt while it played, the old spectrum view stayed hooked
+  to the player and errored on every position tick (over 14,000 errors in one log). Fixed; the panel disconnects
+  when it's gone.
+- Closing the app while a background job was running no longer logs "closed database" / "deleted" crashes.
+- Discover no longer drops artists with "Radio" in the name (Radio Slave) as radio edits.
+- Upgrade finder skips tracks already lossless (no copy can beat them), saving searches.
+- Rekordbox USB export: two tracks with the same file name from different folders no longer overwrite each other.
+
 ## 0.9.7 (2026-11-10) — genre pills; play after switching fixed
 
 - **Genres instead of eras on Discover:** Everything, Deep, Chicago, Detroit, Garage & NY, Soulful, Disco & edits,

@@ -40,3 +40,17 @@ def test_from_library(service, fixtures):
     job = service.stage(fixtures["mp3_320"]); service.analyze(job["id"]); service.promote(job["id"])
     [t] = from_library(service, [job["id"]])
     assert t.path.exists() and t.bpm and t.kbps == 320
+
+
+def test_same_file_name_from_two_folders_keeps_both_on_usb(tmp_path):
+    (tmp_path / "a").mkdir(); (tmp_path / "b").mkdir()
+    f = tmp_path / "a" / "track.mp3"; f.write_bytes(b"1" * 100)
+    g = tmp_path / "b" / "track.mp3"; g.write_bytes(b"2" * 200)
+    out = export([RbTrack(f, "One", "X"), RbTrack(g, "Two", "Y")], tmp_path / "x.xml", "Friday", copy_to=tmp_path / "usb")
+    locs = [t.get("Location") for t in ET.parse(out).getroot().find("COLLECTION")]
+    assert len(set(locs)) == 2
+    copies = sorted((tmp_path / "usb" / "DigMart" / "Friday").iterdir())
+    assert sorted(p.stat().st_size for p in copies) == [100, 200]
+    # exporting again reuses the copies instead of piling up more
+    export([RbTrack(f, "One", "X"), RbTrack(g, "Two", "Y")], tmp_path / "x.xml", "Friday", copy_to=tmp_path / "usb")
+    assert len(list((tmp_path / "usb" / "DigMart" / "Friday").iterdir())) == 2

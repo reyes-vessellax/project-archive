@@ -42,7 +42,8 @@ NOT_DANCE = re.compile(r"\b(metal|metalcore|deathcore|thrash|grunge|punk rock|po
 DANCE_CUE = re.compile(r"\b(house|techno|disco|garage|acid|club|dance|electro\w*|edits?|remix\w*|rmx|dub|"
                        r"12[\"']?\s?(inch|in)|12in|maxi|white label|dj|jack\w*|minimal)\b", re.I)
 MIN_SECONDS = 240        # club length: DJs need the intro and outro; radio edits and short versions never make it
-SHORT_VERSION = re.compile(r"\b(radio|short|single|intro|7\"|7 inch|tv)\s*(edit|mix|version|cut)\b|\bradio\b", re.I)
+SHORT_VERSION = re.compile(r"\b(radio|short|single|intro|7\"|7 inch|tv)\s*(edit|mix|version|cut)\b|[(\[]\s*radio\s*[)\]]", re.I)
+# (a bare "radio" isn't enough: Radio Slave, Radio 4, "Pirate Radio" are all club records)
 
 
 def length_s(c: Candidate) -> float | None:
