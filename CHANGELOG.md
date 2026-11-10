@@ -4,6 +4,45 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.20 (2026-11-10) — one version for both of us
+
+Reyes's 0.9.19 joined with JR's work of the same day.
+
+- **Discover scrolls smoothly:** scrolling with the pointer over a row of records no longer makes the page jump
+  forward and back, and covers are scaled once instead of on every repaint.
+- **Queue rows in a small window:** a downloading row's progress bar and note shrink, and the note steps aside,
+  before anything lands on the title. The "downloading · checking" note beside "Tracks" clips instead of overlapping.
+- **Connection panel** (Settings → Advanced): shows whether other people can reach you, with test, router page,
+  Windows Firewall and port controls; a second way to open the port (NAT-PMP) when the router doesn't answer UPnP.
+- **Search:** every column can be dragged to size; an empty search says no results instead of "search was cancelled".
+- **Discover is filled during start-up**, so it is ready when opened. BPM/key guesses removed from previews.
+- **Tidier text** on Discover, Search and the Queue panel.
+- **New setting:** "Add cover art to the files I save" (Settings → Library). Off = no artwork written into the file;
+  covers still show everywhere in the app.
+- **Engine credit:** the download engine is slskd (AGPL-3.0), named in the README and the shipped README.txt; an
+  engine-only update bumps only the last version number (see `docs/ENGINE_UPDATES.md`).
+
+## 0.9.19 (2026-11-10) — the Queue panel fits, quietly
+
+- **No scrolling in the Queue's track panel:** everything about a track fits at a normal window size (checked on
+  every track in the library). The BPM / Key / Length / Format boxes are smaller; every check is one line with
+  what it found (hover for the full text); the club checks are the CLUB badges (hover for detail). Long titles get
+  a smaller font instead of pushing things down.
+- **No more "from a Soulseek user"** on the panel.
+- **Loading happens in the background:** no download percentage, "Downloading into quarantine…", "Being checked…"
+  or moving dots in the panel, no engine status ("InProgress") on queue rows, and no "checking · downloading"
+  counts in the sidebar. A row's DOWN / CHECK tag says enough.
+- The CLUB badges are shorter (CLUB ✓ · CDJ · MONO · PEAK · LUFS · BASS · USB) so they fit on one line.
+- **Sleeves carry the DigMart mark:** a track without cover art gets a sleeve with the starburst-and-smiley (no
+  wordmark) inside the centre circle, like a record sleeve, in six colour versions of the brand's own mark file
+  (crimson, yellow, black, white), so the sleeves don't all look the same. The artist's name (two lines at most)
+  stays above the circle and the title below it.
+- **Dark mode sleeves:** in dark mode the no-cover sleeves are soft black, charcoal, crimson and deep red (no cream
+  or yellow glaring on the black page), each with the mark colourway made for it.
+- **Every page has The Dig.'s masthead:** Queue, Library, Wishlist and Batch get the same big bold title and thick
+  rule as Discover, so the app looks like one product. The Wishlist sits at the top of its page instead of floating
+  in the middle.
+
 ## 0.9.18 (2026-11-10) — no repeats, more artists, rows remembered again
 
 - **Each song once:** a track shows in one row only (For you, an era or a style), and a row never shows the same song

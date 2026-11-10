@@ -223,9 +223,10 @@ class BatchPage(QWidget):
         root = vbox(self, (36, 28, 36, 24), 18)
 
         head = hbox(spacing=12)
-        head.addWidget(label("Batch", "h1"), 0, Qt.AlignBottom)
+        head.addWidget(label("Batch", "pagetitle"), 0, Qt.AlignBottom)
         head.addStretch(1)
         root.addLayout(head)
+        r_ = QFrame(); r_.setObjectName("mastRule"); r_.setFixedHeight(3); root.addWidget(r_)   # the masthead rule, like The Dig.
 
         # add a playlist: link or list, or a folder; or drag a link onto the window
         add = QFrame(); add.setObjectName("dropzone")

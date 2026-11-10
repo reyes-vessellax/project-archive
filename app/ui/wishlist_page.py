@@ -128,10 +128,11 @@ class WishlistPage(QWidget):
         self.setObjectName("page")
         root = vbox(self, (40, 28, 40, 28), 16)
         head = hbox(spacing=14)
-        head.addWidget(label("Wishlist", "h1"), 0, Qt.AlignBottom)
+        head.addWidget(label("Wishlist", "pagetitle"), 0, Qt.AlignBottom)
         head.addStretch(1)
         self.count = label("", "faint"); head.addWidget(self.count, 0, Qt.AlignBottom)
         root.addLayout(head)
+        r_ = QFrame(); r_.setObjectName("mastRule"); r_.setFixedHeight(3); root.addWidget(r_)   # the masthead rule, like The Dig.
         self.form = WishForm("Watch for a track. Fill in what you know.", cancel=False)
         self.form.submitted.connect(self._add)
         root.addWidget(self.form)
@@ -145,6 +146,7 @@ class WishlistPage(QWidget):
         self.empty = label("Nothing on the wishlist. When a search comes up empty, press “Watch this search” "
                            "and it will be asked for again every half hour.", "muted", wrap=True)
         root.addWidget(self.empty)
+        root.addStretch(0)
 
     def _add(self, artist: str, title: str, mix: str):
         self.add.emit(artist, title, mix); self.form.clear()

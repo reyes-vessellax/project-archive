@@ -131,6 +131,7 @@ QFrame#display {{ background: {c['disp_bg']}; border: 1px solid {c['disp_line']}
 QFrame#display QLabel {{ background: transparent; }}
 QLabel#disptag {{ font-family: {mono}; font-size: 10px; letter-spacing: 2px; color: {c['disp_label']}; }}
 QLabel#tile, QLabel#tilekey {{ font-family: {mono}; font-size: 28px; font-weight: 500; color: {c['disp_text']}; }}
+QLabel#tilesm {{ font-family: {mono}; font-size: 18px; font-weight: 500; color: {c['disp_text']}; }}
 QLabel#dispsub {{ font-family: {mono}; font-size: 11px; color: {c['disp_sub']}; }}
 QLabel#monotext {{ font-family: {mono}; font-size: 13px; }}
 QLabel#steplight {{ font-size: 18px; font-weight: 800; color: {c['faint']}; }}
@@ -243,6 +244,7 @@ QFrame#spinbar {{ background: {c['panel']}; border: 1px solid {c['line']}; borde
 QLabel#spinbartitle {{ font-family: {display}; font-size: 18px; font-weight: 700; }}
 QLabel#rowtitle {{ font-family: {display}; font-size: 20px; font-weight: 700; }}
 /* Discover, editorial: masthead, the Dig the crate lead panel, section heads, era panels */
+QLabel#pagetitle {{ font-family: {display}; font-size: 40px; font-weight: 800; letter-spacing: -1px; }}
 QLabel#mast {{ font-family: {display}; font-size: 44px; font-weight: 800; letter-spacing: -1px; }}
 QFrame#mastRule {{ background: {c['text']}; border: none; }}
 QFrame#secRule {{ background: {c['text']}; border: none; }}

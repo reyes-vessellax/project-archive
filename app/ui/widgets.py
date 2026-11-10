@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QEvent, QSize, QPropertyAnimation, QRectF, QTimer, QUrl, QObject, QPoint, QRunnable, Qt, Signal
 from PySide6.QtGui import QPainterPath, QPen, QColor, QFont, QPainter, QPixmap
-from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QLayout, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QVBoxLayout, QWidget)
 
 from ..adapters.base import ConnectorError
@@ -521,6 +521,7 @@ class QueueRow(QWidget):
         self.setCursor(Qt.PointingHandCursor)
         self.setMinimumHeight(48)
         lay = hbox(self, (4, 6, 12, 6), 12)
+        lay.setSizeConstraint(QLayout.SetNoConstraint)       # see minimumSizeHint
         # × first, on the left, where the hand already is; a blank spacer keeps rows aligned when it's hidden
         # NOTE: every child is added to the layout BEFORE any setVisible(): a parentless widget that is shown
         # becomes its own top-level window for a frame — the "flashing dialog boxes" of 0.3/0.4.
@@ -548,9 +549,35 @@ class QueueRow(QWidget):
         self.bar.setVisible(pct is not None and pct < 100)
         self.meta = label(meta, "mono"); self.meta.setFixedWidth(150); self.meta.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lay.addWidget(self.meta)
-        self.meta.setVisible(bool(meta))                     # nothing to say: the title gets the room
+        self.meta.setVisible(bool(meta)); self.meta.setToolTip(meta)   # nothing to say: the title gets the room
         for w in (self.tag, self.title, self.artist, self.meta, self.bar, self.x_space):
             w.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+    FULL = 150                                               # the bar's and the note's width when there is room
+
+    def _fit(self) -> None:
+        """Share a narrow row: the title keeps its room, the bar shrinks, and the note goes before anything overlaps."""
+        room = self.width() - 250                            # what's left after ×, the tag and a readable title
+        note = bool(self.meta.text())
+        if note and room >= 2 * self.FULL:
+            bar_w, meta_w = self.FULL, self.FULL
+        elif note and room >= 170:
+            bar_w = 70; meta_w = min(self.FULL, room - bar_w - 12)
+        else:
+            bar_w, meta_w = max(40, min(self.FULL, room)), 0
+        if self.bar.width() != bar_w:
+            self.bar.setFixedWidth(bar_w)
+        if meta_w and self.meta.width() != meta_w:
+            self.meta.setFixedWidth(meta_w)
+        if self.meta.isVisibleTo(self) != bool(meta_w):
+            self.meta.setVisible(bool(meta_w))
+
+    def minimumSizeHint(self):                               # the row may get narrow: _fit shares what there is
+        return QSize(240, 48)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._fit()
 
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton and not self.x.geometry().contains(e.pos()):
@@ -571,9 +598,8 @@ class QueueRow(QWidget):
         self.bar.setValue(int(pct) if pct is not None else 0)
         self.bar.setVisible(pct is not None and pct < 100)
         if self.meta.text() != meta:
-            self.meta.setText(meta)
-        if self.meta.isVisibleTo(self) != bool(meta):
-            self.meta.setVisible(bool(meta))
+            self.meta.setText(meta); self.meta.setToolTip(meta)
+        self._fit()
         if self.x.isVisible() != removable:
             self.x.setVisible(removable); self.x_space.setVisible(not removable)
 
@@ -1170,11 +1196,13 @@ def club_badges(a: dict, theme: str):
     c = T.colours(theme)
     by_id = {x["id"]: x for x in club.get("checks") or []}
     names = [("club_load", "CDJ"), ("club_mono", "MONO"), ("club_clip", "PEAK"), ("club_loud", "LUFS"),
-             ("club_low", "LOW END"), ("club_usb", "USB")]
-    w = QWidget(); lay = hbox(w, (0, 4, 0, 4), 6)
+             ("club_low", "BASS"), ("club_usb", "USB")]
+    w = QWidget(); lay = hbox(w, (0, 4, 0, 4), 5)
     head = label("CLUB-READY ✓" if club.get("ready") else "NOT CLUB-READY ✗", "clubhead")
+    head.setToolTip("Club-ready: loads on every CDJ, mono-safe, not clipping, sensible loudness, real low end")
+    head.setText("CLUB ✓" if club.get("ready") else "CLUB ✗")
     head.setStyleSheet(f"color: {c['pass_'] if club.get('ready') else c['fail']};")
-    lay.addWidget(head); lay.addSpacing(6)
+    lay.addWidget(head); lay.addSpacing(2)
     for cid, name in names:
         x = by_id.get(cid)
         if not x:
@@ -1182,9 +1210,9 @@ def club_badges(a: dict, theme: str):
         col = {"PASS": c["pass_"], "WARN": c["warn"], "FAIL": c["fail"]}.get(x["status"], c["muted"])
         text = name + " " + {"PASS": "✓", "WARN": "!", "FAIL": "✗"}.get(x["status"], "")
         if cid == "club_clip" and club.get("true_peak") is not None:
-            text = f"PEAK {club['true_peak']:+.1f} dBTP"
+            text = f"PEAK {club['true_peak']:+.1f}"
         if cid == "club_loud" and club.get("lufs") is not None:
-            text = f"{club['lufs']:.1f} LUFS"
+            text = f"{club['lufs']:.0f} LUFS"
         b = label(text, "clubbadge")
         h = col.lstrip("#")
         rgba = f"rgba({int(h[0:2], 16)}, {int(h[2:4], 16)}, {int(h[4:6], 16)}, 0.16)" if len(h) == 6 else "transparent"

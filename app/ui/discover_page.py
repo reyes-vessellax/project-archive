@@ -168,6 +168,25 @@ class Tile(QFrame):
 
 
 # Sleeve colours for records without art: the brand's black, crimson, yellow and cream, picked by label name
+_MARKS: dict[int, QPixmap] = {}
+
+
+def _sleeve_mark(i: int):
+    """The DigMart mark (starburst + smiley, no wordmark) recoloured for sleeve i: the brand's own file, colours only."""
+    if i not in _MARKS:
+        p = Path(__file__).parent / "brand_assets" / f"digmart-mark-sleeve{i + 1}.png"
+        _MARKS[i] = QPixmap(str(p)) if p.exists() else QPixmap()
+    return _MARKS[i]
+
+
+SLEEVE_THEME = "light"          # set by the window when the theme changes
+# Dark mode: no cream or yellow sleeves glaring on a black page. (bg, text, sub, which mark colourway)
+_SLEEVES_DARK = [("#1c1c1c", "#ffd700", "#8a857a", 0),   # was black   -> soft black, yellow name
+                 ("#dc143c", "#ffffff", "#ffd1d9", 1),   # was crimson -> crimson
+                 ("#2a2a2a", "#ffd700", "#9a9a9a", 4),   # was yellow  -> charcoal, yellow name
+                 ("#2b2620", "#f5f3ee", "#9a948a", 0),   # was cream   -> warm charcoal
+                 ("#232323", "#ffffff", "#9a9a9a", 4),   # was charcoal-> charcoal
+                 ("#a50f2d", "#ffd700", "#f3b7c2", 5)]   # was deep red-> deep red
 _SLEEVES = [("#141414", "#ffd700", "#8a857a"), ("#dc143c", "#ffffff", "#ffd1d9"), ("#ffd700", "#141414", "#6b5a00"),
             ("#efe9dc", "#141414", "#8a857a"), ("#2a2a2a", "#ffffff", "#9a9a9a"), ("#a50f2d", "#ffd700", "#f3b7c2")]
 
@@ -264,27 +283,43 @@ class CoverArt(QWidget):
         import zlib
         from PySide6.QtGui import QFont
         lab, title, cat = self._sleeve
-        bg, fg, sub = _SLEEVES[zlib.crc32(f"{lab}|{cat or title}".lower().encode()) % len(_SLEEVES)]
+        idx = zlib.crc32(f"{lab}|{cat or title}".lower().encode()) % len(_SLEEVES)
+        if SLEEVE_THEME == "dark":
+            bg, fg, sub, idx = _SLEEVES_DARK[idx % len(_SLEEVES_DARK)]
+        else:
+            bg, fg, sub = _SLEEVES[idx]
         p.fillRect(r, QColor(bg))
-        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.Antialiasing); p.setRenderHint(QPainter.SmoothPixmapTransform)
         side = r.height()
         c = r.center()
-        p.setPen(Qt.NoPen); p.setBrush(QColor(0, 0, 0, 40))                     # the centre hole of a company sleeve
-        p.drawEllipse(c, int(side * 0.19), int(side * 0.19))
+        # The centre circle of a record sleeve, dead centre of the square, with our mark inside it: the smiley's own
+        # centre on the circle's centre (it sits at 49.3% across, 69% down the mark file, not the image's middle) and
+        # scaled so the whole starburst stays inside the circle. The name ends above it, the title starts below it.
+        rad = int(side * 0.19)
+        cx, cy = r.left() + side // 2, r.top() + side // 2
+        dark_bg = QColor(bg).lightness() < 128
+        p.setPen(Qt.NoPen); p.setBrush(QColor(255, 255, 255, 34) if dark_bg else QColor(0, 0, 0, 30))
+        p.drawEllipse(QPoint(cx, cy), rad, rad)
+        mark = _sleeve_mark(idx)                                # coloured for this sleeve
+        if not mark.isNull():
+            w = int(rad * 0.80 / 0.5105)                       # 0.5105: the burst reach from the face (per mark width); 0.80 leaves a margin
+            h = int(w * mark.height() / max(1, mark.width()))
+            p.drawPixmap(QRect(cx - int(w * 0.4931), cy - int(h * 0.6904), w, h), mark)
         pad = int(side * 0.08)
-        f = QFont("Poppins"); f.setBold(True); f.setPixelSize(max(10, int(side * 0.115)))
+        f = QFont("Poppins"); f.setBold(True); f.setPixelSize(max(9, int(side * 0.08)))
         p.setFont(f); p.setPen(QColor(fg))
-        p.drawText(QRect(r.left() + pad, r.top() + pad, r.width() - 2 * pad, int(side * 0.36)),
+        name_h = (cy - rad) - (r.top() + pad) - int(side * 0.03)                  # stops short of the circle
+        name_h = min(name_h, p.fontMetrics().lineSpacing() * 2)                  # two lines at most
+        p.drawText(QRect(r.left() + pad, r.top() + pad, r.width() - 2 * pad, name_h),
                    int(Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap), (lab or "").upper()[:40])
-        f2 = QFont("Open Sans"); f2.setPixelSize(max(9, int(side * 0.075)))
+        f2 = QFont("Open Sans"); f2.setPixelSize(max(9, int(side * 0.072)))
         p.setFont(f2)
-        tr = QRect(r.left() + pad, int(r.bottom() - pad - side * 0.22), r.width() - 2 * pad, int(side * 0.22))
-        p.drawText(tr, int(Qt.AlignLeft | Qt.AlignBottom | Qt.TextWordWrap),
-                   p.fontMetrics().elidedText(title, Qt.ElideRight, (r.width() - 2 * pad) * 2))
-        if cat:
-            f3 = QFont("IBM Plex Mono"); f3.setPixelSize(max(8, int(side * 0.065))); p.setFont(f3); p.setPen(QColor(sub))
-            p.drawText(QRect(r.left() + pad, r.top() + int(side * 0.42), r.width() - 2 * pad, int(side * 0.1)),
-                       int(Qt.AlignLeft), cat)
+        circle_bottom = cy + rad
+        tr = QRect(r.left() + pad, circle_bottom + int(side * 0.03), r.width() - 2 * pad,
+                   r.bottom() - pad - circle_bottom - int(side * 0.03))
+        p.drawText(tr, int(Qt.AlignLeft | Qt.AlignBottom),
+                   p.fontMetrics().elidedText(title, Qt.ElideRight, r.width() - 2 * pad))   # one line, below the circle
+        # (the catalogue number would sit where the circle is: it's on the track card instead)
 
 
 class CoverCard(QFrame):

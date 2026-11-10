@@ -253,6 +253,11 @@ class MainWindow(QMainWindow):
             from .widgets import KeepColourDelegate
             KeepColourDelegate.keep_colours = bool(T.colours(theme).get("keep_sel_colours", True))
             QApplication.instance().setStyleSheet(T.stylesheet(theme))
+            from . import discover_page as _dp
+            _dp.SLEEVE_THEME = theme                        # no-cover sleeves have their own dark set
+            for w in QApplication.instance().allWidgets():
+                if isinstance(w, _dp.CoverArt):
+                    w.update()
         if hasattr(self, "home"):
             accent = T.colours(self.svc.settings.theme)["accent"]
             self.home.scope.set_accent(accent); self.review.spectrum.set_accent(accent); self.library.set_accent(accent)
@@ -625,7 +630,7 @@ class MainWindow(QMainWindow):
         chk = sum(1 for j in self._jobs if j["state"] in (J.STAGING, J.ANALYZING))
         down = sum(1 for j in self._jobs if j["state"] == J.QUEUED)
         slots = self.svc.analysis_slots
-        detail = f"{min(chk, slots)}/{slots} checking · {down} downloading" if (chk or down) else ""
+        detail = ""                                         # downloads and checks run quietly in the background
         self.topbar.set_status(st.message, colour, detail)
         was = self._connected
         self._connected = bool(st.logged_in) or not self.svc.managed_mode
