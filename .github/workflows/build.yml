@@ -128,7 +128,7 @@ jobs:
           if ($u.ExitCode -ne 0) { throw "uninstall failed: $($u.ExitCode)" }
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.ver.outputs.slug }}-${{ steps.ver.outputs.version }}-Windows-Setup
+          name: update-windows-setup        # "update-*": the release job attaches it, so testers get a normal installer
           path: dist/${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.version }}-Setup.exe
           retention-days: 30
       - name: Make the update archive
