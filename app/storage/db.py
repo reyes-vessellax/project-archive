@@ -93,6 +93,7 @@ class Database:
         self.path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._job_writes = 0                     # bumps on every job write: timestamps are only to the second
         self._con = sqlite3.connect(str(path), check_same_thread=False)
         self._con.row_factory = sqlite3.Row
         self._con.execute("PRAGMA journal_mode=WAL")
@@ -118,12 +119,13 @@ class Database:
         cols = ", ".join(job)
         with self._lock, self._con:
             self._con.execute(f"INSERT INTO jobs ({cols}) VALUES ({', '.join('?' * len(job))})", tuple(job.values()))
+            self._job_writes += 1
 
     def jobs_version(self) -> str:
         """Changes whenever any job row changes: cheap cache key."""
         with self._lock:
             row = self._con.execute("SELECT COUNT(*), MAX(updated_at) FROM jobs").fetchone()
-        return f"{row[0]}:{row[1]}"
+        return f"{row[0]}:{row[1]}:{self._job_writes}"
 
     def library_version(self) -> str:
         """Changes only when saved (PROMOTED) tracks change, not on every download progress tick."""
@@ -136,6 +138,7 @@ class Database:
         sets = ", ".join(f"{k} = ?" for k in fields)
         with self._lock, self._con:
             self._con.execute(f"UPDATE jobs SET {sets} WHERE id = ?", (*fields.values(), job_id))
+            self._job_writes += 1
 
     def job(self, job_id: str) -> dict | None:
         with self._lock:

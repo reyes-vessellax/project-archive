@@ -791,8 +791,8 @@ class DiscoverPage(QWidget):
         self.rows_box = vbox(spacing=34); lay.addLayout(self.rows_box)          # For you
         self.eras_head_w = QWidget(); eh = vbox(self.eras_head_w, (0, 18, 0, 0), 4)
         eh.addWidget(label("Eras", "section"))
-        eh.addWidget(label("The artists who made each era, a few a day: only their records, first released in "
-                           "those years.", "faint", wrap=True))
+        eh.addWidget(label("The artists who made each era, a couple a day: only their records, the ones from "
+                           "those years first.", "faint", wrap=True))
         lay.addWidget(self.eras_head_w)
         self.eras_box = vbox(spacing=34); lay.addLayout(self.eras_box)
         self.styles_head_w = QWidget(); sh = vbox(self.styles_head_w, (0, 18, 0, 0), 4)

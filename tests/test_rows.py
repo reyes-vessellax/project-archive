@@ -7,7 +7,9 @@ from tests.test_crates import FakeSvc, cand
 
 class FakeEngine:
     """Discover._get stand-in: URL substring -> JSON."""
-    def __init__(self, answers): self.answers, self.asked = answers, []
+    def __init__(self, answers):
+        from tests.test_discover_avail import MemDB
+        self.answers, self.asked, self.db = answers, [], MemDB()
 
     def _get(self, host, url, days=7):
         self.asked.append(url)
@@ -49,15 +51,17 @@ def test_artist_crate_only_keeps_that_artists_tracks():
     assert sorted(t.title for t in out) == ["Lovelee Dae", "My Beat"]
 
 
-def test_era_row_checks_first_release_year():
+def test_era_row_puts_records_from_the_era_first():
     era = {"key": "chicago", "name": "Chicago jack", "years": "1984–1990", "artists": ["Fast Eddie"]}
-    svc = FakeSvc([cand("a", "Fast Eddie - Yo Yo Get Funky", folder="Fast Eddie"),
-                   cand("b", "Fast Eddie - New Thing 2019", folder="Fast Eddie"),
-                   cand("c", "Fast Eddie - Unknown Track", folder="Fast Eddie")])
-    eng = FakeEngine({"Yo%20Yo": {"recordings": [{"title": "Yo Yo Get Funky", "first-release-date": "1988-05"}]},
-                      "New%20Thing": {"recordings": [{"title": "New Thing 2019", "first-release-date": "2019"}]}})
+    svc = FakeSvc([cand("b", "Fast Eddie - New Thing 2019", folder="Fast Eddie"),
+                   cand("c", "Fast Eddie - Unknown Track", folder="Fast Eddie"),
+                   cand("a", "Fast Eddie - Yo Yo Get Funky", folder="Fast Eddie")])
+    fe = [{"name": "Fast Eddie"}]
+    eng = FakeEngine({"recording?": {"recordings": [
+        {"title": "Yo Yo Get Funky", "first-release-date": "1988-05", "artist-credit": fe},
+        {"title": "New Thing 2019", "first-release-date": "2019", "artist-credit": fe}]}})
     out = R.era_row(svc, eng, era, day=1, per_day=1)
-    assert sorted(t.title for t in out) == ["Unknown Track", "Yo Yo Get Funky"]     # unknown year stays
+    assert out[0].title == "Yo Yo Get Funky" and len(out) == 3     # in-era first; patchy dates never drop a track
     assert R.era_span("2010–now") == (2010, 9999)
 
 
@@ -95,3 +99,9 @@ def test_musicbrainz_no_is_overruled_only_by_a_deezer_dance_genre():
     genres = {"Fisher": ["Dance", "Electro"], "Taylor Swift": ["Pop"]}
     out = R.style_row(svc, eng, "Tech house", deezer=lambda a: genres.get(a, []))
     assert [t.artist for t in out] == ["Fisher"]
+
+
+def test_famous_namesake_is_vetoed_by_deezer():
+    svc = FakeSvc([cand("a", "Drake - Hotline Bling", folder="Deep House Bootlegs")])
+    eng = FakeEngine({"Drake": mb_artist("Drake", "deep house")})               # an obscure house DJ called Drake
+    assert R.style_row(svc, eng, "Deep house", deezer=lambda a: ["Rap/Hip Hop"]) == []

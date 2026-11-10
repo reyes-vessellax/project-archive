@@ -7,7 +7,7 @@ to file there. Every row here is checked against MusicBrainz / Deezer before a t
   music (MusicBrainz tags / description). An artist MusicBrainz lists as something else is dropped; one it doesn't
   know falls back to Deezer's genres (dance/electronic) plus the path test in crates.dance_only.
 - Era crates ("Chicago jack, 1984-1990"): the hand-picked artists in eras.ERAS, a couple a day, one search per
-  artist keeping only tracks BY that artist, and each track's first release year (MusicBrainz) inside the era.
+  artist keeping only tracks BY that artist; records first released inside the era (MusicBrainz) come first.
 - For you: Deezer's related artists for the artists already in the library, only tracks by those artists.
 
 Lookups go through Discover._get (polite pacing, cached for weeks), so a row is slow only the first time.
@@ -49,21 +49,74 @@ def _norm(s: str) -> str:
 
 
 # ------------------------------------------------------------------------------------------ MusicBrainz
+def _text(a: dict) -> str:
+    return " ".join([a.get("disambiguation") or "", *[t.get("name", "") for t in a.get("tags") or []],
+                     *[g.get("name", "") for g in a.get("genres") or []]]).strip()
+
+
+def _remembered(engine, key: str, days: int):
+    db = getattr(engine, "db", None)
+    if db is None:
+        return None
+    hit = db.cache_get(key)
+    if not hit:
+        return None
+    from datetime import datetime, timedelta, timezone
+    data, at = hit
+    try:
+        if datetime.fromisoformat(at) > datetime.now(timezone.utc) - timedelta(days=days):
+            return data.get("v")
+    except ValueError:
+        pass
+    return None
+
+
+def _remember(engine, key: str, value) -> None:
+    db = getattr(engine, "db", None)
+    if db is not None:
+        db.cache_put(key, {"v": value})
+
+
+BATCH = 8                # names per MusicBrainz request (one request a second: 8x faster than one by one)
+
+
+def prefetch_profiles(engine, artists, cancelled=lambda: False) -> None:
+    """Look up many artists in a few MusicBrainz requests (artist:"A" OR artist:"B" ...), remembering each.
+    A name the batch doesn't answer is left for the one-by-one lookup."""
+    todo = list(dict.fromkeys(main_artist(a) for a in artists if _norm(main_artist(a))))
+    todo = [a for a in todo if _remembered(engine, "rows:mbartist:" + _norm(a), TAG_DAYS) is None]
+    for i in range(0, len(todo), BATCH):
+        if cancelled():
+            return
+        chunk = todo[i:i + BATCH]
+        q = urllib.parse.quote(" OR ".join(f'artist:"{a}"' for a in chunk))
+        try:
+            found = engine._get("mb", f"{MB}/artist?query={q}&fmt=json&limit=100", days=TAG_DAYS).get("artists") or []
+        except Exception:
+            continue
+        for a in chunk:
+            want = _norm(a)
+            texts = [_text(x) for x in found
+                     if any(_norm(n) == want for n in [x.get("name", ""), x.get("sort-name", ""),
+                                                       *[y.get("name", "") for y in x.get("aliases") or []]] if n)]
+            if texts:
+                _remember(engine, "rows:mbartist:" + want, texts)
+
+
 def artist_profiles(engine, artist: str) -> list[str]:
     """MusicBrainz's description + tags + genres for every artist with exactly this name (there are often
     several: "Fast Eddie" is a Chicago producer, a UK band and a punk band). [] = not known; "" = one of
     that name MusicBrainz doesn't describe."""
+    hit = _remembered(engine, "rows:mbartist:" + _norm(artist), TAG_DAYS)
+    if hit is not None:
+        return hit
     q = urllib.parse.quote(f'artist:"{artist}"')
     try:
         found = engine._get("mb", f"{MB}/artist?query={q}&fmt=json&limit=10", days=TAG_DAYS).get("artists") or []
     except Exception:
         return []
-    out = []
-    for a in found:
-        if _named(a, artist):
-            text = " ".join([a.get("disambiguation") or "", *[t.get("name", "") for t in a.get("tags") or []],
-                             *[g.get("name", "") for g in a.get("genres") or []]]).strip()
-            out.append(text)                       # "" = this one isn't described
+    out = [_text(a) for a in found if _named(a, artist)]   # "" = this one isn't described
+    _remember(engine, "rows:mbartist:" + _norm(artist), out)
     return out
 
 
@@ -97,8 +150,44 @@ def artist_fits(engine, artist: str, style: str) -> bool | None:
     return False
 
 
+def _year_key(artist: str, title: str) -> str:
+    return "rows:mbyear:" + _norm(main_artist(artist)) + "|" + _norm(title)
+
+
+def _q(s: str) -> str:
+    return (s or "").replace('"', " ").replace("\\", " ")
+
+
+def prefetch_years(engine, tracks, cancelled=lambda: False) -> None:
+    """First release years for many tracks in a few requests: (artist:"A" AND recording:"T") OR (...)."""
+    todo = [(main_artist(t.artist), t.title) for t in tracks]
+    todo = [x for x in dict.fromkeys(todo) if _remembered(engine, _year_key(*x), YEAR_DAYS) is None]
+    for i in range(0, len(todo), 5):
+        if cancelled():
+            return
+        chunk = todo[i:i + 5]
+        q = urllib.parse.quote(" OR ".join(f'(artist:"{_q(a)}" AND recording:"{_q(t)}")' for a, t in chunk))
+        try:
+            recs = engine._get("mb", f"{MB}/recording?query={q}&fmt=json&limit=100", days=YEAR_DAYS).get("recordings") or []
+        except Exception:
+            continue
+        for a, t in chunk:
+            years = []
+            for r in recs:
+                credit = " ".join(c.get("name", "") + " " + ((c.get("artist") or {}).get("name", ""))
+                                  for c in r.get("artist-credit") or [])
+                m = re.match(r"(\d{4})", r.get("first-release-date") or "")
+                if m and similar(t, r.get("title", "")) >= 0.85 and _norm(a) in _norm(credit):
+                    years.append(int(m.group(1)))
+            if years:
+                _remember(engine, _year_key(a, t), min(years))
+
+
 def first_year(engine, artist: str, title: str) -> int | None:
     """The earliest release year MusicBrainz has for this recording by this artist."""
+    hit = _remembered(engine, _year_key(artist, title), YEAR_DAYS)
+    if hit is not None:
+        return hit
     q = urllib.parse.quote(f'artist:"{main_artist(artist)}" AND recording:"{title}"')
     try:
         recs = engine._get("mb", f"{MB}/recording?query={q}&fmt=json&limit=10", days=YEAR_DAYS).get("recordings") or []
@@ -109,6 +198,8 @@ def first_year(engine, artist: str, title: str) -> int | None:
         m = re.match(r"(\d{4})", r.get("first-release-date") or "")
         if m and similar(title, r.get("title", "")) >= 0.85:
             years.append(int(m.group(1)))
+    if years:
+        _remember(engine, _year_key(artist, title), min(years))
     return min(years) if years else None
 
 
@@ -147,7 +238,8 @@ def check_style(db, engine, tracks, style: str, cancelled=lambda: False, deezer=
     """MusicBrainz yes: in. MusicBrainz doesn't know: Deezer's genres (or a dance word in the path, for artists
     Deezer doesn't know either). MusicBrainz no: in only if Deezer positively files them under dance, because
     MusicBrainz sometimes lists only namesakes (the tech house FISHER isn't in its top ten "Fisher"s)."""
-    confirmed, unknown = [], []
+    confirmed, unknown, disputed = [], [], []
+    prefetch_profiles(engine, [t.artist for t in tracks[:VERIFY_MAX]], cancelled)
     for t in tracks[:VERIFY_MAX]:
         if cancelled():
             break
@@ -156,9 +248,30 @@ def check_style(db, engine, tracks, style: str, cancelled=lambda: False, deezer=
             confirmed.append(t)
         elif fit is None:
             unknown.append(t)
-        elif set(C.artist_genres(db, main_artist(t.artist), deezer)) & C.DANCE_GENRES:
-            unknown.append(t)                               # disputed, but Deezer says dance: same rules as unknown
+        else:
+            disputed.append(t)
+    prefetch_genres(db, [t.artist for t in confirmed + unknown + disputed], deezer)
+    # a MusicBrainz yes can be an obscure namesake ("Drake" the house DJ): Deezer names the famous one, and if
+    # it files them firmly outside dance, they're out
+    confirmed = [t for t in confirmed if not _deezer_says_other(db, t.artist, deezer)]
+    unknown += [t for t in disputed                         # disputed, but Deezer says dance: same rules as unknown
+                if set(C.artist_genres(db, main_artist(t.artist), deezer)) & C.DANCE_GENRES]
     return confirmed + C.dance_only(db, unknown, cancelled, deezer)
+
+
+def _deezer_says_other(db, artist: str, lookup=None) -> bool:
+    g = set(C.artist_genres(db, main_artist(artist), lookup))
+    return bool(g) and not (g & C.DANCE_GENRES)
+
+
+def prefetch_genres(db, artists, lookup=None) -> None:
+    """Deezer genres for several artists at once (4 at a time; each is 2-4 small requests, remembered 90 days)."""
+    names = list(dict.fromkeys(main_artist(a) for a in artists if main_artist(a)))
+    if len(names) < 2:
+        return
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(4) as ex:
+        list(ex.map(lambda a: C.artist_genres(db, a, lookup), names))
 
 
 def artist_crate(svc, artist: str, owns=lambda a, t: False, cancelled=lambda: False, log=None,
@@ -217,14 +330,14 @@ def era_row(svc, engine, era: dict, day: int, owns=lambda a, t: False, cancelled
     tracks = interleave(lists)
     if not check_year:
         return tracks
-    out = []
-    for t in tracks[:VERIFY_MAX]:
-        if cancelled():
-            break
-        y = first_year(engine, t.artist, t.title)
-        if y is None or lo - 1 <= y <= hi + 1:             # a year either side: pressing dates wobble
-            out.append(t)
-    return out
+    # The year only ORDERS the row (records from the era first): MusicBrainz's dates are too patchy to drop on
+    # ("Can You Feel It" shows 2014, because the 1986 original is credited to Mr. Fingers). The artists are
+    # already the era's own.
+    prefetch_years(engine, tracks[:VERIFY_MAX], cancelled)
+    def in_era(t):
+        y = _remembered(engine, _year_key(t.artist, t.title), YEAR_DAYS)
+        return 0 if y is not None and lo - 1 <= y <= hi + 1 else 1
+    return sorted(tracks, key=in_era)
 
 
 def interleave(lists):

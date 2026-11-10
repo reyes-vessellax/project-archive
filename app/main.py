@@ -1,6 +1,7 @@
 """Entry point: python -m app.main"""
 from __future__ import annotations
 
+import os
 import sys
 
 
@@ -45,7 +46,8 @@ class _WindowLog:
 
         class F(QObject):
             def eventFilter(self, obj, ev):
-                if ev.type() == QEvent.Show and hasattr(obj, "isWindow") and obj.isWindow():
+                if ev.type() == QEvent.Show and hasattr(obj, "isWindow") and obj.isWindow() \
+                        and obj.objectName() != "qtooltip_label":
                     outer.note(obj)
                 return False
         self.f = F(app)
@@ -98,8 +100,9 @@ def main() -> int:
     rotate_log(data_dir() / "app.log")
     from .ui.theme import load_fonts
     load_fonts()
-    global _wlog
-    _wlog = _WindowLog(app, data_dir() / "app.log")
+    if os.environ.get("DIGMART_LOG_WINDOWS"):              # debugging only: it sees every event the app handles
+        global _wlog                                       # (tests/test_no_stray_windows.py guards stray popups)
+        _wlog = _WindowLog(app, data_dir() / "app.log")
     from .ui.brand import app_icon
     app.setWindowIcon(app_icon())
     win = MainWindow(ArchiveService())

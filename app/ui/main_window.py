@@ -1244,10 +1244,13 @@ class MainWindow(QMainWindow):
 
         def work():
             try:
+                before = self.svc.db.jobs_version()
                 jobs = self.svc.poll_downloads()
+                changed = bool(jobs) or self.svc.db.jobs_version() != before
             finally:
                 self._polling = False
-            self.signals.done.emit("")
+            if changed:                                     # nothing moved: no page rebuild (this runs every 2 s)
+                self.signals.done.emit("")
             for job in jobs:
                 self.signals.staged.emit(job["id"])
         self.io.start(Task(work, self.signals))

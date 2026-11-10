@@ -11,13 +11,25 @@ They're gone (and Label of the Day with them). Every row now checks its tracks b
 - **For you** (new, top): artists Deezer lists as related to the ones you have most of in your library, tracks
   by those artists only. The row says why: "Because you have Fast Eddie & Moodymann".
 - **Eras** (new): the hand-picked artists for each era (Chicago jack 1984–1990, NY & Jersey garage, Detroit deep…),
-  a couple a day; tracks by those artists only, and first released inside the era's years (MusicBrainz).
+  a couple a day; tracks by those artists only, records from the era's years first (MusicBrainz's dates are too
+  patchy to drop tracks on: it dates Larry Heard's "Can You Feel It" 2014).
 - **Styles** (14 now, five a day on Everything): each artist must be known for that music on MusicBrainz;
   pop/rock/rap artists with a stray "dance" tag are out (checked on real data: Metallica, Taylor Swift, Dua Lipa,
   Drake out; Kerri Chandler, Moodymann, Fast Eddie, Larry Levan, Black Coffee in). Artists MusicBrainz doesn't
   know fall back to Deezer.
 - Genre pills now pick that genre's eras and styles. Tracks without art get a sleeve with the artist's name.
-- Lookups are remembered for weeks, so only the first load of a row is slower.
+- Artists are looked up 8 at a time (MusicBrainz allows one request a second: a row's checks went from ~20 s to
+  2-3 s), Deezer fallbacks 4 at a time, and everything is remembered for weeks. A famous namesake can't sneak in:
+  when Deezer files the name firmly outside dance (Drake), it's out.
+
+Speed:
+- The download poll (every 2 s) no longer rebuilds the pages when nothing changed.
+- The window logger that ran on every single UI event (mouse moves, repaints) is off; it was logging every
+  tooltip with a stack trace. (Set DIGMART_LOG_WINDOWS=1 to turn it on when debugging.)
+- Measured on your library: start-up about half a second, page switches under 25 ms, opening a Library row 25 ms.
+
+Audit: every page and button clicked (160 clicks, Library panels opened, played and rebuilt mid-playback, Discover
+cards, genre pills, themes): no errors.
 
 Also: app.log is rotated at start-up once it's over 5 MB (the previous one kept as app.log.1); the Library
 drop-down no longer shows "10A  ()" when a tag gives a Camelot key without its name.
