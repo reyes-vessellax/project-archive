@@ -1160,11 +1160,13 @@ def club_badges(a: dict, theme: str):
     c = T.colours(theme)
     by_id = {x["id"]: x for x in club.get("checks") or []}
     names = [("club_load", "CDJ"), ("club_mono", "MONO"), ("club_clip", "PEAK"), ("club_loud", "LUFS"),
-             ("club_low", "LOW END"), ("club_usb", "USB")]
-    w = QWidget(); lay = hbox(w, (0, 4, 0, 4), 6)
+             ("club_low", "BASS"), ("club_usb", "USB")]
+    w = QWidget(); lay = hbox(w, (0, 4, 0, 4), 5)
     head = label("CLUB-READY ✓" if club.get("ready") else "NOT CLUB-READY ✗", "clubhead")
+    head.setToolTip("Club-ready: loads on every CDJ, mono-safe, not clipping, sensible loudness, real low end")
+    head.setText("CLUB ✓" if club.get("ready") else "CLUB ✗")
     head.setStyleSheet(f"color: {c['pass_'] if club.get('ready') else c['fail']};")
-    lay.addWidget(head); lay.addSpacing(6)
+    lay.addWidget(head); lay.addSpacing(2)
     for cid, name in names:
         x = by_id.get(cid)
         if not x:
@@ -1172,9 +1174,9 @@ def club_badges(a: dict, theme: str):
         col = {"PASS": c["pass_"], "WARN": c["warn"], "FAIL": c["fail"]}.get(x["status"], c["muted"])
         text = name + " " + {"PASS": "✓", "WARN": "!", "FAIL": "✗"}.get(x["status"], "")
         if cid == "club_clip" and club.get("true_peak") is not None:
-            text = f"PEAK {club['true_peak']:+.1f} dBTP"
+            text = f"PEAK {club['true_peak']:+.1f}"
         if cid == "club_loud" and club.get("lufs") is not None:
-            text = f"{club['lufs']:.1f} LUFS"
+            text = f"{club['lufs']:.0f} LUFS"
         b = label(text, "clubbadge")
         h = col.lstrip("#")
         rgba = f"rgba({int(h[0:2], 16)}, {int(h[2:4], 16)}, {int(h[4:6], 16)}, 0.16)" if len(h) == 6 else "transparent"

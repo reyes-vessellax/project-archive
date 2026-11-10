@@ -4,6 +4,17 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.19 (2026-11-10) — the Queue panel fits, quietly
+
+- **No scrolling in the Queue's track panel:** everything about a track fits at a normal window size (checked on
+  every track in the library). Checks that passed are one line ("Every check passed" / "All 9 other checks
+  passed"); only what needs a look is listed. Long titles get a smaller font instead of pushing things down.
+- **No more "from a Soulseek user"** on the panel.
+- **Loading happens in the background:** no download percentage, "Downloading into quarantine…", "Being checked…"
+  or moving dots in the panel, no engine status ("InProgress") on queue rows, and no "checking · downloading"
+  counts in the sidebar. A row's DOWN / CHECK tag says enough.
+- The CLUB badges are shorter (CLUB ✓ · CDJ · MONO · PEAK · LUFS · BASS · USB) so they fit on one line.
+
 ## 0.9.18 (2026-11-10) — no repeats, more artists, rows remembered again
 
 - **Each song once:** a track shows in one row only (For you, an era or a style), and a row never shows the same song

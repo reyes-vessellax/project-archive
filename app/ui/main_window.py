@@ -618,7 +618,7 @@ class MainWindow(QMainWindow):
         chk = sum(1 for j in self._jobs if j["state"] in (J.STAGING, J.ANALYZING))
         down = sum(1 for j in self._jobs if j["state"] == J.QUEUED)
         slots = self.svc.analysis_slots
-        detail = f"{min(chk, slots)}/{slots} checking · {down} downloading" if (chk or down) else ""
+        detail = ""                                         # downloads and checks run quietly in the background
         self.topbar.set_status(st.message, colour, detail)
         was = self._connected
         self._connected = bool(st.logged_in) or not self.svc.managed_mode

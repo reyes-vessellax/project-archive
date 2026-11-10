@@ -42,12 +42,12 @@ def row_data(job: dict, analysis: dict | None, steps: dict[str, str]) -> dict:
         if not artist and job.get("remote_user"):
             artist = ""
     if st == J.QUEUED:
-        return dict(tag="Down", title=title, artist=artist, pct=job.get("progress") or 0, meta=(job.get("message") or "")[:18], removable=True)
+        return dict(tag="Down", title=title, artist=artist, pct=job.get("progress") or 0, meta="", removable=True)        # no engine status text
     if st == J.STAGING:
-        return dict(tag="Check", title=title, artist=artist, pct=0, meta="moving in", removable=False)
+        return dict(tag="Check", title=title, artist=artist, pct=0, meta="", removable=False)
     if st == J.ANALYZING:
         step = steps.get(job["id"])
-        return dict(tag="Check" if step else "Wait", title=title, artist=artist, pct=None, meta=(step or "waiting").lower().rstrip("…"), removable=False)
+        return dict(tag="Check" if step else "Wait", title=title, artist=artist, pct=None, meta="", removable=False)
     if st == J.READY and analysis:
         f = analysis["facts"]
         kbps = f"{round(f['bitrate_bps'] / 1000)} kbps" if f.get("bitrate_bps") else (f.get("container") or "").upper()
@@ -832,9 +832,9 @@ class ReviewPage(QWidget):
         self.rail_w = rw
 
         # detail
-        det = vbox(spacing=22)
-        head = hbox(spacing=20)
-        self.cover = QLabel(); self.cover.setFixedSize(104, 104); self.cover.setObjectName("cover")
+        det = vbox(spacing=10)                          # compact: the whole track fits without scrolling
+        head = hbox(spacing=18)
+        self.cover = QLabel(); self.cover.setFixedSize(84, 84); self.cover.setObjectName("cover")
         self.cover.setAlignment(Qt.AlignCenter); self.cover.setScaledContents(False)
         head.addWidget(self.cover, 0, Qt.AlignTop)
         names = vbox(spacing=4)
@@ -851,7 +851,7 @@ class ReviewPage(QWidget):
         from PySide6.QtWidgets import QFrame, QGraphicsDropShadowEffect
         for k in ("BPM", "Key", "Length", "Format"):
             tile = QFrame(); tile.setObjectName("display")
-            tl = vbox(tile, (16, 12, 16, 12), 2)
+            tl = vbox(tile, (14, 8, 14, 8), 2)
             tl.addWidget(label(k.upper(), "disptag"))
             v = label("–", "tile"); tl.addWidget(v)
             glow = QGraphicsDropShadowEffect(v); glow.setOffset(0, 0); glow.setBlurRadius(14)
@@ -873,14 +873,14 @@ class ReviewPage(QWidget):
         self.dl_bar.setProperty("tag", "Down"); dl.addWidget(self.dl_bar)
         self.dl_note = label("", "muted"); dl.addWidget(self.dl_note)
         det.addWidget(self.dl_host); self.dl_host.hide()
-        sh = hbox(spacing=12); sh.addWidget(label("Spectrogram", "h2"))
+        sh = hbox(spacing=12); sh.addWidget(label("SPECTROGRAM", "disptag"))
         self.btn_preview = button("▶  Preview", "small", lambda: self.spectrum.play_preview())
         self.btn_preview.setToolTip("Plays a 20-second preview")
         self.btn_preview.setVisible(False)                 # downloaded tracks play in full; preview lives in Search
         sh.addStretch(1)
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
         det.addLayout(sh)
-        self.spectrum = SpectrumView(180); det.addWidget(self.spectrum)
+        self.spectrum = SpectrumView(112); det.addWidget(self.spectrum)
         self.level_host = QWidget(); lv = hbox(self.level_host, spacing=12); lv.addWidget(label("LEVEL", "disptag"))
         self.level = LevelStrip(); lv.addWidget(self.level, 1)
         det.addWidget(self.level_host)
@@ -1038,7 +1038,7 @@ class ReviewPage(QWidget):
                 b.hide()
         # (with a job, every button is decided below; showing them all first made the row ~1300 px wide for a
         #  frame on every refresh and the column jumped)
-        self.dl_host.setVisible(bool(job) and job["state"] == J.QUEUED)
+        self.dl_host.setVisible(False)                 # downloading happens in the background: no progress text here
         self._dots.stop()
         while self.checks.count():
             item = self.checks.takeAt(0)
@@ -1054,12 +1054,15 @@ class ReviewPage(QWidget):
             self.spectrum.clear_view(""); self.spec_note.setText("")
             return
         d = row_data(job, a, steps or {})
-        src = "from a soulseek user" if job.get("remote_user") else {"manual": "added by you", "watched": "from your incoming folder"}.get(
-            job.get("source_kind", ""), job.get("source_kind", ""))
+        src = "" if job.get("remote_user") else {"manual": "added by you", "watched": "from your incoming folder"}.get(
+            job.get("source_kind", ""), "")
         when = (job.get("updated_at") or "")[11:16]
         where = {"PROMOTED": "in your library"}.get(job["state"], "in quarantine")
-        self.source.setText(f"{where}  ·  {'checked ' + when if when and a else 'checking'}  ·  {src}".upper())
+        busy0 = job["state"] in (J.STAGING, J.ANALYZING, J.QUEUED)
+        self.source.setText("  ·  ".join(x for x in (where, f"checked {when}" if when and a and not busy0 else "", src) if x).upper())
         self.h1.setText(d["title"]); self.artist.setText(d["artist"])
+        n = len(d["title"] or "")                          # long titles get smaller, not cut: the panel still fits
+        self.h1.setStyleSheet("" if n <= 26 else "font-size: 22px;" if n <= 44 else "font-size: 18px;")
         busy = job["state"] in (J.STAGING, J.ANALYZING, J.QUEUED)
         if job["state"] == J.QUEUED:
             pct = float(job.get("progress") or 0)
@@ -1070,8 +1073,7 @@ class ReviewPage(QWidget):
                                   "Queued, Locally": "Queued here; starts in a moment.",
                                   "Requested": "Asking the source…", "InProgress": "Receiving the file…",
                                   "Initializing": "Starting up the transfer…"}.get(msg, msg))
-        if job["state"] in (J.STAGING, J.ANALYZING):
-            self._dots.start()                                 # the verdict sub-line keeps moving while we check
+
         status = a.get("overall_status") if a and not busy else None
         if status:
             set_tag(self.verdict, T.GRADE_WORD[status]); self.verdict.setText(T.GRADE_LONG[status])
@@ -1083,7 +1085,7 @@ class ReviewPage(QWidget):
             self.verdict_sub.setText(d["meta"])
         else:
             set_tag(self.verdict, d["tag"]); self.verdict.setText(d["tag"] if busy else "")
-            self.verdict_sub.setText(d["meta"] if busy else (job.get("message") or ""))
+            self.verdict_sub.setText("" if busy else (job.get("message") or ""))   # no percentages or step text
         if a and not busy:
             f, dec = a["facts"], a.get("decode") or {}
             self.facts["Format"].setText((f.get("container") or "?").upper())
@@ -1132,15 +1134,19 @@ class ReviewPage(QWidget):
             self.spec_note.setText(f"Energy reaches about {cut / 1000:.1f} kHz" if cut else "")
             from .widgets import club_badges, club_heading
             club = (a.get("club") or {}).get("checks") or []
-            rows = sorted(a["checks"], key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}[c["status"]])
-            rows += [None] + sorted(club, key=lambda c: {"FAIL": 0, "WARN": 1, "PASS": 2}[c["status"]]) if club else []
+            # only what needs a look is listed; everything that passed is one line (the panel fits without scrolling)
+            issues_ = [c for c in a["checks"] if c["status"] != "PASS"]
+            club_issues = [c for c in club if c["status"] != "PASS"]
+            passed = sum(1 for c in a["checks"] + club if c["status"] == "PASS")
+            rows = sorted(issues_, key=lambda c: {"FAIL": 0, "WARN": 1}[c["status"]])
+            rows += [None] + sorted(club_issues, key=lambda c: {"FAIL": 0, "WARN": 1}[c["status"]]) if club else []
             for c in rows:
                 if c is None:
                     head = club_badges(a, getattr(self.svc.settings, "theme", "light"))
                     if head is not None:
                         head.setContentsMargins(0, 14, 0, 4); self.checks.addWidget(head)
                     continue
-                row = QWidget(); hl = hbox(row, (0, 10, 0, 10), 14)
+                row = QWidget(); hl = hbox(row, (0, 6, 0, 6), 14)
                 word = T.GRADE_WORD[c["status"]]
                 t = label(word.upper(), "tag", word); t.setFixedWidth(56); t.setAlignment(Qt.AlignTop)
                 muted = T.colours(getattr(self.svc.settings, "theme", "light"))["muted"]
@@ -1148,13 +1154,15 @@ class ReviewPage(QWidget):
                 txt.setTextFormat(Qt.RichText)
                 hl.addWidget(t); hl.addWidget(txt, 1)
                 self.checks.addWidget(row); self.checks.addWidget(rule())
+            if passed:
+                ok = label(("Every check passed" if not issues_ and not club_issues else
+                            f"All {passed} other check{'s' if passed != 1 else ''} passed"), "faint")
+                ok.setContentsMargins(0, 8, 0, 0); self.checks.addWidget(ok)
         else:
             for v in self.facts.values(): v.setText("–")
-            self.spectrum.clear_view("Checking…" if busy else "No spectrogram."); self.spec_note.setText("")
-            if job["state"] == J.QUEUED:
-                self.checks.addWidget(label(f"Downloading into quarantine… {job.get('progress') or 0:.0f}%  ·  {job.get('message') or ''}", "muted", wrap=True))
-            elif busy:
-                self.checks.addWidget(label("Being checked. Results appear here in a moment.", "muted"))
+            self.spectrum.clear_view("" if busy else "No spectrogram."); self.spec_note.setText("")
+            if busy:
+                pass                                           # downloading / checking: quietly, in the background
             elif job.get("message"):
                 self.checks.addWidget(label(job["message"], "muted", wrap=True))
         ready = job["state"] == J.READY and bool(a)
