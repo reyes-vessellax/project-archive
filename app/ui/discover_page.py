@@ -168,6 +168,17 @@ class Tile(QFrame):
 
 
 # Sleeve colours for records without art: the brand's black, crimson, yellow and cream, picked by label name
+_MARKS: dict[int, QPixmap] = {}
+
+
+def _sleeve_mark(i: int):
+    """The DigMart mark (starburst + smiley, no wordmark) recoloured for sleeve i: the brand's own file, colours only."""
+    if i not in _MARKS:
+        p = Path(__file__).parent / "brand_assets" / f"digmart-mark-sleeve{i + 1}.png"
+        _MARKS[i] = QPixmap(str(p)) if p.exists() else QPixmap()
+    return _MARKS[i]
+
+
 _SLEEVES = [("#141414", "#ffd700", "#8a857a"), ("#dc143c", "#ffffff", "#ffd1d9"), ("#ffd700", "#141414", "#6b5a00"),
             ("#efe9dc", "#141414", "#8a857a"), ("#2a2a2a", "#ffffff", "#9a9a9a"), ("#a50f2d", "#ffd700", "#f3b7c2")]
 
@@ -259,13 +270,19 @@ class CoverArt(QWidget):
         import zlib
         from PySide6.QtGui import QFont
         lab, title, cat = self._sleeve
-        bg, fg, sub = _SLEEVES[zlib.crc32(f"{lab}|{cat or title}".lower().encode()) % len(_SLEEVES)]
+        idx = zlib.crc32(f"{lab}|{cat or title}".lower().encode()) % len(_SLEEVES)
+        bg, fg, sub = _SLEEVES[idx]
         p.fillRect(r, QColor(bg))
-        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.Antialiasing); p.setRenderHint(QPainter.SmoothPixmapTransform)
         side = r.height()
         c = r.center()
-        p.setPen(Qt.NoPen); p.setBrush(QColor(0, 0, 0, 40))                     # the centre hole of a company sleeve
-        p.drawEllipse(c, int(side * 0.19), int(side * 0.19))
+        mark = _sleeve_mark(idx)                                # our mark in the middle, coloured for this sleeve
+        if not mark.isNull():
+            w = int(side * 0.40); h = int(w * mark.height() / max(1, mark.width()))
+            p.drawPixmap(QRect(c.x() - w // 2, r.top() + int(side * 0.56) - h // 2, w, h), mark)   # clear of a 2-line name
+        else:
+            p.setPen(Qt.NoPen); p.setBrush(QColor(0, 0, 0, 40))
+            p.drawEllipse(c, int(side * 0.19), int(side * 0.19))
         pad = int(side * 0.08)
         f = QFont("Poppins"); f.setBold(True); f.setPixelSize(max(10, int(side * 0.115)))
         p.setFont(f); p.setPen(QColor(fg))

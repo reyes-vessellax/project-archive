@@ -14,6 +14,9 @@ one line changes and this file gets a note.
   or moving dots in the panel, no engine status ("InProgress") on queue rows, and no "checking · downloading"
   counts in the sidebar. A row's DOWN / CHECK tag says enough.
 - The CLUB badges are shorter (CLUB ✓ · CDJ · MONO · PEAK · LUFS · BASS · USB) so they fit on one line.
+- **Sleeves carry the DigMart mark:** a track without cover art gets a sleeve with the starburst-and-smiley (no
+  wordmark) in the middle instead of a plain circle, in six colour versions of the brand's own mark file (crimson,
+  yellow, black, white), so the sleeves don't all look the same.
 
 ## 0.9.18 (2026-11-10) — no repeats, more artists, rows remembered again
 
