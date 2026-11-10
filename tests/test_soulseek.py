@@ -443,3 +443,15 @@ def test_ad_bot_sources_are_greyed_and_blocked(connected, slskd, fixtures):
     assert bot and all(c.note == "Ad bot" for c in bot)
     with pytest.raises(ActionBlocked):
         connected.request_download(bot[0])
+
+
+def test_a_search_we_ended_ourselves_is_not_reported_as_cancelled(monkeypatch):
+    """With no results the app ends the search at its deadline; the engine then marks it 'Completed, Cancelled'
+    and the page said "The search was cancelled." instead of "nothing found"."""
+    a = SlskdAdapter("http://localhost:5030", "k", "")
+    monkeypatch.setattr(a, "_call", lambda method, path, *args, **kw: (
+        {"state": "Completed, Cancelled", "responseCount": 0, "fileCount": 0, "responses": []} if method == "GET" else None))
+    assert a.search_status("someone-else")[3] == "The search was cancelled."      # ended from outside: still said
+    a.stop_search("mine")
+    done, users, files, err = a.search_status("mine")
+    assert done and err == "" and a.search_results("mine").error == ""
