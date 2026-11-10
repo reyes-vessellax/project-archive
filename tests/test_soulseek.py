@@ -449,8 +449,9 @@ def test_a_search_we_ended_ourselves_is_not_reported_as_cancelled(monkeypatch):
     """With no results the app ends the search at its deadline; the engine then marks it 'Completed, Cancelled'
     and the page said "The search was cancelled." instead of "nothing found"."""
     a = SlskdAdapter("http://localhost:5030", "k", "")
+    meta = {"state": "Completed, Cancelled", "responseCount": 0, "fileCount": 0, "responses": []}
     monkeypatch.setattr(a, "_call", lambda method, path, *args, **kw: (
-        {"state": "Completed, Cancelled", "responseCount": 0, "fileCount": 0, "responses": []} if method == "GET" else None))
+        None if method != "GET" else [] if path.endswith("/responses") else meta))
     assert a.search_status("someone-else")[3] == "The search was cancelled."      # ended from outside: still said
     a.stop_search("mine")
     done, users, files, err = a.search_status("mine")
