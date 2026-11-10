@@ -19,6 +19,11 @@ one line changes and this file gets a note.
   wordmark) inside the centre circle, like a record sleeve, in six colour versions of the brand's own mark file
   (crimson, yellow, black, white), so the sleeves don't all look the same. The artist's name (two lines at most)
   stays above the circle and the title below it.
+- **Dark mode sleeves:** in dark mode the no-cover sleeves are soft black, charcoal, crimson and deep red (no cream
+  or yellow glaring on the black page), each with the mark colourway made for it.
+- **Every page has The Dig.'s masthead:** Queue, Library, Wishlist and Batch get the same big bold title and thick
+  rule as Discover, so the app looks like one product. The Wishlist sits at the top of its page instead of floating
+  in the middle.
 
 ## 0.9.18 (2026-11-10) — no repeats, more artists, rows remembered again
 

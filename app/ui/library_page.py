@@ -79,7 +79,7 @@ class LibraryPage(QWidget):
         root = vbox(self); root.addWidget(outer)
 
         head = hbox(spacing=12)
-        self.title = label("Library", "h1"); head.addWidget(self.title, 0, Qt.AlignBottom)
+        self.title = label("Library", "pagetitle"); head.addWidget(self.title, 0, Qt.AlignBottom)
         self.sub = label("", "mono"); head.addWidget(self.sub, 0, Qt.AlignBottom); head.addStretch(1)
         self.q = QLineEdit(); self.q.setObjectName("filter"); self.q.setPlaceholderText("Filter by title, artist, label…")
         self.q.setFixedWidth(300); self.q.textChanged.connect(self._filter)
@@ -94,6 +94,7 @@ class LibraryPage(QWidget):
         head.addWidget(self.export_btn)
         self.folder_btn = button("Open downloads folder", "ghost", self._open_folder); head.addWidget(self.folder_btn)
         lay.addLayout(head)
+        r_ = QFrame(); r_.setObjectName("mastRule"); r_.setFixedHeight(3); lay.addWidget(r_)   # the masthead rule, like The Dig.
         fl = hbox(spacing=10)
         fl.addWidget(label("BPM", "tag"))
         self.bpm_box = QLineEdit(); self.bpm_box.setPlaceholderText("e.g. 120-128"); self.bpm_box.setFixedWidth(120)

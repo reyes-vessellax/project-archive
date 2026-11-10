@@ -85,14 +85,14 @@ class HomePage(QWidget):
         # The Queue tab (it was Home until Discover took that spot): downloads, checks, what's waiting for you.
         srow = hbox(spacing=16)
         tcol = vbox(spacing=2)
-        tcol.addWidget(label("Queue", "h1"))
-        tcol.addWidget(label("Downloading, checking, and checked tracks waiting for your yes or no.", "muted"))
+        tcol.addWidget(label("Queue", "pagetitle"))
         srow.addLayout(tcol, 1)
         self.q = QLineEdit(); self.q.hide()                  # kept for the window's search wiring; search lives on Discover/Search
         self.search_btn = button("Search", "accent", lambda: self.search.emit(self.q.text())); self.search_btn.hide()
         self.add_btn = button("Add files", "ghost", self.add_files.emit)
         srow.addWidget(self.add_btn)
         lay.addLayout(srow)
+        r_ = QFrame(); r_.setObjectName("mastRule"); r_.setFixedHeight(3); lay.addWidget(r_)   # the masthead rule, like The Dig.
 
         body = hbox(spacing=40)
         lay.addLayout(body, 1)
@@ -880,7 +880,7 @@ class ReviewPage(QWidget):
         sh.addStretch(1)
         self.spec_note = label("", "muted"); sh.addWidget(self.spec_note)
         det.addLayout(sh)
-        self.spectrum = SpectrumView(96); det.addWidget(self.spectrum)
+        self.spectrum = SpectrumView(80); det.addWidget(self.spectrum)
         self.level_host = QWidget(); lv = hbox(self.level_host, spacing=12); lv.addWidget(label("LEVEL", "disptag"))
         self.level = LevelStrip(); lv.addWidget(self.level, 1)
         det.addWidget(self.level_host)
@@ -1151,7 +1151,7 @@ class ReviewPage(QWidget):
             if club:
                 head = club_badges(a, getattr(self.svc.settings, "theme", "light"))
                 if head is not None:
-                    head.setContentsMargins(0, 8, 0, 0); self.checks.addWidget(head)
+                    head.setContentsMargins(0, 2, 0, 0); self.checks.addWidget(head)
         else:
             for v in self.facts.values(): v.setText("–")
             self.spectrum.clear_view("" if busy else "No spectrogram."); self.spec_note.setText("")
