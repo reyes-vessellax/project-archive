@@ -179,6 +179,28 @@ def _sleeve_mark(i: int):
     return _MARKS[i]
 
 
+_SLEEVE_INK = {  # sleeve -> (ink colour, light ink?)
+    "yellow": ("#1a1a1a", False), "tan": ("#241c14", False), "cream": ("#1c1c1c", False),
+    "black": ("#efe9dc", True), "charcoal": ("#ffd700", True), "brick": ("#f6ead6", True),
+    "crimson": ("#fff3e3", True), "green": ("#f1e6c4", True)}
+_SLEEVE_PIX: dict = {}
+
+
+def _sleeve_names(theme: str) -> list:
+    """The sleeve photos on disk; dark mode leaves out the bright ones (they glare on a black page)."""
+    d = Path(__file__).parent / "brand_assets" / "sleeves"
+    have = [n for n in _SLEEVE_INK if (d / f"{n}.jpg").is_file()]
+    if theme == "dark":
+        have = [n for n in have if n not in ("yellow", "tan", "cream")]
+    return have
+
+
+def _sleeve_image(name: str) -> QPixmap:
+    if name not in _SLEEVE_PIX:
+        _SLEEVE_PIX[name] = QPixmap(str(Path(__file__).parent / "brand_assets" / "sleeves" / f"{name}.jpg"))
+    return _SLEEVE_PIX[name]
+
+
 SLEEVE_THEME = "light"          # set by the window when the theme changes
 # Dark mode: no cream or yellow sleeves glaring on a black page. (bg, text, sub, which mark colourway)
 _SLEEVES_DARK = [("#1c1c1c", "#ffd700", "#8a857a", 0),   # was black   -> soft black, yellow name
@@ -280,6 +302,56 @@ class CoverArt(QWidget):
         p.end()
 
     def _paint_sleeve(self, p, r):
+        """A real record sleeve (the brand's sleeve photos, our emblem on the label) with the artist and title
+        printed on it: ink that sinks into the paper and carries the sleeve's own scuffs."""
+        import zlib
+        lab, title, cat = self._sleeve
+        names = _sleeve_names(SLEEVE_THEME)
+        if not names:
+            return self._paint_flat_sleeve(p, r)
+        name = names[zlib.crc32(f"{lab}|{cat or title}".lower().encode()) % len(names)]
+        img = _sleeve_image(name)
+        p.setRenderHint(QPainter.Antialiasing); p.setRenderHint(QPainter.SmoothPixmapTransform)
+        p.drawPixmap(r, img)
+        side = r.height()
+        pad = int(side * 0.075)
+        ink, light = _SLEEVE_INK[name]
+        from PySide6.QtGui import QFont, QFontMetrics, QPainterPath
+        f = QFont("Poppins"); f.setWeight(QFont.Black); f.setPixelSize(max(9, int(side * 0.074)))
+        f.setLetterSpacing(QFont.PercentageSpacing, 102)
+        fm = QFontMetrics(f)
+        width = r.width() - 2 * pad
+        words_ = (lab or "").upper().split()
+        lines, cur = [], ""
+        for w in words_:                                    # two lines at most, ending clear of the record
+            t = (cur + " " + w).strip()
+            if fm.horizontalAdvance(t) <= width or not cur:
+                cur = t
+            else:
+                lines.append(cur); cur = w
+        if cur:
+            lines.append(cur)
+        if len(lines) > 2:
+            lines = [lines[0], fm.elidedText(" ".join(lines[1:]), Qt.ElideRight, width)]
+        lines = [fm.elidedText(x, Qt.ElideRight, width) for x in lines]
+        path = QPainterPath()
+        y = r.top() + pad + fm.ascent()
+        for ln in lines:
+            path.addText(r.left() + pad, y, f, ln); y += int(fm.lineSpacing() * 0.92)
+        f2 = QFont("Open Sans"); f2.setWeight(QFont.DemiBold); f2.setPixelSize(max(8, int(side * 0.05)))
+        fm2 = QFontMetrics(f2)
+        path.addText(r.left() + pad, r.bottom() - pad - fm2.descent(), f2, fm2.elidedText(title or "", Qt.ElideRight, width))
+        p.save()
+        p.setPen(Qt.NoPen)
+        if light:                                           # light ink: a little see-through, like print on card
+            p.setOpacity(0.86); p.fillPath(path, QColor(ink))
+        else:                                               # dark ink soaks into the paper: multiply
+            p.setCompositionMode(QPainter.CompositionMode_Multiply); p.setOpacity(0.9); p.fillPath(path, QColor(ink))
+        p.setOpacity(0.5); p.setCompositionMode(QPainter.CompositionMode_Overlay)
+        p.setClipPath(path); p.drawPixmap(r, img)               # the sleeve's scuffs run across the letters too
+        p.restore()
+
+    def _paint_flat_sleeve(self, p, r):
         import zlib
         from PySide6.QtGui import QFont
         lab, title, cat = self._sleeve

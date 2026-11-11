@@ -4,6 +4,13 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.25 (2026-11-10) — real record sleeves
+
+- **Tracks without cover art get a real record sleeve:** eight sleeve photos (yellow, tan, cream, black, charcoal,
+  brick, crimson, green) with our emblem on the record's label, showing through the centre hole. The artist and
+  title are printed on the sleeve: ink that takes the paper's texture and wear, coloured to read on each one.
+  Dark mode uses the darker sleeves only.
+
 ## 0.9.24 (2026-11-10) — no more duplicate tracks
 
 - **Fix: the same song showed more than once.** Track numbers stuck to names ("01. Mic Newman" and "03. Mic
