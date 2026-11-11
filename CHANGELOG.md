@@ -4,6 +4,13 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.31 (2026-11-11) — light mode Discover: the track card in an era row
+
+- Opening a track in one of the dark era rows (light mode) showed a light card with the era's white and yellow
+  words on it: the title and artist were almost invisible. The card now uses its normal ink there (dark title,
+  grey artist, crimson tags, green "ready" line), and dark mode is unchanged.
+- The screens kit renders this view too ("Discover, era track open").
+
 ## 0.9.30 (2026-11-10) — light mode Queue: words you can read again
 
 - **Queue rows in light mode** showed white titles and artists on the light background (since 0.9.26's hover

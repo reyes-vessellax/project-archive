@@ -114,6 +114,19 @@ def main() -> int:
             d.home_view.verticalScrollBar().setValue(0)
         shot("Discover", discover)
         shot("Discover, scrolled", lambda: w.discover.home_view.verticalScrollBar().setValue(900))
+
+        def era_open():                                       # a track opened inside a dark era panel
+            d = w.discover
+            for row in d.rows.values():
+                p = row
+                while p is not None and p.objectName() != "eraPanel":
+                    p = p.parentWidget()
+                if p is not None and row.tiles:
+                    d._tap_tile(row, row.tiles[0]); spin(0.5)
+                    d.home_view.ensureWidgetVisible(d.track_card, 0, 200); return
+            raise RuntimeError("no era row to open a track in")
+        shot("Discover, era track open", era_open)
+        w.discover._close_card()
         shot("Search", lambda: w._tab("search"))
         shot("Queue", lambda: w._tab("queue"))
         jobs = [j for j in svc.jobs() if j["state"] in (J.READY, J.PROMOTED)]

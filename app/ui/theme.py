@@ -305,6 +305,11 @@ QFrame#eraPanel QLabel#secTag, QFrame#eraPanel QLabel#tilemeta {{ color: #ffd700
 QFrame#eraPanel QLabel#tileNum {{ color: #ffd700; }}
 QFrame#eraPanel QWidget#page {{ background: transparent; }}
 QFrame#eraPanel QScrollArea {{ background: transparent; }}
+/* the track card opened inside an era panel is a normal card again (its own background): normal ink, not the era's light/yellow */
+QFrame#eraPanel QFrame#spin QLabel {{ color: {c['text']}; }}
+QFrame#eraPanel QFrame#spin QLabel#spinartist, QFrame#eraPanel QFrame#spin QLabel#muted {{ color: {c['muted']}; }}
+QFrame#eraPanel QFrame#spin QLabel#tilemeta {{ color: {c['accent']}; }}
+QFrame#eraPanel QFrame#spin QLabel#copyline, QFrame#eraPanel QFrame#spin QLabel#fmtbadge {{ color: {c['pass_']}; }}
 QFrame#ghost {{ background: {c['bar']}; border-radius: 3px; }}
 QLabel#fmtbadge {{ font-family: {mono}; font-size: 10px; font-weight: 700; letter-spacing: 1px; color: {c['pass_']}; }}
 QPushButton#arrow {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 15px; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px; font-size: 18px; font-weight: 700; color: {c['text']}; padding: 0 0 2px 0; }}
