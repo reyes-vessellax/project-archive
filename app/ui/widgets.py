@@ -121,6 +121,15 @@ def label(text: str = "", role: str = "", tag: str = "", wrap: bool = False, tip
     return w
 
 
+def _same_file(a: str, b: str) -> bool:
+    """Two paths to the same file. Not a text compare: on Windows the player reports C:/x/y.wav and we hold
+    C:\\x\\y.wav, so a text compare never matched (the play button and playhead didn't follow the track there)."""
+    import os
+    if not a or not b:
+        return False
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
 FX_THEME = "light"            # set by the window with the theme: shadows in light, a soft glow in dark
 _NO_FX = {"link", "x", "zoom", "play", "menuitem", "tab", "avatar", "pill", "pillbtn", "altrow", "arrow", "barplay"}
 
@@ -1013,7 +1022,9 @@ class SpectrumView(QLabel):
             return False
 
     def _mine(self) -> bool:
-        return bool(self._audio) and self._player is not None and self._player.source().toLocalFile() == self._audio
+        if not self._audio or self._player is None:
+            return False
+        return _same_file(self._player.source().toLocalFile(), self._audio)
 
     def _on_position(self, _ms: int):
         if self._mine():

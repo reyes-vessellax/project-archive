@@ -17,6 +17,8 @@ one line changes and this file gets a note.
 - **Fix: Preview in Search** is allowed on every usable row (a copy that turns out busy is swapped for another ready
   one), never stays stuck on "Getting preview…" (45 s at most), and every attempt is logged.
 - **Fix: Queue play button:** opening another track while one plays showed ❚❚ for the new track; it shows ▶ now.
+- **Fix (Windows): the spectrogram's play button and playhead now follow the track.** Paths were compared as text,
+  and Windows reports them with forward slashes, so "is this the track that's playing?" never matched there.
 
 ## 0.9.21 (2026-11-10) — Dig the crate never gets stuck; a bigger spectrogram
 

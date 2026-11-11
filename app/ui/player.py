@@ -11,6 +11,15 @@ from PySide6.QtWidgets import QFrame, QSlider, QStyle, QStyleOptionSlider, QWidg
 from .widgets import PlayButton, StopButton, hbox, label, vbox
 
 
+
+
+def _same_file(a: str, b: str) -> bool:
+    """Same file, not same text: Windows paths come back with forward slashes."""
+    import os
+    if not a or not b:
+        return False
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
 class Player(QObject):
     changed = Signal()                     # source, state or title changed
     _inst: "Player | None" = None
@@ -89,7 +98,7 @@ class Player(QObject):
         if not self._ensure():
             return
         self.follow_default_output()                  # the OS doesn't always announce a change; check on every play
-        if self.media.source().toLocalFile() != path:
+        if not _same_file(self.media.source().toLocalFile(), path):
             self.media.stop()
             self.media.setSource(QUrl.fromLocalFile(path))
         self.title, self.subtitle, self.path = title, subtitle, path
@@ -104,7 +113,7 @@ class Player(QObject):
         self.changed.emit()
 
     def owns(self, path: str | None) -> bool:
-        return bool(path) and self.media is not None and self.media.source().toLocalFile() == path
+        return bool(path) and self.media is not None and _same_file(self.media.source().toLocalFile(), path)
 
     def playing(self) -> bool:
         if self.media is None:
