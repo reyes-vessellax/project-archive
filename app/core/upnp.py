@@ -45,13 +45,13 @@ def discover(timeout: float = 2.5) -> Gateway | None:
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             try:
-                data, _ = s.recvfrom(4096)
+                data, addr = s.recvfrom(4096)
             except socket.timeout:
                 break
             m = re.search(rb"(?im)^location:\s*(\S+)", data)
             if m:
                 loc = m.group(1).decode(errors="replace")
-                if loc not in locations:
+                if _local_url(loc, addr[0]) and loc not in locations:     # only the device that answered, on the LAN
                     locations.append(loc)
         s.close()
     except OSError:
@@ -63,9 +63,33 @@ def discover(timeout: float = 2.5) -> Gateway | None:
     return None
 
 
+class _NoRedirect(request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None                                   # a router never needs to send us elsewhere
+
+
+_OPENER = request.build_opener(_NoRedirect)
+
+
+def _local_url(url: str, host_must_be: str = "") -> bool:
+    """A plain http(s) URL on a private LAN address (and, if given, on the device that answered). Anything else
+    a device on the network announces is ignored: it can't make DigMart call other hosts."""
+    import ipaddress
+    try:
+        u = parse.urlparse(url)
+        if u.scheme not in ("http", "https") or not u.hostname:
+            return False
+        ip = ipaddress.ip_address(u.hostname)
+    except ValueError:
+        return False
+    if not (ip.is_private and not ip.is_loopback):
+        return False
+    return not host_must_be or u.hostname == host_must_be
+
+
 def _gateway_from(location: str) -> Gateway | None:
     try:
-        with request.urlopen(location, timeout=3) as r:
+        with _OPENER.open(location, timeout=3) as r:
             xml = r.read().decode(errors="replace")
     except Exception:
         return None
@@ -75,6 +99,8 @@ def _gateway_from(location: str) -> Gateway | None:
         if m:
             control = parse.urljoin(location, m.group(1))
             host = parse.urlparse(location).hostname or ""
+            if not _local_url(control, host):
+                return None                           # the control URL must be on the same router
             try:
                 local_ip = _local_ip_towards(host)
             except OSError:
@@ -91,7 +117,7 @@ def _soap(gw: Gateway, action: str, args: dict[str, str]) -> tuple[int, str]:
     req = request.Request(gw.control_url, data=env, method="POST", headers={
         "Content-Type": 'text/xml; charset="utf-8"', "SOAPAction": f'"{gw.service_type}#{action}"'})
     try:
-        with request.urlopen(req, timeout=5) as r:
+        with _OPENER.open(req, timeout=5) as r:
             return r.status, r.read().decode(errors="replace")
     except request.HTTPError as e:
         return e.code, e.read().decode(errors="replace")

@@ -80,6 +80,10 @@ class ArchiveService:
                  adapter_factory: Callable[["ArchiveService"], SourceAdapter | None] | None = None,
                  manager: SlskdManager | None = None):
         self.db = Database(db_path or data_dir() / "archive.db")
+        try:
+            self.db.prune_cache()                              # stale lookups don't pile up in the database
+        except Exception:
+            pass
         from .searching import Budget
         self.search_budget = Budget()     # one bucket: the user's searches, Batch and the Wishlist
         self._pv_lock, self._pv_bg_cancel = threading.Lock(), False     # one preview at a time; yours wins
@@ -199,12 +203,21 @@ class ArchiveService:
         except Exception:
             pass
         for p in list(root.iterdir()):
-            if p.name == "app.lock":
-                continue
+            if not self._ours(p):
+                continue              # only what DigMart creates here: never anything else that shares the folder
             try:
                 shutil.rmtree(p) if p.is_dir() else p.unlink()
             except OSError:
                 pass
+
+    # Everything DigMart keeps in its data folder. "Start fresh" removes these and nothing else, so a data folder
+    # pointed somewhere shared (PROJECT_ARCHIVE_DATA) can't take other files with it.
+    OWNED = {"archive.db", "app.log", "app.log.1", "update.log", "secrets.json", "session.json", "client", "covers",
+             "discover_thumbs", "preview", "reports", "spectrograms", "spin", "staging", "updates", "engine.log"}
+
+    def _ours(self, p: Path) -> bool:
+        n = p.name
+        return n in self.OWNED or (n.startswith("archive.db-") and n[len("archive.db-"):] in ("wal", "shm", "journal"))
 
     def watchdog(self) -> bool:
         """Call from a timer (off the UI thread): if the engine process died, start it again.
@@ -398,14 +411,27 @@ class ArchiveService:
                 Path(self.settings.slskd_downloads_dir or getattr(self.manager, "downloads_dir", "/nonexistent"))]
 
     @staticmethod
-    def _find_named(roots: list[Path], name: str) -> Path | None:
+    def _find_named(roots: list[Path], name: str, exclude: frozenset = frozenset()) -> Path | None:
+        """This preview's partial file. Files of that name that were already there (exclude) are never it: a
+        finished download of the same name must not be padded, read as a partial, or deleted."""
         import os
         for root in roots:                                  # incomplete folder first, then downloads
             if root.is_dir():
                 for dirpath, _, files in os.walk(root):
-                    if name in files:
+                    if name in files and (Path(dirpath) / name) not in exclude:
                         return Path(dirpath) / name
         return None
+
+    @staticmethod
+    def _all_named(roots: list[Path], name: str) -> frozenset:
+        import os
+        found = set()
+        for root in roots:
+            if root.is_dir():
+                for dirpath, _, files in os.walk(root):
+                    if name in files:
+                        found.add(Path(dirpath) / name)
+        return frozenset(found)
 
     def snippet_preview(self, cand: Candidate, seconds: float = 20.0, should_stop=lambda: False,
                         progress=lambda msg: None, timeout_s: float = 60.0, background: bool = False) -> tuple[Path, float]:
@@ -451,6 +477,7 @@ class ArchiveService:
         start = max(0.0, min(length * random.uniform(0.30, 0.60), length - seconds - 1))
         name = cand.remote_path.replace("\\", "/").split("/")[-1]
         roots = self._preview_roots()
+        already = self._all_named(roots, name)             # same-named files from before: never ours to touch
         self.purge_previews()
         out = self._preview_dir()
         ledger = out / "partials.txt"
@@ -480,7 +507,7 @@ class ArchiveService:
                 except Exception:
                     break
                 _time.sleep(0.15)
-            part = self._find_named(roots, name)
+            part = self._find_named(roots, name, already)
             last, t_end = -1, _time.monotonic() + 5
             while part is not None and part.exists() and _time.monotonic() < t_end:
                 try:
@@ -525,7 +552,7 @@ class ArchiveService:
                         progress("Waiting for the sharer…")
                     else:
                         queued_since = None
-                    part = self._find_named(roots, name)
+                    part = self._find_named(roots, name, already)
                     if part is not None:
                         note(part)
                     have = part.stat().st_size if part is not None and part.exists() else 0
@@ -571,7 +598,7 @@ class ArchiveService:
                 # header unreadable or the slice didn't decode: fall through to the slow way
             start = min(start, length * 0.33)
             need = int(cand.size * min(1.0, (start + seconds + 4) / max(length, 1)) + 256 * 1024)
-            part = self._find_named(roots, name)
+            part = self._find_named(roots, name, already)
             if part is not None and part.exists():
                 part.unlink(missing_ok=True)                        # start clean; a padded file has holes
             part = fetch(need, "Getting a preview")
@@ -582,7 +609,7 @@ class ArchiveService:
             raise ActionBlocked("Couldn't cut a preview from that copy. Try another one.")
         finally:
             chunk.unlink(missing_ok=True)
-            leftover = self._find_named(roots, name)
+            leftover = self._find_named(roots, name, already)
             for p in seen | ({leftover} if leftover is not None else set()):
                 if p in seen and p.exists():                        # only what THIS preview wrote
                     try:

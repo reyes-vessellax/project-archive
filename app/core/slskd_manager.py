@@ -167,7 +167,13 @@ class SlskdManager:
         env = {**os.environ, "SLSKD_SLSK_USERNAME": user, "SLSKD_SLSK_PASSWORD": password,
                "NO_COLOR": "1", "DOTNET_CLI_TELEMETRY_OPTOUT": "1"}
         self._end_strays()
-        self._log = log = open(self.instance_dir / "engine.log", "ab")
+        elog = self.instance_dir / "engine.log"
+        try:
+            if elog.stat().st_size > 5_000_000:              # rotate like app.log: the engine's log never grows forever
+                elog.replace(elog.with_name("engine.log.1"))
+        except OSError:
+            pass
+        self._log = log = open(elog, "ab")
         self.proc = subprocess.Popen(
             [str(exe), "--app-dir", str(self.instance_dir), "--config", str(cfg), "--headless", "--no-logo",
              "--no-config-watch"],

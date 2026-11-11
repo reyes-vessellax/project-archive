@@ -54,3 +54,14 @@ def test_same_file_name_from_two_folders_keeps_both_on_usb(tmp_path):
     # exporting again reuses the copies instead of piling up more
     export([RbTrack(f, "One", "X"), RbTrack(g, "Two", "Y")], tmp_path / "x.xml", "Friday", copy_to=tmp_path / "usb")
     assert len(list((tmp_path / "usb" / "DigMart" / "Friday").iterdir())) == 2
+
+
+def test_same_name_same_size_different_track_is_not_reused(tmp_path):
+    """Audit (Medium): a same-name, same-size file on the stick was taken as the track without comparing it."""
+    usb = tmp_path / "usb"; dest = usb / "DigMart" / "Friday"; dest.mkdir(parents=True)
+    (dest / "track.mp3").write_bytes(b"A" * 100)                      # someone else's track, same name and size
+    f = tmp_path / "track.mp3"; f.write_bytes(b"B" * 100)
+    out = export([RbTrack(f, "One", "X")], tmp_path / "x.xml", "Friday", copy_to=usb)
+    loc = ET.parse(out).getroot().find("COLLECTION")[0].get("Location")
+    assert "track%20%282%29.mp3" in loc                               # its own copy, not the other track
+    assert (dest / "track (2).mp3").read_bytes() == b"B" * 100 and (dest / "track.mp3").read_bytes() == b"A" * 100

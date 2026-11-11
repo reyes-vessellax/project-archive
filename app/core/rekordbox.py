@@ -53,7 +53,7 @@ def export(tracks: list[RbTrack], xml_path: Path, playlist: str, copy_to: Path |
         for t in tracks:
             target = dest / t.path.name
             n = 2
-            while target.name.lower() in used or (target.exists() and target.stat().st_size != t.path.stat().st_size):
+            while target.name.lower() in used or (target.exists() and not _same_content(target, t.path)):
                 target = dest / f"{t.path.stem} ({n}){t.path.suffix}"; n += 1    # same name, different file: keep both
             used.add(target.name.lower())
             if not target.exists():
@@ -95,6 +95,16 @@ def export(tracks: list[RbTrack], xml_path: Path, playlist: str, copy_to: Path |
     xml_path.parent.mkdir(parents=True, exist_ok=True)
     ET.ElementTree(root).write(xml_path, encoding="UTF-8", xml_declaration=True)
     return xml_path
+
+
+def _same_content(a: Path, b: Path) -> bool:
+    """Reuse a copy already on the stick only if it IS this track: same size AND the same bytes (a same-name,
+    same-size file can be a different track)."""
+    import filecmp
+    try:
+        return a.stat().st_size == b.stat().st_size and filecmp.cmp(a, b, shallow=False)
+    except OSError:
+        return False
 
 
 def _safe(name: str) -> str:

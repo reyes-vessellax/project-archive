@@ -137,7 +137,8 @@ OPEN_SOURCE_NOTES = (
     "FFmpeg (decodes audio for the checks), under the GNU General Public License v3.\n"
     "  Licence:  _internal/vendor/ffmpeg/FFMPEG-LICENSE.txt\n"
     "  Source:   https://github.com/FFmpeg/FFmpeg  (builds: https://github.com/BtbN/FFmpeg-Builds)\n\n"
-    "Also inside: Python, Qt for Python (PySide6, LGPL), NumPy, Mutagen and yt-dlp, each under its own licence.\n"
+    "Also inside: Python, Qt for Python (PySide6, LGPL), NumPy, Mutagen, yt-dlp and certifi, each under its own\n"
+    "licence. Their licence texts are in the licenses/ folder (one folder per package).\n"
 )
 
 if Path("vendor/slskd").is_dir():
@@ -214,6 +215,11 @@ if internal is not None:
             continue                                           # points at the real one; done below
         www.mkdir(parents=True, exist_ok=True)
         (www / "index.html").write_text("<!doctype html><title>headless</title>")
+    # Licence texts of the bundled Python packages (PyInstaller dropped their dist-info folders above).
+    sys.path.insert(0, str(Path(__file__).parent))
+    import licenses  # noqa: E402
+    lic_dir = (resources if sys.platform == "darwin" and resources.is_dir() else internal) / "licenses"
+    print("licences: " + ", ".join(licenses.collect(lic_dir)))
     # A README at the top so a curious user knows what the folders are (Windows folder layout only).
     (out / "README.txt" if sys.platform != "darwin" else Path("dist") / "README.txt").write_text(
         f"{APP_NAME}\n\n"

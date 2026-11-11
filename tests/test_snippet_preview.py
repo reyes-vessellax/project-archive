@@ -151,3 +151,31 @@ def test_ready_copy_that_queues_us_is_reported_busy(service, fixtures, monkeypat
     with pytest.raises(PreviewBusy):
         service.snippet_preview(c)
     assert eng.cancelled and not c.free_slot and c.queue_length >= 1     # the row can now show it as busy
+
+
+@needs_ffmpeg
+def test_a_finished_file_with_the_same_name_is_never_touched(service, fixtures, monkeypatch):
+    """Audit (High): the partial was found by file name in the downloads folder too, so a finished download
+    with the same name could be padded, read as the preview, and deleted."""
+    import shutil
+    src = fixtures["mp3_320"]
+    downloads = Path(service.settings.slskd_downloads_dir or service.manager.downloads_dir)
+    keep = downloads / "an earlier download" / "Track.mp3"          # same name as the copy being previewed
+    keep.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(fixtures["flac"], keep)                              # different content, same name
+    before = keep.read_bytes()
+    class SlowStart(FakeEngine):                                     # a real peer: a moment before the first bytes
+        polls = 0
+
+        def transfer_status(self, t):
+            self.polls += 1
+            if self.polls <= 3:
+                return Transfer(t.transfer_id, t.user, t.remote_path, t.size, state="InProgress", bytes_done=0)
+            return super().transfer_status(t)
+    eng = SlowStart(src, Path(service.manager.instance_dir) / "incomplete")
+    monkeypatch.setattr(service, "_adapter_or_block", lambda: eng)
+    try:
+        service.snippet_preview(_cand(src, "mp3"), seconds=5)
+    except Exception:
+        pass
+    assert keep.exists() and keep.read_bytes() == before            # …and the finished file is untouched

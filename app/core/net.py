@@ -7,6 +7,7 @@ Every outgoing HTTPS request goes through `urlopen` here, which verifies against
 from __future__ import annotations
 
 import ssl
+import urllib.error
 import urllib.request
 
 _ctx: ssl.SSLContext | None = None
@@ -23,7 +24,18 @@ def ssl_context() -> ssl.SSLContext:
     return _ctx
 
 
-def urlopen(req, timeout: float = 15.0):
-    """urllib.request.urlopen with verified HTTPS that works inside the packaged app (redirects followed)."""
-    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_context()))
+class _HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not str(newurl).lower().startswith("https://"):
+            raise urllib.error.URLError(f"refused a redirect away from https ({newurl[:60]})")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def urlopen(req, timeout: float = 15.0, https_only: bool = False):
+    """urllib.request.urlopen with verified HTTPS that works inside the packaged app (redirects followed).
+    https_only: every redirect must stay on https too (the updater)."""
+    handlers = [urllib.request.HTTPSHandler(context=ssl_context())]
+    if https_only:
+        handlers.append(_HttpsOnlyRedirects())
+    opener = urllib.request.build_opener(*handlers)
     return opener.open(req, timeout=timeout)

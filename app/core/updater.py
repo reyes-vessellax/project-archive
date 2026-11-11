@@ -139,6 +139,8 @@ def download(u: Update, progress: Callable[[int, int], None] = lambda done, tota
     if final.is_file() and final.stat().st_size == u.size and _sha256(final) == u.sha256:
         return final
     part = final.with_suffix(".zip.part")
+    if not str(u.url).startswith("https://"):
+        raise UpdateError("Update links must be https.")             # checked again here, not only in check()
     h, done = hashlib.sha256(), 0
     resp = opener(u.url) if opener else _net_urlopen(  # noqa: S310 - https checked in check()
         urllib.request.Request(u.url, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION} updater"}), timeout=30)
@@ -304,4 +306,4 @@ def finish_pending() -> None:
 
 
 def _net_urlopen(req, timeout=15.0):
-    return _netmod.urlopen(req, timeout=timeout)
+    return _netmod.urlopen(req, timeout=timeout, https_only=True)    # redirects must stay on https too

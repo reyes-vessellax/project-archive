@@ -100,6 +100,18 @@ class Database:
         self._con.executescript(SCHEMA)
         self._migrate()
 
+    def prune_cache(self) -> int:
+        """Drop lookups nobody will use again: crate rows older than a day (they're refreshed every few hours) and
+        anything older than 400 days (the longest any lookup is trusted). Run at start-up."""
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        day = (now - timedelta(days=1)).isoformat(timespec="seconds")
+        old = (now - timedelta(days=400)).isoformat(timespec="seconds")
+        with self._lock, self._con:
+            n = self._con.execute("DELETE FROM discover_cache WHERE (url LIKE 'discover:crate%' AND fetched_at < ?) "
+                                  "OR fetched_at < ?", (day, old)).rowcount
+        return n
+
     def _migrate(self) -> None:
         for table, cols in MIGRATIONS.items():
             have = {r[1] for r in self._con.execute(f"PRAGMA table_info({table})")}

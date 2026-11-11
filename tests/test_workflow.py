@@ -296,3 +296,28 @@ def test_prechecks_stop_non_audio_before_decoding(service, tmp_path):
 def test_prechecks_pass_real_audio(service, fixtures):
     j = service.stage(fixtures["mp3_320"]); a = service.analyze(j["id"])
     assert not any(c["id"] == "precheck" and c["status"] == "FAIL" for c in a["checks"])
+
+
+def test_start_fresh_leaves_other_files_in_a_shared_data_folder(service):
+    """Audit (High): Start fresh deleted everything in the data folder. Pointed at a shared folder
+    (PROJECT_ARCHIVE_DATA), that would take other files with it. Now only DigMart's own entries go."""
+    root = service.db.path.parent
+    (root / "my notes.txt").write_text("not DigMart's")
+    (root / "Some Album").mkdir()
+    (root / "Some Album" / "track.flac").write_bytes(b"x")
+    (root / "spin").mkdir(exist_ok=True)
+    service.reset_everything()
+    assert (root / "my notes.txt").exists() and (root / "Some Album" / "track.flac").exists()
+    assert not (root / "spin").exists() and not service.db.path.exists()
+
+
+def test_stale_discover_lookups_are_pruned(service):
+    """Audit (Low): the Discover cache was never pruned."""
+    db = service.db
+    db.cache_put("discover:crate4:deep house", {"tracks": []})
+    db.cache_put("https://musicbrainz.org/ws/2/artist?x", {"artists": []})
+    db._con.execute("UPDATE discover_cache SET fetched_at = '2020-01-01T00:00:00+00:00'")
+    db._con.commit()
+    db.cache_put("discover:crate4:acid house", {"tracks": []})            # fresh: stays
+    assert db.prune_cache() == 2
+    assert db.cache_get("discover:crate4:acid house") and not db.cache_get("discover:crate4:deep house")

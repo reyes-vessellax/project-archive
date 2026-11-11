@@ -4,6 +4,22 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.23 (2026-11-10) — fixes from an outside audit
+
+An independent audit (Codex) of security and data safety; every finding was checked against the code first.
+- **Fix (data safety): a preview could damage a finished download with the same file name.** Previews found their
+  partial file by name, in the downloads folder too; a finished file of that name could be padded, read as the
+  preview, then deleted. Files that were already there are never touched now.
+- **Start fresh** removes only DigMart's own files and folders, never anything else in its data folder.
+- **Router setup (UPnP)** only talks to the router that answered, on the local network, without following
+  redirects (a device on the network could otherwise point DigMart at other hosts).
+- **Rekordbox USB export** compares a same-name, same-size file's contents before reusing it.
+- **Updater** stays on https through redirects and checks the link again when downloading (the signature and
+  hash checks were already there).
+- Stale Discover lookups are pruned at start-up; the engine's log rotates at 5 MB like app.log.
+- The app now ships licence texts for every bundled Python package (licenses/ folder; LGPL/GPL for Qt).
+- Checked and not a problem: the database lock (every read already takes it).
+
 ## 0.9.22 (2026-11-10) — Search redone, buttons with life, XDJs, fixes
 
 - **Search looks like the rest of the app:** the masthead (big title, thick rule), a big search box with a Search

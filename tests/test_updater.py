@@ -159,3 +159,16 @@ def test_windows_swap_script_is_safe(tmp_path, monkeypatch):
     monkeypatch.setattr(U.subprocess, "Popen", lambda c, **kw: seen.update(kw))
     U.launch_installer(cmd)
     assert seen["cwd"] == str(tmp_path / "C" / "AppData" / "DigMart" / "updates")   # not inside the app folder
+
+
+def test_download_refuses_a_non_https_link_and_https_redirects_only():
+    """Audit (Medium): https was checked once in check(); download() and redirects weren't held to it."""
+    import urllib.error
+    import pytest
+    from app.core import net, updater
+    u = updater.Update(version="9.9.9", notes="", url="http://example.com/x.zip", sha256="0" * 64, size=1)
+    with pytest.raises(updater.UpdateError):
+        updater.download(u, opener=lambda url: None)
+    h = net._HttpsOnlyRedirects()
+    with pytest.raises(urllib.error.URLError):
+        h.redirect_request(None, None, 302, "Found", {}, "http://example.com/evil.zip")
