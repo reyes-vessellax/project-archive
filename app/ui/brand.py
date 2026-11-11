@@ -57,10 +57,10 @@ def app_icon(theme: str = "light") -> QIcon:
 
 
 class Brand(QWidget):
-    """Top of the sidebar: the burst + smiley mark on its own (no wordmark; the window title says DigMart).
-    Dark mode uses the same artwork with its black outline shown white."""
+    """Top of the sidebar: the full DigMart logo, burst + smiley with the DigMart wordmark (the brand's own files).
+    Dark mode uses the dark-background version of the same artwork."""
     clicked = Signal()
-    H = 78                                           # mark height in the sidebar (logical px)
+    H = 118                                          # logo height in the sidebar (logical px): the wordmark stays legible
 
     def __init__(self):
         super().__init__()
@@ -72,7 +72,7 @@ class Brand(QWidget):
         self.set_theme("light")
 
     def set_theme(self, theme: str):
-        pm = _asset("digmart-mark-dark.png" if theme == "dark" else "digmart-mark.png")
+        pm = _asset("digmart-logo-dark.png" if theme == "dark" else "digmart-logo.png")
         pm = pm.scaledToHeight(self.H * 3, Qt.SmoothTransformation)          # 3x: sharp on Retina
         pm.setDevicePixelRatio(3.0)
         self.logo.setPixmap(pm); self.logo.setFixedSize(pm.deviceIndependentSize().toSize())

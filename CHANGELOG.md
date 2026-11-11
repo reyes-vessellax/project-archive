@@ -4,6 +4,11 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.27 (2026-11-10) — the full logo is back
+
+- The top-left corner shows the full DigMart logo again: the burst and smiley with the DigMart wordmark (the dark
+  version in dark mode), instead of the mark on its own.
+
 ## 0.9.26 (2026-11-10) — the brand red on hover
 
 - Hovering over a row in the Queue, the Library and Search now shows the solid dark red from the logo (with white
