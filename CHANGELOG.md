@@ -4,6 +4,20 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.33 (2026-11-11) — the tour, the guide and Help cover everything
+
+- **Tour:** a Batch step (paste a playlist link, Download and check, saved in a folder named after it);
+  NO CLUB and "waits until you decide" in the Queue steps; Download anyway for LOOK and NO CLUB; crates in
+  the Library step; Help & FAQ in the account step. A test checks every step still points at a real control
+  and that the tour shows every page.
+- **Last sign-up screen** says where to start (Discover previews, or Search) instead of only Search.
+- **Help & FAQ** opened projectarchive.app, a site under the old name that was never built. It now opens
+  the Getting Started guide that comes inside the app. The connection-problem box's Help goes straight to
+  Settings → Advanced → Connection.
+- **What's new** showed 0.3's notes; it now lists what's new.
+- **Getting Started guide:** a Batch page, NO CLUB, Download anyway, nothing expires, Help & FAQ, and a
+  "not connecting?" tip.
+
 ## 0.9.32 (2026-11-11) — no more grey covers, no expiring tracks, "No club", smoother previews
 
 - **Discover card cover:** a track with no cover art showed a grey box in its card. It now shows the same

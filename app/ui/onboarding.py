@@ -218,9 +218,10 @@ class ReadyPage(QWidget):
         lay.addWidget(_logo(svc))
         lay.addWidget(_steps(2))
         lay.addWidget(label("You're set.", "big"))
-        lay.addWidget(label("Search for a track, pick a source, and it lands in quarantine where it's checked before "
-                            "anything reaches your library. If your firewall asks to allow incoming connections, choose "
-                            "Allow — that's how other users send you files.", "muted", wrap=True))
+        lay.addWidget(label("Start on Discover and preview any track without downloading it, or Search for one you "
+                            "know. Whatever you pick lands in quarantine and is checked before anything reaches your "
+                            "library. A one-minute tour shows you around. If your firewall asks to allow incoming "
+                            "connections, choose Allow — that's how other users send you files.", "muted", wrap=True))
         lay.addWidget(button(f"Open {APP_NAME}", "primary", self.done.emit))
         lay.addStretch(1)
 

@@ -17,7 +17,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QStackedWidget, QWidget
 
 from ..adapters.base import Candidate, SearchResult
-from ..config import APP_NAME, data_dir
+from ..config import APP_NAME, APP_VERSION, data_dir
 from ..core import jobs as J
 from ..core.safety import Rejected
 from ..core.service import ActionBlocked, ArchiveService
@@ -59,7 +59,15 @@ SEARCH_QUIET_S = 2.5                # stop once nothing new has arrived for this
 # minutes, which looks like "no results" to the user; under it, every search comes back.
 SEARCH_BURST = 4
 SEARCH_REFILL_S = 6.0
-SUPPORT_URL = "https://projectarchive.app/help/connection"      # FAQ page on the website (to be created)
+GUIDE_PDF = Path(__file__).resolve().parent / "help" / "DigMart - Getting Started.pdf"   # Help & FAQ: bundled, no website
+WHATS_NEW = (f"New in {APP_VERSION}:\n\n"
+             "• Batch: paste a playlist link (YouTube, SoundCloud, Spotify, Apple Music) and get every track, checked.\n"
+             "• NO CLUB: a real file that won't hold up on a club system (out of phase, or decks can't load it) "
+             "is flagged instead of called Good.\n"
+             "• Checked tracks wait in the Queue until you decide; nothing expires.\n"
+             "• Previews switch cleanly between songs; tracks with no cover get a printed record sleeve.\n"
+             "• Light mode reads properly everywhere; ♫ marks what's playing.\n\n"
+             "The full guide is under Help & FAQ.")
 FIREWALL_ASK = (f"To download from other users, {APP_NAME} needs to accept incoming connections.\n\n"
                 f"Allow it now? Windows will ask you to confirm once. Nothing is shared from your computer "
                 f"unless you turn that on yourself in Settings.")
@@ -393,12 +401,14 @@ class MainWindow(QMainWindow):
             self.settings.show_section({"account": "account", "settings": "library", "appearance": "appearance"}[key])
             self.pages.setCurrentWidget(self.settings); self.topbar.set_active("")
         elif key == "help":
-            QDesktopServices.openUrl(QUrl(SUPPORT_URL))
+            if GUIDE_PDF.exists():
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(GUIDE_PDF)))
+            else:
+                self.statusBar().showMessage("The guide isn't in this copy of the app.", 6000)
         elif key == "tour":
             self._start_tour()
         elif key == "whatsnew":
-            QMessageBox.information(self, APP_NAME, "0.3: new look, light and dark; sign-up and your account page; "
-                                    "search results with Title, Mix and Artist; fastest sources first.")
+            QMessageBox.information(self, APP_NAME, WHATS_NEW)
         elif key == "signout":
             self._sign_out()
 
@@ -617,8 +627,9 @@ class MainWindow(QMainWindow):
         box.exec()
         if box.clickedButton() is retry:
             self._start_backend()
-        elif box.clickedButton() is help_:
-            QDesktopServices.openUrl(QUrl(SUPPORT_URL))
+        elif box.clickedButton() is help_:                  # the Connection panel says what's wrong and how to fix it
+            self.settings.show_section("advanced")
+            self.pages.setCurrentWidget(self.settings); self.topbar.set_active("")
 
     def _poll_status(self):
         def work():

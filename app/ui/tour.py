@@ -42,26 +42,32 @@ def default_steps() -> list[Step]:
              "nobody has it, Watch this search and DigMart keeps looking for you."),
         Step("home.list_host", "Queue",
              "Everything you've asked for, newest first. The word on the left says where it is: DOWN (downloading), "
-             "CHECK (being checked), WAIT (its turn is next), then GOOD, LOOK or BROKEN once it's been checked. "
-             "The × at the left clears a finished row; Clear finished clears them all."),
+             "CHECK (being checked), WAIT (its turn is next), then GOOD, LOOK, NO CLUB or BROKEN once it's been "
+             "checked. A checked track waits here until you decide; the × at the left clears a row."),
         Step("review", "Details, right here",
-             "Click any track in the Queue and its details open beside it: the spectrogram, every check, CLUB-READY, "
-             "and Download or Delete. Nothing reaches your library on its own.", page="queue"),
+             "Click any track in the Queue and its details open beside it: BPM and key, the spectrogram (press play to "
+             "hear it), every check, and the CLUB line: will it load on the decks and hold up on a big system. "
+             "Nothing reaches your library on its own.", page="queue"),
         Step("review.btn_save", "Download or Delete",
              f"On a checked track: Download to Library moves it into your {APP_NAME} folder. Delete removes it for good. "
-             "GOOD gets a plain Download; LOOK asks you to confirm; BROKEN can only be deleted.", page="ready"),
+             "GOOD gets a plain Download. LOOK and NO CLUB (a fine file that won't hold up in a club, like one "
+             "that's out of phase) say Download anyway. BROKEN can only be deleted.", page="ready"),
         Step("home.add_btn", "Add your own files",
              "Not everything comes from the network. Use Add files, or drag tracks onto the window, to check files you "
              "already have.", page="queue"),
+        Step("topbar.tabs.batch", "Batch",
+             "Got a playlist? Paste a YouTube, SoundCloud, Spotify or Apple Music playlist link (or pick a folder of "
+             "low-quality files to upgrade). DigMart finds the best copy of every track; press Download and check and "
+             "each one goes through the same checks, saved in a folder named after the playlist."),
         Step("topbar.tabs.wishlist", "Wishlist",
              "Nobody has it today? Watch the search. It's asked for again every half hour for 30 days, and the first "
              "copy that passes the checks lands in your Queue, with a count here."),
         Step("topbar.tabs.library", "Library",
-             "Everything you've downloaded, with its facts. Search it, and use Show in folder to jump straight to the "
-             "file on disk."),
+             "Everything you've downloaded, with its facts. Search it, play it, and use Show in folder to jump straight "
+             "to the file on disk. Add to crate groups tracks for a set; your crates sit in the sidebar."),
         Step("topbar.avatar", "Your account",
-             "Settings, appearance (light or dark), help and sign-out live here. Your library folder and what you "
-             "share are under Settings → Library & sharing."),
+             "Settings, appearance (light or dark), Help & FAQ, this tour again, and sign-out live here. Your library folder and "
+             "what you share are under Settings → Library & sharing."),
         Step("", "That's it",
              "The whole loop: Preview it, Check this file, then Download to Library from the Queue. Every file is "
              "checked first (fake 320s, broken files, club-ready), so nothing bad ever touches your library."),

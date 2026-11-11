@@ -113,7 +113,7 @@ args = [
     )), []),
 ]
 # Brand fonts and logo artwork live next to the UI code; PyInstaller only copies .py files unless told.
-for sub in ("fonts", "brand_assets"):
+for sub in ("fonts", "brand_assets", "help"):
     src = os.path.join("app", "ui", sub)
     if Path(src).is_dir():
         args += ["--add-data", f"{src}{os.pathsep}{src}"]
