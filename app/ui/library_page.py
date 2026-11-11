@@ -156,7 +156,24 @@ class LibraryPage(QWidget):
         self._just_expanded = False
 
     # ---------------------------------------------------------------- data
+    def _mark_playing(self, *_):
+        """♫ before the title of the track that's playing, wherever you've clicked since."""
+        from .player import Player
+        pl = Player.get()
+        playing = pl.media is not None and pl.playing()
+        for i in range(self.tree.topLevelItemCount()):
+            it = self.tree.topLevelItem(i)
+            title = it.data(0, Qt.UserRole + 2)
+            if title is None:
+                continue
+            want = ("♫  " + title) if playing and pl.owns(it.data(0, Qt.UserRole + 1)) else title
+            if it.text(0) != want:
+                it.setText(0, want)
+
     def refresh(self):
+        if not getattr(self, "_np_hooked", False):
+            from .player import Player
+            Player.get().changed.connect(self._mark_playing); self._np_hooked = True
         jobs = self.svc.db.jobs(states=(J.PROMOTED,), limit=5000)
         key = tuple((j["id"], j.get("final_path"), j.get("updated_at")) for j in jobs)
         if key == getattr(self, "_key", None):
@@ -302,6 +319,7 @@ class LibraryPage(QWidget):
             if st:
                 it.setForeground(self.C_GRADE, grade_col.get(st, mid))
             it.setData(0, Qt.UserRole, job["id"]); it.setData(0, Qt.UserRole + 1, final)
+            it.setData(0, Qt.UserRole + 2, title)                # the title without the ♫ marker
             it.setToolTip(self.C_FILE, final)
             if not Path(final).exists():
                 for c in range(self.tree.columnCount()):
@@ -311,6 +329,7 @@ class LibraryPage(QWidget):
             self._items.append((it, {"id": job["id"], "bpm": bpm, "cam": cam, "playlist": job.get("playlist"), "hay": hay}))
             items.append(it)
         self.tree.addTopLevelItems(items)
+        self._mark_playing()                                     # keep ♫ on the playing track after a rebuild
         self.tree.setSortingEnabled(True)
         reselected = False
         if keep:

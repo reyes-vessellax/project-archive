@@ -250,6 +250,7 @@ QLineEdit#searchbar {{ background: {c['panel']}; border: 2px solid {c['text']}; 
     font-family: {display}; font-size: 20px; font-weight: 600; }}
 QLineEdit#searchbar:focus {{ border-color: {c['accent']}; }}
 QLabel#emptyBig {{ font-family: {display}; font-size: 18px; font-weight: 700; color: {c['text']}; }}
+QLabel#nowplaying {{ color: {c['accent']}; font-size: 17px; font-weight: 700; padding: 0 2px; }}
 QLabel#pagetitle {{ font-family: {display}; font-size: 40px; font-weight: 800; letter-spacing: -1px; }}
 QLabel#mast {{ font-family: {display}; font-size: 44px; font-weight: 800; letter-spacing: -1px; }}
 QFrame#mastRule {{ background: {c['text']}; border: none; }}

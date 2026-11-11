@@ -594,6 +594,9 @@ class QueueRow(QWidget):
             lbl.setMinimumWidth(90)                          # never squeezed to nothing in a narrow window
         names.addWidget(self.title); names.addWidget(self.artist)
         lay.addLayout(names, 1)
+        self.now = label("♫", "nowplaying"); self.now.setToolTip("Playing now")   # which track the music is
+        lay.addWidget(self.now, 0, Qt.AlignVCenter)
+        self.now.hide()
         self.bar = QProgressBar(self); self.bar.setTextVisible(False); self.bar.setFixedWidth(150); self.bar.setRange(0, 100)
         self.bar.setValue(int(pct) if pct is not None else 0); self.bar.setProperty("tag", tag)
         lay.addWidget(self.bar)
@@ -635,6 +638,10 @@ class QueueRow(QWidget):
         if e.button() == Qt.LeftButton and not self.x.geometry().contains(e.pos()):
             self.clicked.emit(self.job_id)
         super().mousePressEvent(e)
+
+    def set_playing(self, on: bool) -> None:
+        if self.now.isVisible() != on:
+            self.now.setVisible(on)
 
     def update_to(self, tag: str, title: str, artist: str, pct: float | None, meta: str, removable: bool) -> None:
         """Change this row in place (a download ticking along) instead of building a new one."""

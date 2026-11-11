@@ -155,9 +155,23 @@ class HomePage(QWidget):
         self.q.setPlaceholderText("Search for a track…" if on else (message or "Connecting…"))
         self.search_btn.setEnabled(on)
 
+    def _mark_playing(self, *_):
+        from .player import Player
+        pl = Player.get()
+        playing = pl.media is not None and pl.playing()
+        for jid, row in getattr(self, "_row_widgets", {}).items():
+            try:
+                row.set_playing(bool(playing and pl.owns(self._audio_of.get(jid))))
+            except RuntimeError:
+                pass
+
     def refresh(self, jobs: list[dict], analyses: dict[str, dict | None]):
         # Rebuild the row widgets only when something visible changed; refresh() fires every poll.
         self._last_args = (jobs, analyses)
+        self._audio_of = {j["id"]: j.get("final_path") or j.get("staged_path") for j in jobs}
+        if not getattr(self, "_np_hooked", False):           # ♫ follows the player, whichever row is open
+            from .player import Player
+            Player.get().changed.connect(self._mark_playing); self._np_hooked = True
         rows = [(j["id"], row_data(j, analyses.get(j["id"]), self.steps)) for j in jobs]
         key = tuple((jid, d["tag"], d["title"], d["artist"], d["pct"], d["meta"], d["removable"]) for jid, d in rows)
         if key == getattr(self, "_last_key", None):
@@ -206,6 +220,7 @@ class HomePage(QWidget):
             if row.property("selected") != (jid == sel):
                 row.setProperty("selected", jid == sel); row.style().unpolish(row); row.style().polish(row)
         keep_scroll(self.list_scroll, rebuild)
+        self._mark_playing()
         down = sum(1 for j in jobs if j["state"] == J.QUEUED)
         chk = sum(1 for j in jobs if j["state"] in (J.STAGING, J.ANALYZING))
         self.qnote.setText(f"{down} downloading · {chk} checking" if (down or chk) else "newest first")

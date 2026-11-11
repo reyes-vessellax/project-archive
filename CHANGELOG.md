@@ -4,6 +4,11 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.28 (2026-11-10) — ♫ marks what's playing
+
+- In the Queue and the Library, a ♫ marks the track that's playing, so after you click into another track you can
+  still see where the music is coming from. It follows play, pause and stop.
+
 ## 0.9.27 (2026-11-10) — the full logo is back
 
 - The top-left corner shows the full DigMart logo again: the burst and smiley with the DigMart wordmark (the dark
