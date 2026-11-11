@@ -130,6 +130,33 @@ def _same_file(a: str, b: str) -> bool:
     return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
 
 
+class EmptyState(QLabel):
+    """An empty page says so the DigMart way: our emblem above one bold line (DESIGN.md). The emblem follows the
+    theme (the dark file has a white outline) each time it's shown."""
+    def __init__(self, text: str = ""):
+        super().__init__()
+        self.setObjectName("emptyState"); self.setAlignment(Qt.AlignCenter); self.setWordWrap(True)
+        self.setTextFormat(Qt.RichText)
+        self._text = text
+        self._render()
+
+    def setText(self, text: str) -> None:                # noqa: N802 (Qt name)
+        self._text = text; self._render()
+
+    def text(self) -> str:                               # noqa: N802
+        return self._text
+
+    def showEvent(self, e):
+        self._render(); super().showEvent(e)
+
+    def _render(self):
+        import html as _h
+        mark = Path(__file__).parent / "brand_assets" / ("digmart-mark-dark.png" if FX_THEME == "dark" else "digmart-mark.png")
+        body = _h.escape(self._text).replace("\n", "<br>")
+        super().setText(f"<div align='center'><img src='{mark.as_posix()}' width='96'><br><br>"
+                        f"<span style='font-size:16px; font-weight:700'>{body}</span></div>" if self._text else "")
+
+
 FX_THEME = "light"            # set by the window with the theme: shadows in light, a soft glow in dark
 _NO_FX = {"link", "x", "zoom", "play", "menuitem", "tab", "avatar", "pill", "pillbtn", "altrow", "arrow", "barplay"}
 

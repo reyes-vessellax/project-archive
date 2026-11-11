@@ -143,9 +143,9 @@ class WishlistPage(QWidget):
         self.rows_host = QWidget(); self.rows_host.setObjectName("page")
         self.rows = vbox(self.rows_host, spacing=0); self.rows.addStretch(1)
         self.area = scroll(self.rows_host); root.addWidget(self.area, 1)
-        self.empty = label("Nothing on the wishlist. When a search comes up empty, press “Watch this search” "
-                           "and it will be asked for again every half hour.", "muted", wrap=True)
-        root.addWidget(self.empty)
+        from .widgets import EmptyState
+        self.empty = EmptyState("Nothing on your wishlist yet.\nSearch for a track nobody has, then press Watch this search.")
+        root.addWidget(self.empty, 1)
         root.addStretch(0)
 
     def _add(self, artist: str, title: str, mix: str):

@@ -25,11 +25,12 @@ class SettingsPage(QWidget):
         self.svc = svc
         outer, lay = page(spacing=0)
         root = vbox(self); root.addWidget(outer)
+        lay.addWidget(label("Settings", "pagetitle"))                       # the masthead, like every page
+        r_ = QFrame(); r_.setObjectName("mastRule"); r_.setFixedHeight(3); lay.addWidget(r_)
+        lay.addSpacing(18)
         body = hbox(spacing=48); lay.addLayout(body, 1)
 
         nav = vbox(spacing=2)
-        nav.addWidget(label("Settings", "h1"))
-        nav.addSpacing(10)
         self.nav_btns = {}
         for key, text in SECTIONS:
             b = button(text, "navitem", lambda _=False, k=key: self.show_section(k))

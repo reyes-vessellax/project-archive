@@ -4,6 +4,15 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.29 (2026-11-10) — one design system, and the pages that didn't match it
+
+- **DESIGN.md:** DigMart's design system in one place (feeling, brand, colour tokens, type roles, layout and
+  interaction rules, words, the sleeves) so every new screen starts consistent.
+- **tools/screens.py:** `python -m tools.screens` renders every page in light and dark to one folder (a copy of
+  your library, or `--demo`), checks the Queue panel fits, and makes a sheet of the no-cover sleeves.
+- From the first review with it: Settings gets the masthead like every page; Wishlist and Batch get the emblem
+  empty state like Search (instead of small grey text); an empty era row no longer mentions "labels".
+
 ## 0.9.28 (2026-11-10) — ♫ marks what's playing
 
 - In the Queue and the Library, a ♫ marks the track that's playing, so after you click into another track you can

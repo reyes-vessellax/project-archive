@@ -278,9 +278,8 @@ class BatchPage(QWidget):
         dl.addWidget(scroll(self.row_host), 1)
         body.addWidget(self.detail, 1)
 
-        self.empty = label("Drop in a playlist to start. Each playlist you add gets its own batch here, and the tracks you "
-                           "keep from it are saved together in a folder with the playlist's name.", "muted", wrap=True)
-        self.empty.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        from .widgets import EmptyState
+        self.empty = EmptyState("Add a playlist to start.\nEach one becomes its own batch, kept together in a folder.")
         body.addWidget(self.empty, 1)
         self._refresh_visibility()
 

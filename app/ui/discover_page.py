@@ -693,7 +693,7 @@ class CrateRow(QWidget):
         self.note.setVisible(not tracks)
         self.area.setVisible(bool(tracks))
         if not tracks:
-            self.note.setText("Nobody's sharing this in good quality right now. Tomorrow brings different labels.")
+            self.note.setText("Nobody's sharing these in good quality right now. Tomorrow brings different artists.")
         self.area.horizontalScrollBar().setValue(0)
         self._arrows()
 
