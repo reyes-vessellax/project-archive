@@ -36,7 +36,7 @@ quiet where the music is. Not a web page, not a SaaS dashboard.
 | text / muted / faint | #141414 / #5f5a50 / #8a857a | #fff / #a3a3a3 / #6e6e6e | text levels |
 | accent | #dc143c (crimson) | #ffd700 (yellow) | the brand colour of the theme |
 | sel (+ sel_text white) | #b3102f | #a50f2d | **selected and hovered rows** (the logo's dark red) |
-| pass / warn / fail | green / amber / red | | Good / Have a look / Broken, always |
+| pass / warn / fail | green / amber / red | | Good / Have a look / Broken, always; a sound file that isn't club-ready (out of phase, decks can't load it) is **No club** (red), never Good (`theme.grade()`) |
 | disp_* | dark readout panels | | BPM / key / length boxes, hero, era panels |
 
 Hero and era panels stay dark in both themes (`disp_bg`), with fixed brand yellow `#ffd700` and crimson `#dc143c`.

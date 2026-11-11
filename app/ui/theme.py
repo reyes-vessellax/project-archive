@@ -33,9 +33,18 @@ PALETTES = {
 
 # Word tags shown on queue rows and checks (design v5 wording).
 TAG_COLOUR = {"Down": "accent", "Check": "text", "Wait": "faint", "Good": "pass_", "Look": "warn", "Broken": "fail",
-              "Error": "fail", "Done": "pass_", "Gone": "faint"}
-GRADE_WORD = {"PASS": "Good", "WARN": "Look", "FAIL": "Broken"}
-GRADE_LONG = {"PASS": "Good", "WARN": "Have a look", "FAIL": "Broken"}
+              "No club": "fail", "Error": "fail", "Done": "pass_", "Gone": "faint"}
+GRADE_WORD = {"PASS": "Good", "WARN": "Look", "FAIL": "Broken", "CLUB": "No club"}
+GRADE_LONG = {"PASS": "Good", "WARN": "Have a look", "FAIL": "Broken", "CLUB": "Not club-ready"}
+
+
+def grade(a: dict) -> str:
+    """The track's grade: the file checks (PASS / WARN / FAIL), except that a sound file that won't work in a club
+    (out of phase, or decks can't load it) is "CLUB", never "Good". Reyes: "it says good, but it's not a good track"."""
+    status = a.get("overall_status") or "WARN"
+    if status != "FAIL" and (a.get("club") or {}).get("ready") is False:
+        return "CLUB"
+    return status
 
 
 def load_fonts() -> None:

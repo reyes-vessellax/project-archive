@@ -92,13 +92,17 @@ def test_staged_file_tampering_blocks_promotion(service, fixtures):
 
 
 @needs_ffmpeg
-def test_cleanup_expires_old_jobs(service, fixtures):
+def test_tracks_never_expire_and_old_expired_rows_leave_the_queue(service, fixtures):
     job = service.stage(fixtures["mp3_320"])
     service.analyze(job["id"])
     service.db.update_job(job["id"], expires_at="2000-01-01T00:00:00+00:00")
+    assert service.cleanup_expired() == 0
+    assert service.db.job(job["id"])["state"] == J.READY       # still waiting for you, file intact
+    assert Path(job["staged_path"]).exists()
+    old = service.stage(fixtures["mp3_320"])
+    service.db.update_job(old["id"], state=J.EXPIRED)            # expired under an older version
     assert service.cleanup_expired() == 1
-    assert service.db.job(job["id"])["state"] == J.EXPIRED
-    assert not Path(job["staged_path"]).exists()
+    assert old["id"] not in {j["id"] for j in service.jobs()}
 
 
 @needs_ffmpeg

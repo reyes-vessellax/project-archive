@@ -957,15 +957,13 @@ class ArchiveService:
 
     # housekeeping ----------------------------------------------------------------------------
     def cleanup_expired(self) -> int:
+        """Tracks never expire any more (Reyes: "I don't want them to expire"): a track waits in quarantine until
+        you keep or delete it. Rows that expired under older versions have no file left to check, so they're
+        taken off the Queue. Returns how many were tidied away."""
         n = 0
-        stamp = now()
-        for job in self.db.jobs(states=(J.READY, J.ERROR, J.QUEUED, J.DISCOVERED)):
-            if job["expires_at"] and job["expires_at"] < stamp:
-                if job["state"] == J.QUEUED and self.adapter and job["transfer_id"]:
-                    self.adapter.cancel(Transfer(transfer_id=job["transfer_id"], user=job["remote_user"],
-                                                 remote_path=job["remote_path"], size=job["remote_size"] or 0, state=""))
-                self._remove_staging(job)
-                self.db.update_job(job["id"], state=J.EXPIRED, disposition="expired")
+        for job in self.db.jobs(states=(J.EXPIRED,)):
+            if not job.get("hidden"):
+                self.db.update_job(job["id"], hidden=1)
                 n += 1
         return n
 

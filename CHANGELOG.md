@@ -4,6 +4,22 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.32 (2026-11-11) — no more grey covers, no expiring tracks, "No club", smoother previews
+
+- **Discover card cover:** a track with no cover art showed a grey box in its card. It now shows the same
+  printed sleeve as the tile you tapped (the real cover replaces it if one arrives).
+- **Switching songs:** stopping a preview and starting the next one shared one "stop" switch, so the old song
+  kept loading and could start playing, or put its "busy / failed" message on the new song. Every preview now
+  has its own number; a preview you moved on from stops fetching and is ignored, and its clip is deleted.
+  Starting a preview stops what's playing right away. Previews have their own workers, so one that's still
+  tidying up never makes the next wait.
+- **Tracks no longer expire.** A checked track waits in the Queue until you keep or delete it (the
+  "Delete undecided tracks after" setting is gone). Rows that expired under older versions had no file left
+  to re-check, so they're taken off the Queue.
+- **"No club":** a track whose file is fine but fails the club checks (badly out of phase, or decks can't
+  load it) used to say Good. It now says **NO CLUB** (red) in the Queue and **Not club-ready** in the panel,
+  with Download anyway still there. Search marks that copy "not club-ready".
+
 ## 0.9.31 (2026-11-11) — light mode Discover: the track card in an era row
 
 - Opening a track in one of the dark era rows (light mode) showed a light card with the era's white and yellow

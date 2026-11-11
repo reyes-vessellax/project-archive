@@ -10,7 +10,7 @@ from pathlib import Path
 # existing installs migrate; every visible use of the name reads this constant (window title, dialogs, engine, data folder).
 APP_NAME = "DigMart"
 APP_SLUG = "DigMart"                      # for file and artifact names that shouldn't carry a space
-APP_VERSION = "0.9.31"                     # keep in step with pyproject.toml; the build names the artifact with it
+APP_VERSION = "0.9.32"                     # keep in step with pyproject.toml; the build names the artifact with it
 try:                                      # CI writes app/_build.py with the run number: every push is a new version
     from ._build import BUILD as APP_BUILD  # type: ignore
 except ImportError:
@@ -63,7 +63,7 @@ class Settings:
     staging_dir: str = ""                     # empty = <data_dir>/staging
     mp3_min_kbps: int = 320                   # warn below this (CBR)
     vbr_min_avg_kbps: int = 220               # warn below this average (VBR)
-    retention_hours: int = 24                 # undecided staged files expire after this
+    retention_hours: int = 24                 # unused: tracks no longer expire (kept so old settings files load)
     discover_era: str = ""                    # what Discover digs: "" = everything, else an era key (core/eras.py)
     max_file_mb: int = 2048
     max_duration_minutes: int = 240

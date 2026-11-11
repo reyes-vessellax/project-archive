@@ -101,6 +101,7 @@ class MainWindow(QMainWindow):
             pass
         self.pool = QThreadPool(); self.pool.setMaxThreadCount(svc.analysis_slots)
         self.io = QThreadPool(); self.io.setMaxThreadCount(3)
+        self.pv_pool = QThreadPool(); self.pv_pool.setMaxThreadCount(4)   # previews: a retired one tidying up never holds up the next
         self.dl_pool = QThreadPool(); self.dl_pool.setMaxThreadCount(2)   # paced batch downloads (they wait minutes)
         self._polling = self._scanning = False
         self.signals = Signals()
@@ -463,6 +464,8 @@ class MainWindow(QMainWindow):
                 a = self._analysis(j)
                 if a and a["overall_status"] == "FAIL":
                     problems[key] = "broken file"
+                elif a and T.grade(a) == "CLUB":
+                    problems[key] = "not club-ready"
         self.searchp.set_problem_sources(problems); self.discover.finder.set_problem_sources(problems)
         self.home.steps = self.steps
         self.home.refresh(jobs, analyses)
@@ -1218,7 +1221,13 @@ class MainWindow(QMainWindow):
         track is tried (twice at most)."""
         from ..core.service import PreviewBusy
         name = cand.title or cand.display_name
-        self._pv_stop_flag = False
+        # every preview gets its own number; starting another or stopping retires it. A retired preview stops
+        # fetching and anything it still says (ready, busy, failed, progress) is ignored, so switching songs
+        # quickly never plays the old song or puts its message on the new one
+        self._pv_gen = gen = getattr(self, "_pv_gen", 0) + 1
+        from .player import Player
+        if Player.get().playing():
+            Player.get().stop()                          # the old song doesn't keep playing under "Getting…"
         if not retry_of:
             self._pv_tried = set()
         self._pv_tried.add(cand.key)
@@ -1230,25 +1239,25 @@ class MainWindow(QMainWindow):
         def work():
             try:
                 wav, start = self.svc.snippet_preview(
-                    cand, should_stop=lambda: self._pv_stop_flag,
-                    progress=lambda m: self.signals.notice.emit("PREVIEW_PROGRESS " + m))
+                    cand, should_stop=lambda: self._pv_gen != gen,
+                    progress=lambda m: self.signals.notice.emit(f"PREVIEW_PROGRESS {gen} {m}"))
                 _applog(f"preview: ready {name!r}")
-                self.signals.notice.emit(f"PREVIEW_READY {wav}\t{start}\t{name}\t{cand.artist}")
+                self.signals.notice.emit(f"PREVIEW_READY {gen} {wav}\t{start}\t{name}\t{cand.artist}")
             except PreviewBusy as e:
                 _applog(f"preview: busy {name!r}: {e}")
-                self.signals.notice.emit("PREVIEW_BUSY " + str(e))
+                self.signals.notice.emit(f"PREVIEW_BUSY {gen} {e}")
             except ActionBlocked as e:
                 _applog(f"preview: failed {name!r}: {e}")
-                self.signals.notice.emit("PREVIEW_FAILED " + str(e))
+                self.signals.notice.emit(f"PREVIEW_FAILED {gen} {e}")
             except Exception as e:                                   # never leave the button on "Getting preview…"
                 _applog(f"preview: crashed {name!r}: {type(e).__name__}: {e}")
-                self.signals.notice.emit(f"PREVIEW_FAILED Couldn't get a preview ({type(e).__name__}).")
+                self.signals.notice.emit(f"PREVIEW_FAILED {gen} Couldn't get a preview ({type(e).__name__}).")
         self._pv_loading = cand.key
-        self.io.start(Task(work, self.signals))
+        self.pv_pool.start(Task(work, self.signals))
 
         def watchdog():
-            if getattr(self, "_pv_loading", None) == cand.key:
-                self._pv_stop_flag = True
+            if self._pv_gen == gen and getattr(self, "_pv_loading", None) == cand.key:
+                self._pv_gen += 1
                 _applog(f"preview: gave up on {name!r} after 45 s")
                 self._pv_page.set_preview_state("", "That source is too slow to preview right now. Pick another copy, "
                                                     "or press Check this file to get it.")
@@ -1259,14 +1268,14 @@ class MainWindow(QMainWindow):
         failed = getattr(self, "_pv_cand", None)
         self._pv_page.mark_busy(failed)
         alt = self._pv_page.ready_alternative(failed, getattr(self, "_pv_tried", set())) if failed else None
-        if alt is not None and len(self._pv_tried) < 3 and not self._pv_stop_flag:
+        if alt is not None and len(self._pv_tried) < 3:
             self._preview_candidate(alt, retry_of=f"{message} Trying another ready copy ({alt.user})…")
             return
         self._pv_page.set_preview_state("", message + " No other copy of this track is ready right now; "
                                                      "press Check this file to wait in line for it.")
 
     def _stop_preview(self):
-        self._pv_stop_flag = True
+        self._pv_gen = getattr(self, "_pv_gen", 0) + 1      # retire whatever preview is still on its way
         from .player import Player
         Player.get().stop()
         self._pv_page.set_preview_state("")
@@ -1400,6 +1409,16 @@ class MainWindow(QMainWindow):
         self.io.start(Task(work, self.signals))
 
     def _notice(self, message: str):
+        if message.startswith("PREVIEW_"):
+            kind, gen, rest = (message.split(" ", 2) + ["", ""])[:3]
+            if not gen.isdigit() or int(gen) != getattr(self, "_pv_gen", 0):
+                if kind == "PREVIEW_READY":                 # a retired preview finished anyway: drop its file
+                    try:
+                        Path(rest.split("\t")[0]).unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                return
+            message = f"{kind} {rest}"
         if message.startswith("PREVIEW_PROGRESS "):
             self._pv_page.set_preview_state("loading", message.split(" ", 1)[1]); return
         if message.startswith("PREVIEW_BUSY "):

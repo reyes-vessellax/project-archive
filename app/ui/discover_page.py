@@ -486,6 +486,8 @@ class RecordCard(QFrame):
             b.setEnabled(True)
         self.set_preview_state("", "Plays on decks as listed. Check this file confirms the real quality and club-ready.")
         self.art.set_pixmap(None)
+        # no cover (yet, or ever): the same printed sleeve as the tile that was tapped, never a grey box
+        self.art.set_sleeve(r.artist[:30], r.title, r.catno)
 
     def update_meta(self, f):
         """Details that arrived after the card was shown (style, catalogue number)."""

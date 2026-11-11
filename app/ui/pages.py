@@ -50,7 +50,7 @@ def row_data(job: dict, analysis: dict | None, steps: dict[str, str]) -> dict:
         return dict(tag="Check" if step else "Wait", title=title, artist=artist, pct=None, meta="", removable=False)
     if st == J.READY and analysis:
         # no "CLUB ✓ 1411 kbps" here: it squeezed the title out in a narrow window, and it's all in the details
-        return dict(tag=T.GRADE_WORD[analysis["overall_status"]], title=title, artist=artist, pct=100, meta="", removable=True)
+        return dict(tag=T.GRADE_WORD[T.grade(analysis)], title=title, artist=artist, pct=100, meta="", removable=True)
     if st == J.PROMOTED:
         return dict(tag="Done", title=title, artist=artist, pct=None, meta="in library", removable=True)
     if st == J.ERROR:
@@ -229,7 +229,8 @@ class HomePage(QWidget):
         for j in jobs:
             a = analyses.get(j["id"])
             if j["state"] == J.READY and a:
-                n[T.GRADE_WORD[a["overall_status"]]] += 1
+                g = T.grade(a)
+                n[T.GRADE_WORD["FAIL" if g == "CLUB" else g]] += 1     # not club-ready counts with the unusable
         for k, v in n.items():
             self.counts[k].setText(str(v))
         total = sum(n.values())
@@ -1163,12 +1164,13 @@ class ReviewPage(QWidget):
                                   "Requested": "Asking the source…", "InProgress": "Receiving the file…",
                                   "Initializing": "Starting up the transfer…"}.get(msg, msg))
 
-        status = a.get("overall_status") if a and not busy else None
+        status = T.grade(a) if a and not busy else None
         if status:
             set_tag(self.verdict, T.GRADE_WORD[status]); self.verdict.setText(T.GRADE_LONG[status])
             issues = sum(1 for c in a["checks"] if c["status"] != "PASS")
             self.verdict_sub.setText({0: "Nothing to worry about", 1: "1 thing to check"}.get(issues, f"{issues} things to check")
-                                     if status != "FAIL" else "Can't be used")
+                                     if status not in ("FAIL", "CLUB") else
+                                     "Can't be used" if status == "FAIL" else "Fine file, won't work on a club system")
         elif job["state"] == J.ERROR:
             set_tag(self.verdict, "Error"); self.verdict.setText("Error")
             self.verdict_sub.setText(d["meta"])
@@ -1252,7 +1254,7 @@ class ReviewPage(QWidget):
         from ..media.clubcopy import needs_copy
         self.btn_club.setVisible(bool(a) and job["state"] in (J.READY, J.PROMOTED) and needs_copy(a.get("club")))
         self.btn_save.setVisible(ready and status == "PASS")
-        self.btn_anyway.setVisible(ready and status == "WARN")
+        self.btn_anyway.setVisible(ready and status in ("WARN", "CLUB"))
         for b in (self.btn_save, self.btn_anyway, self.btn_remove, self.btn_retry):
             b.setEnabled(True)                                 # a previous Download/Delete may have greyed them
         self.btn_cancel.setVisible(job["state"] == J.QUEUED)
