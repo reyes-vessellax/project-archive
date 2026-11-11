@@ -217,8 +217,7 @@ class HomePage(QWidget):
         self._row_widgets = existing
         sel = getattr(self, "selected_id", None)                  # keep the open track highlighted after a refresh
         for jid, row in existing.items():
-            if row.property("selected") != (jid == sel):
-                row.setProperty("selected", jid == sel); row.style().unpolish(row); row.style().polish(row)
+            row.set_selected(jid == sel)
         keep_scroll(self.list_scroll, rebuild)
         self._mark_playing()
         down = sum(1 for j in jobs if j["state"] == J.QUEUED)
@@ -1090,7 +1089,7 @@ class ReviewPage(QWidget):
                 if w is not None and w.property("job_id"):
                     want = "true" if w.property("job_id") == self.job_id else "false"
                     if w.property("selected") != want:
-                        w.setProperty("selected", want); T.repolish(w)
+                        w.setProperty("selected", want); T.repolish_tree(w)
             return
         self._rail_key = key
         keep_scroll(self.rail_scroll, lambda: self._build_rail(jobs, analyses, steps))

@@ -496,7 +496,7 @@ class MainWindow(QMainWindow):
         for jid, row in getattr(self.home, "_row_widgets", {}).items():   # the open track is highlighted in the list
             try:
                 if row.property("selected") != (jid == self.selected):
-                    row.setProperty("selected", jid == self.selected); row.style().unpolish(row); row.style().polish(row)
+                    row.set_selected(jid == self.selected)
             except RuntimeError:
                 pass
 

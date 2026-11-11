@@ -666,6 +666,23 @@ class QueueRow(QWidget):
             self.clicked.emit(self.job_id)
         super().mousePressEvent(e)
 
+    def _set_hot(self, on: bool) -> None:
+        """Hover: the brand dark red with white text. A property the row sets itself, re-polished on enter/leave
+        (a ':hover QLabel' rule made every row's text white for good, invisible in light mode)."""
+        if bool(self.property("hot")) == on:
+            return
+        self.setProperty("hot", on)
+        self._repolish_all()
+
+    def _repolish_all(self) -> None:
+        T.repolish_tree(self)
+
+    def enterEvent(self, e):
+        self._set_hot(True); super().enterEvent(e)
+
+    def leaveEvent(self, e):
+        self._set_hot(False); super().leaveEvent(e)
+
     def set_playing(self, on: bool) -> None:
         if self.now.isVisible() != on:
             self.now.setVisible(on)
@@ -690,8 +707,10 @@ class QueueRow(QWidget):
             self.x.setVisible(removable); self.x_space.setVisible(not removable)
 
     def set_selected(self, on: bool) -> None:
+        if self.property("selected") == ("true" if on else "false"):
+            return
         self.setProperty("selected", "true" if on else "false")
-        T.repolish(self)
+        self._repolish_all()
 
     def flash(self) -> None:
         """A short green blip when this track just moved to the next stage."""

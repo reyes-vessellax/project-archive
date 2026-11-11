@@ -4,6 +4,15 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.30 (2026-11-10) — light mode Queue: words you can read again
+
+- **Queue rows in light mode** showed white titles and artists on the light background (since 0.9.26's hover
+  change). Rows now read dark on light; only the row under the mouse, and the open track, turn the brand dark
+  red with white words (artist, tag pill and × included), the same in both themes.
+- The open track's highlight was set in three places three different ways; all go through one
+  `QueueRow.set_selected` now. The review rail's highlight recolours its words too.
+- New test: row text colours, plain / hover / selected, light and dark.
+
 ## 0.9.29 (2026-11-10) — one design system, and the pages that didn't match it
 
 - **DESIGN.md:** DigMart's design system in one place (feeling, brand, colour tokens, type roles, layout and

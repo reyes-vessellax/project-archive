@@ -66,6 +66,13 @@ def stylesheet(theme: str) -> str:
         f'QWidget#row QLabel#tag[tag="{word}"] {{ background: {_rgba(c[key], 0.16)}; }}'
         for word, key in TAG_COLOUR.items() if c[key].startswith("#") and len(c[key]) == 7
     )
+    # a hovered or selected queue row is the brand dark red: every word on it white, the pill a white outline
+    lit = [f'QWidget#row[{p}="true"]' for p in ("hot", "selected")]
+    rowlit = "\n".join(
+        [f'{r} QLabel, {r} QLabel#muted, {r} QLabel#mono, {r} QLabel#nowplaying, {r} QPushButton#x '
+         f'{{ color: {c["sel_text"]}; }}' for r in lit]
+        + [f'{r} QLabel#tag[tag="{word}"] {{ color: {c["sel_text"]}; background: rgba(255, 255, 255, 0.18); }}'
+           for r in lit for word in TAG_COLOUR])
     return f"""
 * {{ font-family: {sans}; font-size: 13px; color: {c['text']}; }}
 QMainWindow, QDialog {{ background-color: {c['bg']}; }}
@@ -213,11 +220,12 @@ QPushButton#navitem[active="true"] {{ background: {c['nav_bg']}; color: {c['nav_
 
 /* rows and lists */
 QWidget#row {{ background: transparent; border-bottom: 1px solid {c['line']}; }}
-QWidget#row:hover {{ background: {c['sel']}; border-radius: 3px; }}
-QWidget#row:hover QLabel {{ color: {c['sel_text']}; }}
+QWidget#row[hot="true"] {{ background: {c['sel']}; border-radius: 3px; }}
+QWidget#row[hot="true"] QLabel {{ color: {c['sel_text']}; }}
 QWidget#row[flash="true"] {{ background: {c['pass_']}22; border-color: {c['pass_']}; }}
 QWidget#row QLabel#tag {{ border-radius: 9px; padding: 2px 0; font-size: 10px; qproperty-alignment: AlignCenter; }}
-QWidget#row[selected="true"] {{ background: {c['soft']}; border-radius: 3px; }}
+QWidget#row[selected="true"] {{ background: {c['sel']}; border-radius: 3px; }}
+QWidget#row[selected="true"] QLabel {{ color: {c['sel_text']}; }}
 QProgressBar {{ background: {c['bar']}; border: none; border-radius: 2px; max-height: 3px; min-height: 3px; }}
 QProgressBar::chunk {{ background: {c['text']}; border-radius: 2px; }}
 QProgressBar[tag="Down"]::chunk {{ background: {c['accent']}; }}
@@ -339,7 +347,15 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 QSplitter::handle {{ background: transparent; }}
 QMessageBox {{ background: {c['panel']}; }}
 QMessageBox QPushButton {{ min-height: 36px; padding: 0 16px; border: 1px solid {c['line']}; background: transparent; }}
+{rowlit}
 """
+
+
+def repolish_tree(widget) -> None:
+    """repolish() the widget and everything inside it (a row whose highlight changes: its words change colour too)."""
+    from PySide6.QtWidgets import QWidget
+    for w in [widget] + widget.findChildren(QWidget):
+        repolish(w)
 
 
 def repolish(widget) -> None:
