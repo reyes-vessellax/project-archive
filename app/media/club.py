@@ -3,7 +3,8 @@
 Separate from the Good / Have a look / Broken verdict (which is about whether the file is what it claims).
 Six things, each in plain English:
 
-1. Decks can load it   Pioneer CDJs / Rekordbox: MP3, WAV, AIFF, FLAC (AAC too); up to 96 kHz; 16 or 24 bit.
+1. Decks can load it   Pioneer CDJs, XDJs and Rekordbox: MP3, WAV, AIFF everywhere; FLAC on CDJ-3000/NXS2 and newer
+                        XDJs (XDJ-RX3), not older XDJs (RX2, RR) or pre-NXS2 CDJs; up to 96 kHz (48 on most XDJs).
                        32-bit float, 192 kHz, OGG/Opus/WMA won't load.
 2. Mono-safe           Many club and festival rigs sum to mono. Out-of-phase stereo (bass in the "side") cancels:
                        the kick and bass vanish. Measured on a low-rate stereo decode.
@@ -54,28 +55,29 @@ def _loads(path: Path, f) -> Check:
     ext = path.suffix.lower().lstrip(".")
     codec = (f.codec or "").lower()
     if ext not in LOADS or codec.startswith(("vorbis", "opus", "wma")):
-        return Check("club_load", FAIL, "Decks can load it", f".{ext} ({codec or '?'}) won't load on CDJs or in Rekordbox.")
+        return Check("club_load", FAIL, "Decks can load it", f".{ext} ({codec or '?'}) won't load on CDJs, XDJs or in Rekordbox.")
     if codec.startswith(("pcm_f32", "pcm_f64")) or (f.bit_depth or 0) > 24:
         return Check("club_load", FAIL, "Decks can load it",
-                     "32-bit float audio: CDJs and Rekordbox refuse it. A 24-bit copy plays everywhere.")
+                     "32-bit float audio: CDJs, XDJs and Rekordbox refuse it. A 24-bit copy plays everywhere.")
     sr = f.sample_rate_hz or 0
     if sr > 96000:
-        return Check("club_load", FAIL, "Decks can load it", f"{sr / 1000:g} kHz: CDJs play up to 96 kHz.")
+        return Check("club_load", FAIL, "Decks can load it", f"{sr / 1000:g} kHz: CDJs play up to 96 kHz, most XDJs up to 48 kHz.")
     if ext == "m4a":
         return Check("club_load", WARN, "Decks can load it",
-                     "M4A/AAC loads in Rekordbox and on CDJ-2000NXS2/3000, but older players are fussier with it. "
+                     "M4A/AAC loads in Rekordbox, on CDJ-2000NXS2/3000 and on XDJs, but older CDJs are fussier with it. "
                      "AIFF, WAV or MP3 play on every deck.")
     if sr in (88200, 96000):
         return Check("club_load", WARN, "Decks can load it",
-                     f"{sr / 1000:g} kHz plays on CDJ-3000 and NXS2, but older CDJ-2000/900 and many XDJs only play "
+                     f"{sr / 1000:g} kHz plays on CDJ-3000 and NXS2, but older CDJ-2000/900 and most XDJs only play "
                      "44.1 or 48 kHz. A club-ready copy plays on all of them.")
     if sr and sr not in (44100, 48000):
         return Check("club_load", WARN, "Decks can load it", f"Unusual sample rate ({sr} Hz); 44.1 or 48 kHz is safest.")
     detail = f"{ext.upper()}, {sr / 1000:g} kHz" + (f", {f.bit_depth}-bit" if f.bit_depth else "")
     if ext == "flac":
         return Check("club_load", PASS, "Decks can load it",
-                     f"{detail}: plays in Rekordbox and on CDJ-3000/NXS2. (Pre-NXS2 CDJ-2000s don't read FLAC.)")
-    return Check("club_load", PASS, "Decks can load it", f"{detail}: plays on every CDJ and in Rekordbox.")
+                     f"{detail}: plays in Rekordbox, on CDJ-3000/NXS2 and newer XDJs (XDJ-RX3). Older XDJs (RX2, RR) and pre-NXS2 "
+                     "CDJs don't read FLAC: make a club-ready copy for those.")
+    return Check("club_load", PASS, "Decks can load it", f"{detail}: plays on every CDJ and XDJ and in Rekordbox.")
 
 
 # 2 ------------------------------------------------------------------------------------------------

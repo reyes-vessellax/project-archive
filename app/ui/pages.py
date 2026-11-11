@@ -272,13 +272,20 @@ class SearchPage(QWidget):
     def __init__(self, svc: ArchiveService):
         super().__init__()
         self.svc = svc
-        outer, lay = page(spacing=20)
+        outer, lay = page(spacing=18)
         root = vbox(self); root.addWidget(outer)
-        srow = hbox(spacing=16)
-        self.q = QLineEdit(); self.q.setObjectName("hero"); self.q.setPlaceholderText("Search for a track…")
+        # masthead, like every page: the big title, the thick rule, a line about where results come from
+        mh = hbox(spacing=16)
+        mh.addWidget(label("Search", "pagetitle"), 0, Qt.AlignBottom); mh.addStretch(1)
+        mh.addWidget(label("EVERYONE'S LIBRARIES · FASTEST AND BEST FIRST", "strap"), 0, Qt.AlignBottom)
+        lay.addLayout(mh)
+        r_ = QFrame(); r_.setObjectName("mastRule"); r_.setFixedHeight(3); lay.addWidget(r_)
+        srow = hbox(spacing=12)
+        self.q = QLineEdit(); self.q.setObjectName("searchbar"); self.q.setPlaceholderText("Artist, track, label or mix…")
         self.q.returnPressed.connect(lambda: self.search.emit(self.q.text()))
         srow.addWidget(self.q, 1)
         self.search_btn = button("Search", "accent", lambda: self.search.emit(self.q.text()))
+        self.search_btn.setFixedHeight(56); self.search_btn.setMinimumWidth(120)   # as tall as the search box
         srow.addWidget(self.search_btn)
         self.watch_btn = button("Watch this search", "ghost", self._toggle_watch)
         self.watch_btn.setToolTip("Nobody has it? Keep asking every half hour for 30 days and tell me when it shows up.")
@@ -292,9 +299,26 @@ class SearchPage(QWidget):
         self.wish_form.submitted.connect(self._watch_go); self.wish_form.cancelled.connect(self.wish_form.hide)
         lay.addWidget(self.wish_form)
         head = hbox(spacing=12)
-        self.title = label("Search", "h2"); head.addWidget(self.title)
+        self.title = label("", "secTitle"); head.addWidget(self.title)
+        _set_title = self.title.setText
+
+        def _title(t, _set=_set_title):                       # no empty heading taking up a line before a search
+            _set(t); self.title.setVisible(bool(t))
+        self.title.setText = _title
+        self._head_row = head
         self.state = label("", "faint"); head.addWidget(self.state); head.addStretch(1)
-        lay.addLayout(head)
+        head_w = QWidget(); head_w.setLayout(head); lay.addWidget(head_w)
+        _set_state = self.state.setText
+
+        def _state(t, _set=_set_state):                       # the whole heading line only takes room when it says something
+            _set(t); head_w.setVisible(bool(t) or bool(self.title.text()))
+        self.state.setText = _state
+        _set_t2 = self.title.setText
+
+        def _title2(t, _set=_set_t2):
+            _set(t); head_w.setVisible(bool(t) or bool(self.state.text()))
+        self.title.setText = _title2
+        head_w.hide()
         # filters: a file-type drop-down, Lossless, 320 only (MP3s), ready now, private
         from PySide6.QtWidgets import QComboBox
         from ..core.availability import FORMATS, Filters
@@ -324,14 +348,15 @@ class SearchPage(QWidget):
         self.tree.setItemDelegate(KeepColourDelegate(self.tree))
         self.tree.setRootIsDecorated(False); self.tree.setSortingEnabled(False); self.tree.setAlternatingRowColors(False)
         self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
-        hdr = self.tree.header(); hdr.setSectionResizeMode(QHeaderView.Interactive); hdr.setStretchLastSection(False)
+        hdr = self.tree.header(); hdr.setSectionResizeMode(QHeaderView.Fixed); hdr.setStretchLastSection(False)
         for i, w in enumerate(self.WIDTHS):
             self.tree.setColumnWidth(i, w)
-        # every column can be dragged; Title, Folder and Availability take up (or give back) the slack, so the
-        # table always fills its width and never scrolls sideways. (Stretch columns can't be dragged in Qt.)
+        # Columns are fixed (dragging a border squashed the others): Title, Folder and Availability share the
+        # slack, so the table always fills its width and never scrolls sideways.
+        for c in ("Title", "Folder", "Availability"):
+            hdr.setSectionResizeMode(self.COLS.index(c), QHeaderView.Stretch)
         hdr.setMinimumSectionSize(self.MIN_COL); hdr.setSectionsMovable(False)
         self._fitting = False
-        hdr.sectionResized.connect(self._col_resized)
         self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)     # never sideways (the user asked)
         self.tree.setTextElideMode(Qt.ElideRight)
         # click a heading to sort by it (again to flip); # puts the list back to best first
@@ -424,6 +449,13 @@ class SearchPage(QWidget):
             self._fitting = False
 
     def _show_empty(self, text: str):
+        if text:                                             # our mark above the message, not just grey text
+            from pathlib import Path as _P
+            from . import widgets as _w
+            mark = _P(__file__).parent / "brand_assets" / ("digmart-mark-dark.png" if _w.FX_THEME == "dark" else "digmart-mark.png")
+            self.empty.setTextFormat(Qt.RichText); self.empty.setAlignment(Qt.AlignCenter)
+            text = (f"<div align='center'><img src='{mark.as_posix()}' width='120'><br><br>"
+                    f"<span style='font-size:17px; font-weight:700'>{html.escape(text).replace(chr(10), '<br>')}</span></div>")
         self.empty.setText(text)
         self.empty.setGeometry(self.tree.viewport().rect().adjusted(40, 0, -40, 0))
         self.empty.setVisible(bool(text)); self.empty.raise_()
@@ -517,7 +549,7 @@ class SearchPage(QWidget):
         n = len(res.candidates)
         if idle:
             self.watch_btn.hide()
-            self.title.setText("Search"); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
+            self.title.setText(""); self.state.setText(""); self._ranked = []; self._fill(0); self._show_empty(idle); return
         gettable = any(not c.locked and not c.note for c in res.candidates)
         self.watch_btn.setVisible(not searching and not gettable and bool(self.q.text().strip()))
         self.title.setText(f"{n} result{'s' if n != 1 else ''}")
@@ -724,10 +756,10 @@ class SearchPage(QWidget):
         c = items[0].data(0, Qt.UserRole) if items else None
         ok = isinstance(c, Candidate) and not c.note and not c.locked
         self.btn.setEnabled(ok)
-        self._pv_ok = ok and bool(c.free_slot) and not (c.queue_length or 0)     # busy copies can't be previewed
+        self._pv_ok = ok          # any usable row; a copy that turns out busy is swapped for another ready one
         self.btn_pv.setEnabled(self._previewing or self._pv_ok)
         self.btn_pv.setToolTip("Plays about 20 seconds from the middle. Only those seconds are fetched, and nothing is kept."
-                               if self._pv_ok or not ok else "This copy has a wait, so it can't be previewed. Pick one that's Ready now.")
+                               if self._pv_ok or not ok else "This copy can't be previewed.")
         # already have it? (same remote file, or same artist + title in the library or the queue)
         self._armed_key = None
         have = None

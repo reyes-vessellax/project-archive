@@ -475,7 +475,9 @@ class TrackTile(QFrame):
         self.track = t
         self._label_name = label_name
         self.setObjectName("cover"); self.setCursor(Qt.PointingHandCursor); self.setFixedWidth(158)
-        lay = vbox(self, (0, 0, 0, 6), 2)
+        lay = vbox(self, (0, 3, 0, 6), 2)
+        from .widgets import hover_fx
+        hover_fx(self, lift=True)                            # rises with a shadow on hover, like a record pulled out
         self.art = CoverArt(); self.art.setFixedSize(158, 158); lay.addWidget(self.art)
         self.art._hover_play = True
         self.art.set_sleeve(t.artist[:30] or t.folder.split(" - ")[0][:30], t.title, t.catno)   # rows aren't labels now

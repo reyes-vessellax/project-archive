@@ -245,6 +245,10 @@ QFrame#spinbar {{ background: {c['panel']}; border: 1px solid {c['line']}; borde
 QLabel#spinbartitle {{ font-family: {display}; font-size: 18px; font-weight: 700; }}
 QLabel#rowtitle {{ font-family: {display}; font-size: 20px; font-weight: 700; }}
 /* Discover, editorial: masthead, the Dig the crate lead panel, section heads, era panels */
+QLineEdit#searchbar {{ background: {c['panel']}; border: 2px solid {c['text']}; border-radius: 3px; padding: 12px 16px;
+    font-family: {display}; font-size: 20px; font-weight: 600; }}
+QLineEdit#searchbar:focus {{ border-color: {c['accent']}; }}
+QLabel#emptyBig {{ font-family: {display}; font-size: 18px; font-weight: 700; color: {c['text']}; }}
 QLabel#pagetitle {{ font-family: {display}; font-size: 40px; font-weight: 800; letter-spacing: -1px; }}
 QLabel#mast {{ font-family: {display}; font-size: 44px; font-weight: 800; letter-spacing: -1px; }}
 QFrame#mastRule {{ background: {c['text']}; border: none; }}

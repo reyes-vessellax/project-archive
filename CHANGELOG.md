@@ -4,6 +4,20 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.22 (2026-11-10) — Search redone, buttons with life, XDJs, fixes
+
+- **Search looks like the rest of the app:** the masthead (big title, thick rule), a big search box with a Search
+  button to match, "N results" as a section heading, and an empty page that shows our mark instead of grey text.
+- **Buttons and records have some life:** buttons rise with a shadow on hover (a soft yellow glow in dark mode), and
+  record tiles on Discover lift a few pixels, like pulling one out of the crate.
+- **XDJs, not just CDJs:** the club check says what plays where: MP3/WAV/AIFF on every CDJ and XDJ; FLAC on
+  CDJ-3000/NXS2 and newer XDJs (XDJ-RX3) but not older XDJs (RX2, RR) or pre-NXS2 CDJs; up to 48 kHz on most XDJs.
+  The CLUB badge reads DECKS instead of CDJ.
+- **Fix: Search columns can't be dragged any more** (dragging a border squashed the others); they share the width.
+- **Fix: Preview in Search** is allowed on every usable row (a copy that turns out busy is swapped for another ready
+  one), never stays stuck on "Getting preview…" (45 s at most), and every attempt is logged.
+- **Fix: Queue play button:** opening another track while one plays showed ❚❚ for the new track; it shows ▶ now.
+
 ## 0.9.21 (2026-11-10) — Dig the crate never gets stuck; a bigger spectrogram
 
 - **Fix: Dig the crate stuck on "Finding you a track…".** After Dig again with nothing loaded, the next track that

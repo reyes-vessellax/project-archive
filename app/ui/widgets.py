@@ -121,10 +121,51 @@ def label(text: str = "", role: str = "", tag: str = "", wrap: bool = False, tip
     return w
 
 
+FX_THEME = "light"            # set by the window with the theme: shadows in light, a soft glow in dark
+_NO_FX = {"link", "x", "zoom", "play", "menuitem", "tab", "avatar", "pill", "pillbtn", "altrow", "arrow", "barplay"}
+
+
+class _HoverFx(QObject):
+    """Buttons rise on hover (a soft shadow; a faint yellow glow in dark mode, where black doesn't show) and record
+    tiles lift a few pixels too. Installed on each button and tile, not app-wide (that would see every event)."""
+    def eventFilter(self, w, e):
+        t = e.type()
+        if t == QEvent.Enter and w.isEnabled():
+            from PySide6.QtWidgets import QGraphicsDropShadowEffect
+            fx = QGraphicsDropShadowEffect(w)
+            dark = FX_THEME == "dark"
+            fx.setBlurRadius(22 if w.property("lift") else 16); fx.setOffset(0, 0 if dark else 5)
+            fx.setColor(QColor(255, 215, 0, 70) if dark else QColor(0, 0, 0, 80))
+            w.setGraphicsEffect(fx)
+            if w.property("lift") and w.layout() is not None:
+                w.layout().setContentsMargins(0, 0, 0, 9)            # up 3 px, like pulling a record from the crate
+        elif t in (QEvent.Leave, QEvent.Hide, QEvent.EnabledChange):
+            if w.graphicsEffect() is not None:
+                w.setGraphicsEffect(None)
+            if w.property("lift") and w.layout() is not None:
+                w.layout().setContentsMargins(0, 3, 0, 6)
+        return False
+
+
+_HOVER = None
+
+
+def hover_fx(w: QWidget, lift: bool = False) -> QWidget:
+    global _HOVER
+    if _HOVER is None:
+        _HOVER = _HoverFx(QApplication.instance())
+    if lift:
+        w.setProperty("lift", True)
+    w.installEventFilter(_HOVER)
+    return w
+
+
 def button(text: str, role: str = "ghost", on_click=None, parent=None) -> QPushButton:
     b = QPushButton(text.replace("&", "&&"), parent)      # a bare & would become a keyboard mnemonic
     b.setObjectName(role)
     b.setCursor(Qt.PointingHandCursor)
+    if role not in _NO_FX:
+        hover_fx(b)
     if on_click:
         b.clicked.connect(on_click)
     return b
@@ -852,8 +893,8 @@ class SpectrumView(QLabel):
         self._pix, self._nyq, self._cutoff = pix, (sample_rate or 44100) / 2, cutoff_hz
         self._levels = None                                   # per-column loudness, computed on first use
         self._ensure_player()                                 # follow the shared player (▶ shows ❚❚ if this track plays)
-        self._state_changed()
         self._audio = audio if audio and Path(audio).exists() else None
+        self._state_changed()                                 # AFTER the new track: ▶ unless THIS track is the one playing
         self._duration_ms = int((duration_s or 0) * 1000)
         self.setText("")
         self.play_btn.setVisible(self._audio is not None)
@@ -1197,7 +1238,7 @@ def club_badges(a: dict, theme: str):
     from . import theme as T
     c = T.colours(theme)
     by_id = {x["id"]: x for x in club.get("checks") or []}
-    names = [("club_load", "CDJ"), ("club_mono", "MONO"), ("club_clip", "PEAK"), ("club_loud", "LUFS"),
+    names = [("club_load", "DECKS"), ("club_mono", "MONO"), ("club_clip", "PEAK"), ("club_loud", "LUFS"),
              ("club_low", "BASS"), ("club_usb", "USB")]
     w = QWidget(); lay = hbox(w, (0, 4, 0, 4), 5)
     head = label("CLUB-READY ✓" if club.get("ready") else "NOT CLUB-READY ✗", "clubhead")

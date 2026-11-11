@@ -81,28 +81,18 @@ def test_watch_only_when_nothing_is_there(service):
     page.close(); page.deleteLater(); app.processEvents()
 
 
-def test_search_columns_can_be_dragged_and_still_fill_the_table(service):
-    """Title, Folder and Availability were fixed 'stretch' columns, so dragging their edges did nothing."""
+def test_search_columns_are_fixed_and_fill_the_table(service):
+    """Dragging a column border squashed the others (Reyes): no column can be dragged, the flexible ones
+    share the width, and the table fills it at any window size."""
     from PySide6.QtWidgets import QHeaderView
     from app.ui.pages import SearchPage
     app = _app()
     page = SearchPage(service); page.resize(1100, 700); page.show(); app.processEvents()
     hdr, cols = page.tree.header(), page.COLS
-    width = page.tree.viewport().width()
-    assert all(hdr.sectionResizeMode(i) == QHeaderView.Interactive for i in range(len(cols)))
-    assert sum(hdr.sectionSize(i) for i in range(len(cols))) == width
-
-    title, artist = cols.index("Title"), cols.index("Artist")
-    for col, to in ((title, 320), (artist, 60), (title, 90)):
-        hdr.resizeSection(col, to); app.processEvents()
-        assert hdr.sectionSize(col) == to
-        assert sum(hdr.sectionSize(i) for i in range(len(cols))) == width      # still fills, no sideways scroll
+    assert all(hdr.sectionResizeMode(i) in (QHeaderView.Fixed, QHeaderView.Stretch) for i in range(len(cols)))
+    assert not any(hdr.sectionResizeMode(i) == QHeaderView.Interactive for i in range(len(cols)))
+    for w in (1100, 1400):
+        page.resize(w, 700); app.processEvents()
+        assert abs(sum(hdr.sectionSize(i) for i in range(len(cols))) - page.tree.viewport().width()) <= 1
         assert page.tree.horizontalScrollBar().maximum() == 0
-
-    hdr.resizeSection(title, 5000); app.processEvents()                        # dragging far too wide stops at the edge
-    assert sum(hdr.sectionSize(i) for i in range(len(cols))) == width
-    assert all(hdr.sectionSize(i) >= page.MIN_COL for i in range(len(cols)))
-
-    page.resize(1400, 700); app.processEvents()                                # a wider window: the flexible columns grow
-    assert sum(hdr.sectionSize(i) for i in range(len(cols))) == page.tree.viewport().width()
     page.close(); page.deleteLater(); app.processEvents()

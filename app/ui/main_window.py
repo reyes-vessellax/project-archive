@@ -255,6 +255,8 @@ class MainWindow(QMainWindow):
             QApplication.instance().setStyleSheet(T.stylesheet(theme))
             from . import discover_page as _dp
             _dp.SLEEVE_THEME = theme                        # no-cover sleeves have their own dark set
+            from . import widgets as _w
+            _w.FX_THEME = theme                             # hover: shadow in light, glow in dark
             for w in QApplication.instance().allWidgets():
                 if isinstance(w, _dp.CoverArt):
                     w.update()
@@ -1223,17 +1225,34 @@ class MainWindow(QMainWindow):
         self._pv_cand = cand
         self._pv_page.set_preview_state("loading", retry_of or f"Getting a preview of “{name}”…")
 
+        _applog(f"preview: {cand.user} {name!r} (free={cand.free_slot}, queue={cand.queue_length})")
+
         def work():
             try:
                 wav, start = self.svc.snippet_preview(
                     cand, should_stop=lambda: self._pv_stop_flag,
                     progress=lambda m: self.signals.notice.emit("PREVIEW_PROGRESS " + m))
+                _applog(f"preview: ready {name!r}")
                 self.signals.notice.emit(f"PREVIEW_READY {wav}\t{start}\t{name}\t{cand.artist}")
             except PreviewBusy as e:
+                _applog(f"preview: busy {name!r}: {e}")
                 self.signals.notice.emit("PREVIEW_BUSY " + str(e))
             except ActionBlocked as e:
+                _applog(f"preview: failed {name!r}: {e}")
                 self.signals.notice.emit("PREVIEW_FAILED " + str(e))
+            except Exception as e:                                   # never leave the button on "Getting preview…"
+                _applog(f"preview: crashed {name!r}: {type(e).__name__}: {e}")
+                self.signals.notice.emit(f"PREVIEW_FAILED Couldn't get a preview ({type(e).__name__}).")
+        self._pv_loading = cand.key
         self.io.start(Task(work, self.signals))
+
+        def watchdog():
+            if getattr(self, "_pv_loading", None) == cand.key:
+                self._pv_stop_flag = True
+                _applog(f"preview: gave up on {name!r} after 45 s")
+                self._pv_page.set_preview_state("", "That source is too slow to preview right now. Pick another copy, "
+                                                    "or press Check this file to get it.")
+        QTimer.singleShot(45_000, watchdog)
 
     def _preview_busy(self, message: str):
         """The copy queued us: show it as busy and try another ready copy of the same track."""
@@ -1387,6 +1406,8 @@ class MainWindow(QMainWindow):
             self._preview_busy(message.split(" ", 1)[1]); return
         if message.startswith("PREVIEW_FAILED "):
             self._pv_page.set_preview_state("", message.split(" ", 1)[1]); return
+        if message.startswith(("PREVIEW_READY ", "PREVIEW_FAILED ", "PREVIEW_BUSY ")):
+            self._pv_loading = None                          # answered: the 45 s limit stands down
         if message.startswith("PREVIEW_READY "):
             wav, start, name, artist = message.split(" ", 1)[1].split("\t")
             from .player import Player
