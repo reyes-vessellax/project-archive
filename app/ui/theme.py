@@ -213,7 +213,8 @@ QPushButton#navitem[active="true"] {{ background: {c['nav_bg']}; color: {c['nav_
 
 /* rows and lists */
 QWidget#row {{ background: transparent; border-bottom: 1px solid {c['line']}; }}
-QWidget#row:hover {{ background: {c['soft']}; border-radius: 3px; }}
+QWidget#row:hover {{ background: {c['sel']}; border-radius: 3px; }}
+QWidget#row:hover QLabel {{ color: {c['sel_text']}; }}
 QWidget#row[flash="true"] {{ background: {c['pass_']}22; border-color: {c['pass_']}; }}
 QWidget#row QLabel#tag {{ border-radius: 9px; padding: 2px 0; font-size: 10px; qproperty-alignment: AlignCenter; }}
 QWidget#row[selected="true"] {{ background: {c['soft']}; border-radius: 3px; }}
@@ -321,8 +322,8 @@ QPushButton#menuitem:hover {{ background: {c['soft']}; }}
 QTreeWidget {{ background: transparent; border: none; alternate-background-color: transparent; outline: 0; }}
 QTreeWidget::item {{ padding: 9px 4px; border-bottom: 1px solid {c['line']}; }}
 QTreeWidget#booth::item {{ padding: 5px 6px; }}
-QTreeWidget#booth::item:hover {{ background: {c['soft']}; }}
-QTreeWidget::item:hover {{ background: {c['soft']}; }}
+QTreeWidget#booth::item:hover {{ background: {c['sel']}; color: {c['sel_text']}; }}
+QTreeWidget::item:hover {{ background: {c['sel']}; color: {c['sel_text']}; }}
 QTreeWidget::item:selected {{ background: {c['sel']}; color: {c['sel_text']}; }}
 QHeaderView {{ background: transparent; border: none; }}
 QHeaderView::section {{ background: transparent; border: none; border-bottom: 1px solid {c['line']}; padding: 6px 4px; font-family: {mono}; font-size: 10px; letter-spacing: 1px; color: {c['faint']}; }}

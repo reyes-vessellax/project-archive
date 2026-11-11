@@ -4,6 +4,11 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.26 (2026-11-10) — the brand red on hover
+
+- Hovering over a row in the Queue, the Library and Search now shows the solid dark red from the logo (with white
+  text), the same red as a selected row, instead of a faint pink.
+
 ## 0.9.25 (2026-11-10) — real record sleeves
 
 - **Tracks without cover art get a real record sleeve:** eight sleeve photos (yellow, tan, cream, black, charcoal,
