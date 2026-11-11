@@ -72,6 +72,19 @@ def club_length(c: Candidate) -> bool:
     return secs is None or secs >= MIN_SECONDS
 
 
+_TRACKNO = re.compile(r"^\s*(?:\d{1,3}|[a-dA-D]\d{1,2})\s*[-._)\]]\s*")
+
+
+def clean_part(s: str) -> str:
+    """An artist or title without a leading track number: "01. Mic Newman" -> "Mic Newman",
+    "07 - Prescription" -> "Prescription", "A1 - Move Your Body" -> "Move Your Body"."""
+    s = (s or "").strip()
+    prev = None
+    while prev != s:                                     # "01 - 07 - x" happens
+        prev, s = s, _TRACKNO.sub("", s).strip()
+    return s or (prev or "")
+
+
 _NOISE = {"records", "recordings", "music", "label", "the", "inc", "ltd", "presents"}
 SEARCH_S = 12.0
 MAX_TRACKS = 30
@@ -146,6 +159,7 @@ def build(cands: list[Candidate], owns=lambda a, t: False, min_kbps: int = 320, 
         if query and not on_topic(c, query, kind):
             continue
         artist, title, mix = (c.artist, c.title, c.mix) if c.artist else parse_track(c.display_name or "")
+        artist, title = clean_part(artist), clean_part(title)        # no "01." stuck to the name: one song, once
         if not artist or not title or owns(artist, title):
             continue
         cat = _CATNO.search(c.folder or "")
@@ -167,7 +181,7 @@ def build(cands: list[Candidate], owns=lambda a, t: False, min_kbps: int = 320, 
 
 
 def _key(query: str) -> str:
-    return "discover:crate4:" + " ".join(words(query))        # crate4: + club length (4 min+, no radio edits)
+    return "discover:crate5:" + " ".join(words(query))        # crate5: track numbers stripped (rows saved before had dupes)
 
 
 def remembered(db, query: str) -> list[CrateTrack] | None:

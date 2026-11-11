@@ -145,3 +145,25 @@ def test_a_search_we_stopped_early_is_still_remembered():
     assert R.artist_crate(svc, "Blaze")
     from app.core import crates as C
     assert C.remembered(svc.db, "by Blaze")
+
+
+def test_track_numbers_and_punctuation_dont_make_a_song_twice():
+    """Reyes: "definitely duplicate tracks". Real rows had '01. Mic Newman' and '03. Mic Newman' as two artists."""
+    from app.core.crates import CrateTrack, build, clean_part
+    from app.adapters.base import Candidate
+    assert clean_part("01. Mic Newman") == "Mic Newman" and clean_part("A1 - Move Your Body") == "Move Your Body"
+    assert clean_part("07 - Prescription + Oxymoron") == "Prescription + Oxymoron" and clean_part("808 State") == "808 State"
+    def t(a, title, mix=""):
+        c = Candidate("soulseek", "u", f"p/{a}/{title}{mix}", 1, extension="flac", free_slot=True)
+        return CrateTrack(a, title, mix, c, [c])
+    rows = [t("01. Mic Newman", "The Fidelity"), t("03. Mic Newman", "The Fidelity"),
+            t("Stevie Wonder", "01 - Too High"), t("Stevie Wonder", "Too High"),
+            t("ScHoolboy Q", "Prescription + Oxymoron"), t("ScHoolboy Q", "07 - Prescription Oxymoron"),
+            t("Kyodai", "Mi Rumba", "Genius Of Time Mix"), t("Kyodai", "Mi Rumba", "Genius Of Time Remix")]
+    assert len(R.tidy(rows)) == 4
+    c1 = Candidate("soulseek", "a", "p/x/01. Mic Newman - The Fidelity.flac", 60_000_000, extension="flac", free_slot=True,
+                   display_name="01. Mic Newman - The Fidelity.flac", artist="01. Mic Newman", title="The Fidelity")
+    c2 = Candidate("soulseek", "b", "p/y/03. Mic Newman - The Fidelity.flac", 60_000_000, extension="flac", free_slot=True,
+                   display_name="03. Mic Newman - The Fidelity.flac", artist="03. Mic Newman", title="The Fidelity")
+    out = build([c1, c2])
+    assert len(out) == 1 and out[0].artist == "Mic Newman" and len(out[0].alts) == 2   # one entry, two copies

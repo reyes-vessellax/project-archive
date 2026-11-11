@@ -345,7 +345,7 @@ def artist_crate(svc, artist: str, owns=lambda a, t: False, cancelled=lambda: Fa
         return None
     _forget(svc, res)
     min_kbps = getattr(getattr(svc, "settings", None), "mp3_min_kbps", 320) or 320
-    out = by_artist(C.build(res.candidates, owns, min_kbps), artist)
+    out = tidy(by_artist(C.build(res.candidates, owns, min_kbps), artist))
     if out:                     # tracks found = a real answer (the engine calls our own early stop "cancelled")
         C.remember(svc.db, key, out)
     return out
@@ -416,8 +416,11 @@ def daily_order(tracks, day: int, salt: str):
 
 
 def same_song(t) -> str:
-    """One entry per song: the artist and title, whatever the mix or copy."""
-    return f"{_norm(main_artist(t.artist))}|{_norm(t.title)}"
+    """One entry per song: the artist and title, whatever the mix, copy, track number or punctuation
+    ("01. Mic Newman - The Fidelity" and "03. Mic Newman - The Fidelity" are one song)."""
+    artist = C.clean_part(main_artist(t.artist))
+    title = re.sub(r"[\(\[].*?[\)\]]", " ", C.clean_part(t.title))
+    return f"{_norm(artist)}|{_norm(title)}"
 
 
 def tidy(tracks, per_artist: int = 0):

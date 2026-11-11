@@ -4,6 +4,14 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.24 (2026-11-10) — no more duplicate tracks
+
+- **Fix: the same song showed more than once.** Track numbers stuck to names ("01. Mic Newman" and "03. Mic
+  Newman" were two artists; "01 - Too High" and "Too High" two titles), so copies of one song got their own tiles.
+  Leading track numbers are stripped from artists and titles (they read cleanly too), and "the same song" now
+  ignores track numbers, bracketed parts and punctuation. Every row is checked, including For you and the eras,
+  and each song appears once on the whole page. Rows saved before this are rebuilt.
+
 ## 0.9.23 (2026-11-10) — fixes from an outside audit
 
 An independent audit (Codex) of security and data safety; every finding was checked against the code first.
