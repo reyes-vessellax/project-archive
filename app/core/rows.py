@@ -51,7 +51,8 @@ FAMILY = {"disco edit": DISCO, "nu disco": DISCO, "italo disco": DISCO, "cosmic 
 
 
 def main_artist(artist: str) -> str:
-    return re.split(r"\s*(?:,|&| feat\.? | ft\.? | vs\.? | x | and | / )\s*", artist or "", flags=re.I)[0]
+    return re.split(r"\s*(?:,|&|\+| feat\.? | featuring | ft\.? | vs\.? | with | x | and | / )\s*", artist or "",
+                    flags=re.I)[0]
 
 
 def _norm(s: str) -> str:
@@ -415,12 +416,25 @@ def daily_order(tracks, day: int, salt: str):
     return sorted(tracks, key=lambda t: 0 if (t.best.extension or "").lower() in C.LOSSLESS else 1)
 
 
+# "[04] Adonis", "[B1] Farley", "01 Farley" (zero-padded, no separator): track numbers clean_part leaves on
+_LEAD_NO = re.compile(r"^\s*(?:[\[(]\s*[a-dA-D]?\d{1,3}\s*[\])]|0\d(?=\s))\s*")
+
+
+def _song_part(s: str) -> str:
+    """Spelling-proof: "Can't", "Cant" and "Can-t" match, so do "'Silk'", "''Silk''" and "Silk"."""
+    s = re.sub(r"['\u2018\u2019`\"]", "", s.lower())
+    return "".join(w for w in words(s) if w != "the")
+
+
 def same_song(t) -> str:
-    """One entry per song: the artist and title, whatever the mix, copy, track number or punctuation
-    ("01. Mic Newman - The Fidelity" and "03. Mic Newman - The Fidelity" are one song)."""
-    artist = C.clean_part(main_artist(t.artist))
-    title = re.sub(r"[\(\[].*?[\)\]]", " ", C.clean_part(t.title))
-    return f"{_norm(artist)}|{_norm(title)}"
+    """One entry per song: the artist and title, whatever the mix, copy, track number, spelling or punctuation
+    ("01. Mic Newman - The Fidelity" and "03. Mic Newman - The Fidelity" are one song, so are
+    "Farley 'Jackmaster' Funk - Love Can't Turn Around" and "Farley Jackmaster Funk - Love Can-t Turn Around")."""
+    artist = _LEAD_NO.sub("", C.clean_part(t.artist or ""))
+    artist = _song_part(main_artist(artist)) or _song_part(artist)
+    title = re.sub(r"[\(\[][^\(\)\[\]]*[\)\]]", " ", C.clean_part(t.title))   # innermost brackets first
+    title = re.sub(r"[\(\[][^\(\)\[\]]*[\)\]]", " ", title)
+    return f"{artist}|{_song_part(title) or _song_part(t.title)}"
 
 
 def tidy(tracks, per_artist: int = 0):
@@ -428,7 +442,7 @@ def tidy(tracks, per_artist: int = 0):
     out, seen, count = [], set(), {}
     for t in tracks:
         k = same_song(t)
-        a = _norm(main_artist(t.artist))
+        a = k.split("|", 1)[0]                           # "Farley 'Jackmaster' Funk" counts as Farley Jackmaster Funk
         if k in seen or (per_artist and count.get(a, 0) >= per_artist):
             continue
         seen.add(k); count[a] = count.get(a, 0) + 1

@@ -167,3 +167,27 @@ def test_track_numbers_and_punctuation_dont_make_a_song_twice():
                    display_name="03. Mic Newman - The Fidelity.flac", artist="03. Mic Newman", title="The Fidelity")
     out = build([c1, c2])
     assert len(out) == 1 and out[0].artist == "Mic Newman" and len(out[0].alts) == 2   # one entry, two copies
+
+
+def test_spellings_quotes_and_bracketed_numbers_dont_make_a_song_twice():
+    """Reyes: "still hella duplicates in discover and for you". Real For you row: seven copies of one Farley song."""
+    from app.core.crates import CrateTrack
+    from app.adapters.base import Candidate
+    def t(a, title, mix=""):
+        c = Candidate("soulseek", "u", f"p/{a}/{title}{mix}", 1, extension="flac", free_slot=True)
+        return CrateTrack(a, title, mix, c, [c])
+    farley = [t("Farley Jackmaster Funk", "Love cant turn around"), t("Farley Jackmaster Funk", "Love Can't Turn Around"),
+              t("Farley Jackmaster Funk", "Love Can-t Turn Around"),
+              t("Farley 'Jackmaster' Funk & Jessie Saunders feat. Daryl Pandy", "Love Can't Turn Around", "12 Extended"),
+              t("01 Farley Jackmaster Funk & Jesse Saunders", "Love Can't Turn Around"),
+              t("Farley ''Jackmaster'' Funk & Jesse Saunders", "Love Can't Turn Around"),
+              t("[B1] Farley Jackmaster Funk feat. Daryl Pandy", "Love Can't Turn Around", "Farley Remix #2")]
+    silk = [t("Steve 'Silk' Hurley featuring Sharon Pass", "The Word Is Love"),
+            t("Steve Silk Hurley feat. Sharon Pass", "The Word Is Love")]
+    adonis = [t("Adonis", "We're Rocking Down the House"), t("adonis", "were rocking down the house (down break (remastered))"),
+              t("[04] Adonis", "Lost in the Sound"), t("Adonis", "Lost in the Sound")]
+    assert len(R.tidy(farley)) == 1 and len(R.tidy(silk)) == 1 and len(R.tidy(adonis)) == 2
+    assert len(R.tidy([t("808 State", "Pacific"), t("State", "Pacific")])) == 2       # a name, not a track number
+    # one artist however it's spelled, for the per-artist limit too
+    out = R.tidy([t("Farley 'Jackmaster' Funk", "It's U"), t("Farley Jackmaster Funk", "The Acid Life")], per_artist=1)
+    assert len(out) == 1

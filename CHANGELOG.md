@@ -4,6 +4,16 @@ All notable changes to DigMart (formerly Pied Piper, DEADWAX, Project Archive). 
 The product name is the `APP_NAME` constant in `app/config.py`; when the final name is chosen, that
 one line changes and this file gets a note.
 
+## 0.9.34 (2026-11-12) — duplicates in Discover and For you, again
+
+- **Fix: one song still showed up several times.** 0.9.24 only caught track numbers like "01." and "A1 -". Real rows
+  still had seven copies of *Love Can't Turn Around* in For you, because each was spelled a little differently:
+  "Can't" / "Cant" / "Can-t", "'Jackmaster'" / "''Jackmaster''" / no quotes, "featuring" (only "feat." was
+  recognised), "[B1] Farley", "[04] Adonis", "01 Farley" and nested brackets like "(down break (remastered))".
+  "The same song" now ignores all of these, so each song shows once in a row and once on the page (For you
+  went from 18 tiles to 11 songs, Chicago jack from 20 to 15). The per-artist limit counts every spelling of an
+  artist as one artist. "808 State" is still read as a name, not a track number.
+
 ## 0.9.33 (2026-11-11) — the tour, the guide and Help cover everything
 
 - **Tour:** a Batch step (paste a playlist link, Download and check, saved in a folder named after it);
